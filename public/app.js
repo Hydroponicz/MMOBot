@@ -399,6 +399,7 @@
         .join('')}</tbody></table></div>`;
   }
 
+  let shopShowAllSeeds = false;
   pages.shop = async () => {
     const { items, points, farmingLevel, plots } = await api('/shop');
     const loggedIn = points !== null;
@@ -417,7 +418,11 @@
             </div>
             <p class="muted" style="font-size:.8rem;margin:8px 0 0">In chat: <code>!buy ${esc(i.item === 'farm_plot' ? 'plot' : i.name.split(' ').pop().toLowerCase())}</code></p>
           </section>`;
-    const seeds = items.filter((i) => i.category === 'seeds');
+    const allSeeds = items.filter((i) => i.category === 'seeds');
+    // Show what you can plant now plus the next few unlocks; "Show all" reveals the rest.
+    const cap = loggedIn ? farmingLevel : 1;
+    const locked = allSeeds.filter((i) => i.level > cap);
+    const seeds = shopShowAllSeeds ? allSeeds : [...allSeeds.filter((i) => i.level <= cap), ...locked.slice(0, 5)];
     const top = items.filter((i) => i.category !== 'seeds');
     $app.innerHTML = `
       <div class="panel-head" style="margin-bottom:6px"><h1 style="margin:0">🛒 Shop</h1>${
@@ -431,7 +436,7 @@
       <div class="shop-grid">${top.map(card).join('')}</div>
 
       <h2 style="margin:28px 0 6px">🌱 Seeds</h2>
-      <p class="muted">One seed per plot: <code>!plant carrot</code>, then <code>!harvest</code> when it's grown. Seeds don't take backpack space.${loggedIn ? ` Your Farming level: <b>${farmingLevel}</b>.` : ''}</p>
+      <p class="muted">One seed per plot: <code>!plant carrot</code>, then <code>!harvest</code> when it's grown (1 crop per plot). Seeds don't take backpack space.${loggedIn ? ` Your Farming level: <b>${farmingLevel}</b>.` : ''}</p>
       <section class="panel"><div class="table-wrap"><table>
         <thead><tr><th>Level</th><th>Seed</th><th>Grows</th><th class="num">Ready in</th><th class="num">Crop sells for</th><th class="num">Price</th>${loggedIn ? '<th>Buy</th>' : ''}</tr></thead>
         <tbody>${seeds
@@ -442,7 +447,7 @@
               <td>🌱 ${esc(i.crop.name)} seeds</td>
               <td>${i.crop.icon} ${esc(i.crop.kind)}</td>
               <td class="num">${i.crop.grow} min</td>
-              <td class="num">${fmt(i.crop.value)} pts ×2-4</td>
+              <td class="num">${fmt(i.crop.value)} pts</td>
               <td class="num">${fmt(i.cost)} pts</td>
               ${
                 loggedIn
@@ -455,7 +460,14 @@
               }
             </tr>`;
           })
-          .join('')}</tbody></table></div></section>`;
+          .join('')}</tbody></table></div>
+        ${
+          seeds.length < allSeeds.length
+            ? `<button class="btn" id="show-all-seeds" style="margin-top:12px">Show all ${allSeeds.length} seeds</button>`
+            : ''
+        }</section>`;
+    const showAll = $app.querySelector('#show-all-seeds');
+    if (showAll) showAll.onclick = () => ((shopShowAllSeeds = true), route());
     $app.querySelectorAll('[data-buy]').forEach((b) => {
       b.onclick = async () => {
         const qtyInput = document.getElementById(`qty-${b.dataset.buy}`);
@@ -529,14 +541,15 @@
     const tierTable = (s) => {
       if (s.type === 'farm') {
         return `
+      <details><summary class="btn btn-sm" style="margin-bottom:12px">Show all ${s.tiers.length} crops</summary>
       <div class="table-wrap"><table>
         <thead><tr><th>Level</th><th>Crop</th><th>Type</th><th class="num">Seed</th><th class="num">Ready in</th><th class="num">XP</th><th class="num">Sells for</th></tr></thead>
         <tbody>${s.tiers
           .map(
             (t) => `<tr><td><b>${t.level}</b></td><td>${t.icon} ${esc(t.item)}</td><td><span class="kind kind-${t.kind === 'herb' ? 'herb' : 'veg'}">${esc(t.kind)}</span></td>
-            <td class="num">${fmt(t.seedCost)} pts</td><td class="num">${t.grow} min</td><td class="num">${t.xp}</td><td class="num">${fmt(t.value)} pts ×2-4</td></tr>`
+            <td class="num">${fmt(t.seedCost)} pts</td><td class="num">${t.grow} min</td><td class="num">${t.xp}</td><td class="num">${fmt(t.value)} pts</td></tr>`
           )
-          .join('')}</tbody></table></div>`;
+          .join('')}</tbody></table></div></details>`;
       }
       if (s.type === 'combat') {
         return `
@@ -604,7 +617,7 @@
             ${g.xpMultiplier !== 1 ? `<li><b>🔥 ${g.xpMultiplier}× XP event is on right now!</b></li>` : ''}
             <li><b>Smithing</b>: buy a 🔨 Smithing Hammer in the <a href="#/shop">shop</a> (keep it in your backpack), then turn alloys into weapons and armor: <code>!smith bronze sword</code>. <code>!equip</code> gear for attack and defence, or <code>!sell</code> it.</li>
             <li><b>Skinning</b>: with a 🔪 Skinning Knife in your backpack (buy it in the <a href="#/shop">shop</a> or smith it at Smithing 20 from a Steel Alloy), <code>!skin</code> animals for hides, from rabbits up to celestial fleece.</li>
-            <li><b>Farming</b>: buy a 🟫 farm plot (${fmt((g.shop.find((x) => x.item === 'farm_plot') || {}).cost || 0)} pts, up to 100) and seeds in the <a href="#/shop">shop</a>, <code>!plant carrot</code>, and <code>!harvest</code> when it's grown (carrots take 20 minutes). Farming has its own cooldown, so you can farm while you do everything else.</li>
+            <li><b>Farming</b>: everyone gets a free 🟫 farm plot. Buy seeds (and more plots, ${fmt((g.shop.find((x) => x.item === 'farm_plot') || {}).cost || 0)} pts each, up to 100) in the <a href="#/shop">shop</a>, <code>!plant carrot</code>, and <code>!harvest</code> when it's grown (carrots take 20 minutes, 1 crop per plot). ${g.skills.find((x) => x.type === 'farm')?.tiers.length || ''} crops to unlock up to level 500. Farming has its own cooldown, so you can farm while you do everything else.</li>
             <li><b>Combat</b>: with a sword (shop or smithed), <code>!fight</code> monsters for Swords XP and loot. Start with chickens; stronger monsters unlock as you level. <code>!fight goblin</code> picks a target. Better weapons and armor raise your win chance.</li>
             <li>Your <b>character level</b> grows with the combined XP of all skills — train them all!</li>
           </ol>

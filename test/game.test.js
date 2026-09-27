@@ -608,37 +608,36 @@ function farmSetup() {
   return { repo, engine, say, u, wait: (sec) => (t += sec * 1000) };
 }
 
-test('farming: buy a plot and seeds, plant, wait 20 minutes, harvest', () => {
+test('farming: free starter plot, buy seeds and plots, plant, wait 20 minutes, harvest 1 per plot', () => {
   const { repo, engine, say, u, wait } = farmSetup();
-  assert.match(say('!plant'), /don't have a farm plot yet! 🟫 !buy plot \(750 pts\)/);
-  assert.match(say('!harvest'), /don't have a farm plot yet/);
+  assert.equal(engine.plotCount(u.id), 1, 'everyone starts with a free plot');
+  assert.match(say('!farm'), /🌱 Farm: 1\/100 plots · 🟫 1 empty/);
+  assert.match(say('!plant'), /you have no seeds! !buy carrot seeds 1 \(2 pts each\)/);
+  assert.match(say('!harvest'), /your plots are empty/);
   repo.addPoints(u.id, 2000);
-  assert.match(say('!buy plot 2'), /bought 2 farm plots for 1,500 pts! You now have 2\/100\. Buy seeds/);
-  assert.match(say('!plant'), /you have no seeds! !buy carrot seeds 2 \(2 pts each\)/);
+  assert.match(say('!buy plot 2'), /bought 2 farm plots for 1,500 pts! You now have 3\/100\. Buy seeds \(!buy carrot seeds 3\)/);
   assert.match(say('!buy carrot seeds 5'), /bought 🌱 5x Carrot Seeds for 10 pts! Now !plant carrot/);
   assert.equal(engine.backpack(u.id).used, 0, "seeds don't use backpack slots");
 
-  assert.match(say('!plant carrot'), /🌱 planted 🥕 Carrot in 2 plots — ready in 20m\. \+4 XP/);
-  assert.equal(repo.getInventory(u.id).carrot_seeds, 3);
+  assert.match(say('!plant carrot'), /🌱 planted 🥕 Carrot in 3 plots — ready in 20m\. \+6 XP/);
+  assert.equal(repo.getInventory(u.id).carrot_seeds, 2);
   wait(11);
-  assert.match(say('!plant'), /all 2 plots are growing\. Next ready in 20m/);
+  assert.match(say('!plant'), /all 3 plots are growing\. Next ready in 20m/);
   wait(11);
   assert.match(say('!harvest'), /nothing is ready yet\. Next: 🥕 Carrot in 20m/);
-  assert.match(say('!farm'), /🌱 Farm: 2\/100 plots · ⏳ 2 growing \(next 🥕 in 20m\)/);
 
   wait(20 * 60);
-  assert.match(say('!farm'), /✅ 2 ready \(!harvest\)/);
-  // rng 0.5 -> 3 carrots per plot
-  assert.match(say('!harvest'), /🌾 harvested 2 plots: 🥕 6x Carrot! \+24 XP.* !plant again!/);
-  assert.equal(repo.getInventory(u.id).carrot, 6);
+  assert.match(say('!farm'), /✅ 3 ready \(!harvest\)/);
+  assert.match(say('!harvest'), /🌾 harvested 3 plots: 🥕 3x Carrot! \+36 XP.* !plant again!/);
+  assert.equal(repo.getInventory(u.id).carrot, 3);
   assert.equal(engine.farmPlots(u.id).filter((p) => p.crop).length, 0);
-  assert.match(say('!sell carrot all'), /sold 🥕 6x Carrot for \d+ pts/);
+  assert.match(say('!sell carrot all'), /sold 🥕 3x Carrot for 33 pts/);
 });
 
 test('farming has its own cooldown, separate from skilling', () => {
   const { repo, say, u } = farmSetup();
   repo.addPoints(u.id, 3000);
-  say('!buy plot 3');
+  say('!buy plot 2');
   say('!buy carrot seeds 3');
   assert.match(say('!plant carrot 1'), /planted 🥕 Carrot in 1 plot.*\(2 plots still empty\)/);
   assert.match(say('!plant carrot'), /easy there, farmer! Try again in 10s/);
@@ -650,14 +649,16 @@ test('farming level gates seeds; plot limit is 100; harvest respects backpack sp
   const { repo, engine, say, u, wait } = farmSetup();
   repo.addPoints(u.id, 1_000_000);
   assert.match(say('!buy tomato seeds'), /need 🌱 Farming level 30 to grow Tomato/);
-  assert.match(say('!buy plot 150'), /bought 100 farm plots/);
+  assert.match(say('!buy plot 150'), /bought 99 farm plots/, 'capped at 100 including the free one');
   assert.match(say('!buy plot'), /maximum of 100 farm plots/);
   say('!buy carrot seeds 100');
   say('!plant');
   wait(21 * 60);
-  // 10-slot backpack: 3 plots of 3 carrots fit, the rest wait.
-  assert.match(say('!harvest'), /harvested 3 plots: 🥕 9x Carrot!.*Backpack full — 97 plots still waiting!/);
-  assert.equal(engine.farmPlots(u.id).filter((p) => p.ready).length, 97);
+  // 10-slot backpack: 10 plots' carrots fit, the rest wait.
+  assert.match(say('!harvest'), /harvested 10 plots: 🥕 10x Carrot!.*Backpack full — 90 plots still waiting!/);
+  assert.equal(engine.farmPlots(u.id).filter((p) => p.ready).length, 90);
+  wait(11);
+  assert.match(say('!harvest'), /no backpack space to harvest \(10\/10\)/);
 });
 
 test('growth time multiplier (admin) speeds up new plantings', () => {
@@ -674,14 +675,40 @@ test('growth time multiplier (admin) speeds up new plantings', () => {
   assert.match(engine.handleChat({ kickUserId: '1', username: 'Alice', content: '!plant' }).reply, /ready in 10m/);
 });
 
-test('41 crops from Carrot (1) to World Tree Fruit (500); value rises with level', () => {
+test('201 crops, a new one every 2-3 levels from Carrot (1) to World Tree Fruit (500)', () => {
   const { SKILLS, ITEMS } = require('../src/game/skills');
   const crops = SKILLS.farming.resources;
-  assert.equal(crops.length, 41);
-  assert.equal(crops[0].item, 'carrot');
+  assert.equal(crops.length, 201);
+  assert.deepEqual(crops.slice(0, 4).map((c) => `${c.item}@${c.level}`), ['carrot@1', 'radish@2', 'lettuce@4', 'potato@5']);
   assert.equal(crops[0].grow, 20);
-  assert.equal(crops[1].level, 5);
+  assert.equal(crops.at(-1).item, 'world_tree_fruit');
   assert.equal(crops.at(-1).level, 500);
-  for (let i = 1; i < crops.length; i++) assert.ok(ITEMS[crops[i].item].value > ITEMS[crops[i - 1].item].value, crops[i].item);
-  for (const c of crops) assert.ok(ITEMS[c.item].value * 2 > c.seedCost, `${c.item} is profitable`);
+  for (let i = 1; i < crops.length; i++) {
+    assert.ok(crops[i].level - crops[i - 1].level <= 3, `gap before ${crops[i].item}`);
+    assert.ok(ITEMS[crops[i].item].value >= ITEMS[crops[i - 1].item].value, crops[i].item);
+  }
+  for (const c of crops) {
+    assert.deepEqual(c.yield, [1, 1]);
+    assert.ok(ITEMS[c.item].value >= c.seedCost * 5, `${c.item} is profitable`);
+  }
+  // The original crops kept their levels, so existing seeds still work.
+  const lvl = Object.fromEntries(crops.map((c) => [c.item, c.level]));
+  assert.deepEqual([lvl.potato, lvl.tomato, lvl.watermelon, lvl.mandrake], [5, 30, 100, 200]);
+});
+
+test('similar crop names are planted by their full name', () => {
+  const { repo, say, u, wait } = farmSetup();
+  repo.addXp(u.id, 'farming', xpForLevel(200));
+  repo.addPoints(u.id, 100_000);
+  say('!buy plot');
+  say('!buy lemon balm seeds');
+  assert.match(say('!plant'), /planted 🍋 Lemon Balm in 1 plot/);
+  wait(11);
+  assert.match(say('!plant lemon'), /you have no Lemon Seeds! !buy lemon seeds/);
+});
+
+test('players who bought plots before the free plot existed get it on top', () => {
+  const { repo, engine, u } = farmSetup();
+  repo.setEquipment(u.id, 'plots', 4); // bought 4 under the old rules
+  assert.equal(engine.plotCount(u.id), 5);
 });

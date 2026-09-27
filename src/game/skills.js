@@ -612,9 +612,10 @@ SKILLS.swords.monsters = MONSTER_LIST.map(([id, name, icon, level, xp, loot, rar
 });
 
 // ---- Farming ---------------------------------------------------------------------
-// Buy plots and seeds, "!plant carrot" puts one seed in each empty plot, and "!harvest" collects
-// what's grown. Each plot holds one crop and yields a few of it. Crops are sold for now; later they
-// can feed potions and food. Value and XP scale with the Farming level needed.
+// Everyone starts with a free plot; buy more and seeds. "!plant carrot" puts one seed in each empty plot
+// and "!harvest" collects what's grown, one crop per plot. Crops are sold for now; later they can feed
+// potions and food. Value and XP scale with the Farming level needed.
+// The original 41 crops keep their levels (so existing seeds and plots carry over)...
 const CROP_LIST = [
   // id, name, icon, Farming level, vegetable|herb
   ['carrot', 'Carrot', '🥕', 1, 'vegetable'],
@@ -659,25 +660,86 @@ const CROP_LIST = [
   ['voidcap', 'Voidcap', '🍄', 480, 'herb'],
   ['world_tree_fruit', 'World Tree Fruit', '🍎', 500, 'vegetable'],
 ];
-const cropValue = (level) => Math.round(3 + 0.5 * level + 0.0045 * level * level);
+// ...and more crops fill the levels in between: every 2 levels up to 100, about every 3 after that.
+// [name, icon, vegetable|herb] in order of difficulty; ids come from the names.
+const MORE_CROPS_EARLY = [
+  ['Radish', '🔴', 'vegetable'], ['Lettuce', '🥬', 'vegetable'], ['Pea', '🟢', 'vegetable'], ['Spinach', '🥬', 'vegetable'],
+  ['Turnip', '⚪', 'vegetable'], ['Green Bean', '🌱', 'vegetable'], ['Beetroot', '🟣', 'vegetable'], ['Chives', '🌿', 'herb'],
+  ['Dill', '🌿', 'herb'], ['Strawberry', '🍓', 'vegetable'], ['Cucumber', '🥒', 'vegetable'], ['Kale', '🥬', 'vegetable'],
+  ['Leek', '🧅', 'vegetable'], ['Celery', '🌿', 'vegetable'], ['Oregano', '🌿', 'herb'], ['Broccoli', '🥦', 'vegetable'],
+  ['Zucchini', '🥒', 'vegetable'], ['Cilantro', '🌿', 'herb'], ['Blueberry', '🫐', 'vegetable'], ['Sweet Potato', '🍠', 'vegetable'],
+  ['Cauliflower', '🥦', 'vegetable'], ['Raspberry', '🍓', 'vegetable'], ['Peanut', '🥜', 'vegetable'], ['Oats', '🌾', 'vegetable'],
+  ['Wheat', '🌾', 'vegetable'], ['Barley', '🌾', 'vegetable'], ['Rice', '🍚', 'vegetable'], ['Soybean', '🟢', 'vegetable'],
+  ['Squash', '🎃', 'vegetable'], ['Parsnip', '🥕', 'vegetable'], ['Fennel', '🌿', 'herb'], ['Asparagus', '🌱', 'vegetable'],
+  ['Okra', '🟢', 'vegetable'], ['Rhubarb', '🔴', 'vegetable'], ['Artichoke', '🌵', 'vegetable'], ['Lemon Balm', '🍋', 'herb'],
+  ['Catnip', '🐱', 'herb'], ['Calendula', '🌼', 'herb'], ['Yarrow', '🌼', 'herb'], ['Tarragon', '🌿', 'herb'],
+];
+const MORE_CROPS_LATE = [
+  ['Marjoram', '🌿', 'herb'], ['Lemongrass', '🌾', 'herb'], ['Valerian', '🌸', 'herb'], ['Echinacea', '🌸', 'herb'],
+  ['Feverfew', '🌼', 'herb'], ['Comfrey', '🍃', 'herb'], ['Borage', '💙', 'herb'], ['Sorrel', '🍃', 'herb'],
+  ['Horseradish', '⚪', 'vegetable'], ['Blackberry', '🫐', 'vegetable'], ['Cranberry', '🔴', 'vegetable'], ['Gooseberry', '🟢', 'vegetable'],
+  ['Grape', '🍇', 'vegetable'], ['Cantaloupe', '🍈', 'vegetable'], ['Honeydew', '🍈', 'vegetable'], ['Cherry', '🍒', 'vegetable'],
+  ['Peach', '🍑', 'vegetable'], ['Pear', '🍐', 'vegetable'], ['Plum', '🟣', 'vegetable'], ['Apricot', '🍑', 'vegetable'],
+  ['Lemon', '🍋', 'vegetable'], ['Lime', '🟢', 'vegetable'], ['Orange', '🍊', 'vegetable'], ['Fig', '🟤', 'vegetable'],
+  ['Olive', '🫒', 'vegetable'], ['Avocado', '🥑', 'vegetable'], ['Coconut', '🥥', 'vegetable'], ['Pineapple', '🍍', 'vegetable'],
+  ['Papaya', '🧡', 'vegetable'], ['Mango', '🥭', 'vegetable'], ['Kiwi', '🥝', 'vegetable'], ['Passionfruit', '💜', 'vegetable'],
+  ['Lychee', '🔴', 'vegetable'], ['Pomegranate', '🔴', 'vegetable'], ['Cotton', '☁️', 'vegetable'], ['Flax', '💠', 'vegetable'],
+  ['Hops', '🍺', 'herb'], ['Sugarcane', '🎋', 'vegetable'], ['Sunflower', '🌻', 'vegetable'], ['Tea Leaves', '🍵', 'herb'],
+  ['Coffee Beans', '☕', 'vegetable'], ['Cocoa Beans', '🍫', 'vegetable'], ['Ginger', '🟫', 'herb'], ['Turmeric', '🟠', 'herb'],
+  ['Wasabi', '🟢', 'herb'], ['Saffron', '🧡', 'herb'], ['Vanilla', '🤍', 'herb'], ['Aloe Vera', '🌵', 'herb'],
+  ['Lotus', '🌸', 'herb'], ['Bamboo', '🎍', 'vegetable'], ['Durian', '🟡', 'vegetable'], ['Jackfruit', '🟢', 'vegetable'],
+  ['Star Anise', '⭐', 'herb'], ['Cardamom', '🟢', 'herb'], ['Cinnamon', '🟤', 'herb'], ['Nutmeg', '🌰', 'herb'],
+  ['Clove', '🟤', 'herb'], ['Black Pepper', '⚫', 'herb'], ['Juniper', '🫐', 'herb'], ['Elderberry', '🫐', 'vegetable'],
+  ['Goji Berry', '🔴', 'vegetable'], ['Acai Berry', '🟣', 'vegetable'],
+];
+// Then magical plants: element + plant part, in rising order of power.
+const FANTASY_PREFIXES = ['Sky', 'Mist', 'Frost', 'Ember', 'Storm', 'Thunder', 'Sun', 'Moon', 'Shadow', 'Crystal', 'Gold', 'Rune', 'Spirit', 'Arcane', 'Star', 'Dragon', 'Phoenix', 'Abyss', 'Void', 'Aether'];
+const FANTASY_PARTS = [['berry', '🫐', 'vegetable'], ['cap', '🍄', 'herb'], ['thistle', '🌵', 'herb'], ['gourd', '🎃', 'vegetable'], ['melon', '🍈', 'vegetable'], ['bloom', '🌸', 'herb'], ['petal', '🌺', 'herb'], ['vine', '🍇', 'herb'], ['leaf', '🍃', 'herb'], ['root', '🥕', 'herb']];
+const FANTASY_CROPS = [];
+FANTASY_PREFIXES.forEach((prefix, i) => {
+  for (let k = 0; k < 3; k++) {
+    const [part, icon, kind] = FANTASY_PARTS[(i * 3 + k) % FANTASY_PARTS.length];
+    FANTASY_CROPS.push([`${prefix}${part}`, icon, kind]);
+  }
+});
+const toId = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+const EARLY_LEVELS = [];
+for (let base = 0; base < 100; base += 5) EARLY_LEVELS.push(base + 2, base + 4); // 2, 4, 7, 9, ... 97, 99
+const LATE_LEVELS = [];
+for (let base = 100; base < 500; base += 20) for (const o of [3, 6, 9, 12, 15, 18]) LATE_LEVELS.push(base + o); // 103 ... 498
+const takenNames = new Set([...CROP_LIST.map((c) => c[1].toLowerCase()), ...Object.values(ITEMS).map((i) => i.name.toLowerCase())]);
+const lateNames = [...MORE_CROPS_LATE, ...FANTASY_CROPS].filter(([name]) => !takenNames.has(name.toLowerCase()));
+MORE_CROPS_EARLY.forEach(([name, icon, kind], i) => CROP_LIST.push([toId(name), name, icon, EARLY_LEVELS[i], kind]));
+LATE_LEVELS.forEach((level, i) => {
+  const [name, icon, kind] = lateNames[i];
+  CROP_LIST.push([toId(name), name, icon, level, kind]);
+});
+CROP_LIST.sort((a, b) => a[3] - b[3]);
+
+// One crop per plot: a crop sells for about 6x its seed price, and both rise with the Farming level.
+const baseValue = (level) => 3 + 0.5 * level + 0.0045 * level * level;
+const cropValue = (level) => Math.round(3 * baseValue(level));
 const cropXp = (level) => Math.round(10 + 1.6 * level + 0.0045 * level * level);
 const growMinutes = (level) => 20 + 5 * Math.floor(level / 40); // carrot 20 min ... level 500: 80 min
 const MAX_PLOTS = 100;
+const STARTER_PLOTS = 1; // every player gets one free plot
 ITEMS.farm_plot = { name: 'Farm Plot', icon: '🟫', value: 0, notItem: true };
 for (const [id, name, icon, level, kind] of CROP_LIST) {
+  if (ITEMS[id]) throw new Error(`crop id ${id} clashes with an existing item`);
   const value = cropValue(level);
   ITEMS[id] = { name, icon, value, crop: kind };
+  const seedCost = Math.max(2, Math.round(baseValue(level) / 2));
   // Seeds are kept by "!sell all" and sell back for half their shop price.
-  ITEMS[`${id}_seeds`] = { name: `${name} Seeds`, icon: '🌱', value: Math.max(1, Math.round(value / 4)), keep: true, seedFor: id };
+  ITEMS[`${id}_seeds`] = { name: `${name} Seeds`, icon: '🌱', value: Math.max(1, Math.round(seedCost / 2)), keep: true, seedFor: id };
   SKILLS.farming.resources.push({
     item: id,
     level,
     kind,
     xp: cropXp(level),
     seed: `${id}_seeds`,
-    seedCost: Math.max(2, Math.round(value / 2)),
+    seedCost,
     grow: growMinutes(level),
-    yield: [2, 4], // crops per plot
+    yield: [1, 1], // crops per plot
   });
 }
 
@@ -686,13 +748,13 @@ const SHOP = [
   { item: 'smithing_hammer', cost: 500, description: 'Lets you !smith weapons and armor from alloys. Keep it in your backpack.' },
   { item: 'bronze_sword', cost: 1000, description: "A ready-made sword so you can start fighting with !fight right away. Or smith your own!" },
   { item: 'skinning_knife', cost: 500, description: 'Lets you !skin animals for hides. Keep it in your backpack. Or smith one at Smithing 20 from a Sterling Alloy (silver + copper ore).' },
-  { item: 'farm_plot', cost: 750, category: 'farming', description: `A plot of land for !plant. Each holds one crop. Up to ${MAX_PLOTS} plots.` },
+  { item: 'farm_plot', cost: 750, category: 'farming', description: `An extra plot of land for !plant (everyone starts with ${STARTER_PLOTS} free). Each grows one crop. Up to ${MAX_PLOTS} plots.` },
   ...SKILLS.farming.resources.map((c) => ({
     item: c.seed,
     cost: c.seedCost,
     category: 'seeds',
     level: c.level,
-    description: `Plant with !plant ${ITEMS[c.item].name.split(' ')[0].toLowerCase()} (Farming ${c.level}). Ready in ${c.grow} min, 2-4 ${ITEMS[c.item].name} per plot.`,
+    description: `Plant with !plant ${ITEMS[c.item].name.toLowerCase()} (Farming ${c.level}). Ready in ${c.grow} min, 1 ${ITEMS[c.item].name} per plot.`,
   })),
 ];
 
@@ -751,6 +813,7 @@ module.exports = {
   BACKPACK_TIERS,
   SHOP,
   MAX_PLOTS,
+  STARTER_PLOTS,
   GEAR_SLOTS,
   COMMAND_TO_SKILL,
   COMBAT_SKILLS,

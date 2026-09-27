@@ -6,6 +6,7 @@ const {
   BACKPACK_TIERS,
   SHOP,
   MAX_PLOTS,
+  STARTER_PLOTS,
   GEAR_SLOTS,
   COMMAND_TO_SKILL,
   COMBAT_SKILLS,
@@ -62,7 +63,9 @@ const minutesLeft = (ms) => (ms <= 60_000 ? '1m' : ms < 3_600_000 ? `${Math.ceil
 const GATHER_HINT = {};
 for (const id of SKILL_IDS) {
   for (const r of [...(SKILLS[id].resources || []), ...(SKILLS[id].type === 'process' ? SKILLS[id].recipes : [])]) {
-    GATHER_HINT[r.item] ??= `!${SKILLS[id].command} ${ITEMS[r.item].name.split(' ')[0].toLowerCase()}`;
+    // Crops use their full name ("!plant lemon balm" vs "!plant lemon"); ores etc. the first word ("!mine copper").
+    const word = SKILLS[id].type === 'farm' ? ITEMS[r.item].name.toLowerCase() : ITEMS[r.item].name.split(' ')[0].toLowerCase();
+    GATHER_HINT[r.item] ??= `!${SKILLS[id].command} ${word}`;
   }
 }
 // Name of anything in a skill's unlock list (items, recipes or monsters).
@@ -603,7 +606,7 @@ class GameEngine extends EventEmitter {
             : found.item === 'skinning_knife'
               ? ' Now try !skin.'
               : found.seedFor
-                ? ` Now !plant ${ITEMS[found.seedFor].name.split(' ')[0].toLowerCase()}.`
+                ? ` Now !plant ${ITEMS[found.seedFor].name.toLowerCase()}.`
                 : '';
       return `🛒 bought ${itemLabel(found.item, qty)} for ${fmt(total)} pts!${tip} Balance: ${fmt(this.repo.getUser(user.id).points)}`;
     });
@@ -617,9 +620,9 @@ class GameEngine extends EventEmitter {
     return this.repo.transaction(() => {
       const refused = this.pay(user, total, qty > 1 ? `${qty} farm plots` : 'farm plot');
       if (refused) return refused;
-      this.repo.setEquipment(user.id, 'plots', have + qty);
+      this.repo.setEquipment(user.id, 'plots', have + qty - STARTER_PLOTS);
       this.emitActivity(user, { kind: 'buy', text: `bought ${qty > 1 ? `${qty} farm plots` : 'a farm plot'} (${have + qty} total)` });
-      const first = have === 0 ? ' Buy seeds (!buy carrot seeds 5) and !plant them!' : '';
+      const first = ` Buy seeds (!buy carrot seeds ${have + qty}) and !plant them!`;
       return `🟫 bought ${qty > 1 ? `${qty} farm plots` : 'a farm plot'} for ${fmt(total)} pts! You now have ${have + qty}/${MAX_PLOTS}.${first}`;
     });
   }
@@ -627,7 +630,9 @@ class GameEngine extends EventEmitter {
   // ---- Farming (!plant, !harvest, !farm) ----------------------------------------
 
   plotCount(userId) {
-    return Math.min(this.repo.getEquipment(userId).plots || 0, MAX_PLOTS);
+    // Everyone has STARTER_PLOTS free plots plus the ones they bought (stored as "plots"), so players
+    // who bought plots before the free plot existed get it too.
+    return Math.min(STARTER_PLOTS + (this.repo.getEquipment(userId).plots || 0), MAX_PLOTS);
   }
 
   // Every owned plot with what's in it: { plot, crop, readyAt, plantedAt, ready } (crop null = empty).
@@ -671,7 +676,7 @@ class GameEngine extends EventEmitter {
       const readyCount = plots.filter((p) => p.ready).length;
       return readyCount
         ? `all your plots are full — ${readyCount} ready to !harvest!`
-        : `all ${plots.length} plots are growing. Next ready in ${minutesLeft(next.readyAt - this.now())}.`;
+        : `${plots.length === 1 ? 'your plot is' : `all ${plots.length} plots are`} growing. Next ready in ${minutesLeft(next.readyAt - this.now())}.`;
     }
 
     const words = args.map((w) => String(w).toLowerCase());
@@ -756,7 +761,7 @@ class GameEngine extends EventEmitter {
     });
     if (!harvestedPlots) {
       const free = bag.capacity - bag.used;
-      return `🎒 not enough backpack space to harvest: a plot gives up to ${CROPS.find((c) => c.item === ready[0].crop).yield[1]} crops and you have ${free} free slot${free === 1 ? '' : 's'} (${bag.used}/${bag.capacity}). !sell or !upgrade backpack first.`;
+      return `🎒 no backpack space to harvest (${bag.used}/${bag.capacity}) — each plot's crop needs a free slot. !sell or !upgrade backpack first.`;
     }
 
     const list = Object.entries(gathered).map(([id, q]) => itemLabel(id, q)).join(', ');

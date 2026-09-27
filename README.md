@@ -13,7 +13,7 @@ Viewers type commands in your Kick chat to train skills, collect loot and level 
   | `!dig` | 🏺 Digging | Old bones → Dragon relics |
   | `!smelt` | 🔥 Smelting | Turns ores from your backpack into ingots (one ore) and alloys (mixed ores, e.g. copper + tin → bronze) |
   | `!skin` | 🔪 Skinning | Animal hides, from Rabbit to Celestial Fleece. Needs a Skinning Knife in your backpack (shop, 500 pts, or smith it at Smithing 20 from a Sterling Alloy, which is silver + copper ore at Smelting 20) |
-  | `!plant` / `!harvest` | 🌱 Farming | Buy farm plots (750 pts each, up to 100) and seeds, plant one seed per plot, harvest 2-4 crops per plot when grown (carrots: 20 min). 41 vegetables and herbs from Carrot (1) to World Tree Fruit (500). Has its own cooldown, so it runs alongside other skills. `!farm` shows your plots |
+  | `!plant` / `!harvest` | 🌱 Farming | Everyone starts with 1 free plot; buy more (750 pts each, up to 100) and seeds, plant one seed per plot, harvest 1 crop per plot when grown (carrots: 20 min). 201 vegetables, herbs, fruits and magical plants from Carrot (1) to World Tree Fruit (500), a new one every 2-3 levels. Has its own cooldown, so it runs alongside other skills. `!farm` shows your plots |
   | `!smith <item>` | ⚒️ Smithing | Turns alloys into weapons and armor, e.g. `!smith bronze sword`. Needs a Smithing Hammer in your backpack |
   | `!fight [monster]` | 🗡️ Swords | Fight levelled monsters (Chicken at 1 up to Elder Dragon at 500) for XP and loot. Needs a sword |
 - Target a specific resource you've unlocked: `!mine iron`, `!chop oak`, `!smelt steel`.
