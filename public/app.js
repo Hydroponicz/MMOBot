@@ -227,7 +227,7 @@
 
   function itemTitle(i) {
     const bits = [`${i.name} — sells for ${fmt(i.value)} pts`];
-    if (i.attack) bits.push(`+${i.attack} attack, needs Swords ${i.level}`);
+    if (i.attack) bits.push(`+${i.attack} attack, needs ${i.wieldSkill || 'Swords'} ${i.level}`);
     if (i.defence) bits.push(`+${i.defence} defence, needs Combat ${i.level}`);
     return bits.join(' · ');
   }
@@ -255,7 +255,7 @@
   }
 
   // Monsters rated for this player: a few too-easy ones, every good match, and the first risky ones.
-  function monsterChips(list) {
+  function monsterChips(list, ratedWith) {
     if (!list || !list.length) return '';
     const firstRisky = list.findIndex((m) => m.rating !== 'easy' && m.rating !== 'fair');
     const end = firstRisky === -1 ? list.length : firstRisky + 2;
@@ -263,11 +263,11 @@
     const shown = list.slice(start, end);
     const tip = (m) => (m.cost === null ? `${m.label}: you can't beat it yet` : `${m.label}: you'd lose ~${m.cost}% of your max HP`);
     return `<div class="monster-chips">
-        <div class="gear-label">Monsters for you</div>
+        <div class="gear-label">Monsters for you${ratedWith ? ` <span style="text-transform:none">(!fight with ${esc(ratedWith)})</span>` : ''}</div>
         ${shown
           .map((m) => `<span class="mchip r-${m.rating}" title="${esc(tip(m))} · ${fmt(m.hp)} HP · ${fmt(m.xp)} XP">${m.ratingIcon} ${m.icon} ${esc(m.name)} <small>${m.level}</small></span>`)
           .join('')}
-        <div class="muted" style="font-size:.8rem;margin-top:6px">⚪ too easy · 🟢 good match · 🟠 tough · 🔴 hard · ☠️ deadly. <code>!scout &lt;monster&gt;</code> in chat for details.</div>
+        <div class="muted" style="font-size:.8rem;margin-top:6px">⚪ too easy · 🟢 good match · 🟠 tough · 🔴 hard · ☠️ deadly. <code>!targets</code> or <code>!scout &lt;monster&gt;</code> in chat for details.</div>
       </div>`;
   }
 
@@ -294,8 +294,8 @@
             </div>`
           )
           .join('')}</div>
-        ${monsterChips(c.monsters)}
-        <p class="muted" style="margin-bottom:0;font-size:.85rem">Buy a sword in the <a href="#/shop">shop</a> or <code>!smith</code> your own, then <code>!fight</code>. Your best weapon is equipped automatically when you fight. Fights cost HP; monsters above your level hit much harder.</p>
+        ${monsterChips(c.monsters, c.ratedWith)}
+        <p class="muted" style="margin-bottom:0;font-size:.85rem">Buy a sword or bow in the <a href="#/shop">shop</a>, or <code>!smith</code> / <code>!fletch</code> your own, then <code>!fight</code> (or <code>!shoot</code> with a bow, a quiver and arrows). <code>!targets</code> shows your best fights. Your best weapon is equipped automatically when you fight. Fights cost HP; monsters above your level hit much harder.</p>
       </section>`;
   }
 
@@ -450,7 +450,7 @@
             <div class="shop-icon">${i.icon}</div>
             <h2>${esc(i.name)}</h2>
             <p class="muted">${esc(i.description || '')}</p>
-            ${i.attack ? `<p class="shop-stat">⚔️ +${i.attack} attack · needs Swords ${i.level}</p>` : ''}
+            ${i.attack ? `<p class="shop-stat">⚔️ +${i.attack} attack · needs ${esc(i.wieldSkill || 'Swords')} ${i.level}</p>` : ''}
             ${i.item === 'farm_plot' && loggedIn ? `<p class="shop-stat">You own ${plots}/100 plots</p>` : ''}
             <div class="shop-buy">
               <span class="shop-price">${fmt(i.cost)} pts</span>
@@ -585,7 +585,7 @@
           (r) => `<tr style="color:var(--rare)"><td>Rare · ${esc(r.odds)}</td><td>${r.icon} ${esc(r.item)}${r.from ? ` <span class="muted">(${esc(r.from)})</span>` : ''}</td>${'<td></td>'.repeat(cols)}<td class="num">${r.xp ? fmt(r.xp) : ''}</td><td class="num">${fmt(r.value)} pts</td></tr>`
         )
         .join('');
-    const gearStat = (st) => (st.attack ? `+${st.attack} atk · Swords ${st.wear}` : `+${st.defence} def · Combat ${st.wear}`);
+    const gearStat = (st) => (st.attack ? `+${st.attack} atk${st.ammo ? ' per shot' : ''} · ${esc(st.skill || 'Swords')} ${st.wear}` : `+${st.defence} def · Combat ${st.wear}`);
     const tierTable = (s) => {
       if (s.type === 'farm') {
         return `
@@ -598,6 +598,9 @@
             <td class="num">${fmt(t.seedCost)} pts</td><td class="num">${t.grow} min</td><td class="num">${t.xp}</td><td class="num">${fmt(t.value)} pts</td></tr>`
           )
           .join('')}</tbody></table></div></details>`;
+      }
+      if (s.type === 'combat' && s.id !== g.skills.find((x) => x.type === 'combat').id) {
+        return `<p class="muted">Same monsters as ${esc(g.skills.find((x) => x.type === 'combat').name)} (above). Fight them with a bow using <code>${esc(s.command)}</code>; each fight uses one arrow from your quiver.</p>`;
       }
       if (s.type === 'combat') {
         return `
@@ -667,7 +670,8 @@
             <li><b>Smithing</b>: buy a 🔨 Smithing Hammer in the <a href="#/shop">shop</a> (keep it in your backpack), then turn alloys into weapons and armor: <code>!smith bronze sword</code>. <code>!equip</code> gear for attack and defence, or <code>!sell</code> it.</li>
             <li><b>Skinning</b>: with a 🔪 Skinning Knife in your backpack (buy it in the <a href="#/shop">shop</a> or smith it at Smithing 20 from a Sterling Alloy), <code>!skin</code> animals for hides, from rabbits up to celestial fleece.</li>
             <li><b>Farming</b>: everyone gets a free 🟫 farm plot. Buy seeds (and more plots, ${fmt((g.shop.find((x) => x.item === 'farm_plot') || {}).cost || 0)} pts each, up to 100) in the <a href="#/shop">shop</a>, <code>!plant carrot</code>, and <code>!harvest</code> when it's grown (carrots take 20 minutes, 1 crop per plot). ${g.skills.find((x) => x.type === 'farm')?.tiers.length || ''} crops to unlock up to level 500. Farming has its own cooldown, so you can farm while you do everything else.</li>
-            <li><b>Combat</b>: with a sword (shop or smithed), <code>!fight</code> monsters for Swords XP and loot. <code>!fight goblin</code> picks a target, and you can pick any monster, but ones above your level hit much harder. <code>!monsters</code> rates them for you (⚪ too easy · 🟢 good match · 🟠 tough · 🔴 hard · ☠️ deadly) and <code>!scout troll</code> shows how a fight would go. A plain <code>!fight</code> picks your best safe match, and you're warned before a fight that would likely knock you out. Fights cost ❤️ HP (better weapons and armor mean less). At 0 HP you're knocked out: wait until you're back at full HP (24h) or <code>!drink</code> a health potion. <code>!heal</code> spends 🔷 mana to restore HP.</li>
+            <li><b>Combat</b>: with a sword (shop or smithed), <code>!fight</code> monsters for Swords XP and loot. <code>!fight goblin</code> picks a target (<code>!targets</code> lists the best ones for your level, gear and HP), and you can pick any monster, but ones above your level hit much harder. <code>!monsters</code> rates them for you (⚪ too easy · 🟢 good match · 🟠 tough · 🔴 hard · ☠️ deadly) and <code>!scout troll</code> shows how a fight would go. A plain <code>!fight</code> picks your best safe match, and you're warned before a fight that would likely knock you out. Fights cost ❤️ HP (better weapons and armor mean less). At 0 HP you're knocked out: wait until you're back at full HP (24h) or <code>!drink</code> a health potion. <code>!heal</code> spends 🔷 mana to restore HP.</li>
+            <li><b>Archery &amp; Fletching</b>: <code>!fletch arrows</code> from 1 Oak Logs + 1 🪶 Feathers (from chickens) + 1 Iron Ingot, 10 at a time. Arrows go in a 🧺 Quiver (shop 250 pts, or <code>!fletch quiver</code> from 2 Rabbit Hides), which holds 500. Get a bow (shop 500 pts, or <code>!fletch oak shortbow</code> from 2 Oak Logs), then <code>!shoot</code> monsters for Archery XP: each fight uses one arrow, and better arrows hit harder. <code>!fight</code> uses whichever combat skill you're best at.</li>
             <li><b>Alchemy</b>: <code>!brew</code> potions from crops you farm, e.g. 2 Carrots make a Minor Health Potion. Or buy potions in the <a href="#/shop">shop</a>.</li>
             <li>Your <b>character level</b> grows with the combined XP of all skills — train them all!</li>
           </ol>
@@ -687,6 +691,9 @@
             <dt><code>!fight [monster]</code></dt><dd>Fight for Swords XP and loot (costs HP)</dd>
             <dt><code>!hp</code></dt><dd>Show your health and mana</dd>
             <dt><code>!drink [potion]</code></dt><dd>Drink a potion (revives you if knocked out)</dd>
+            <dt><code>!targets [bow]</code></dt><dd>The best monsters for you to fight right now</dd>
+            <dt><code>!shoot [monster]</code></dt><dd>Fight with a bow (uses 1 arrow)</dd>
+            <dt><code>!fletch &lt;item&gt;</code></dt><dd>Make arrows, bows or a quiver (<code>!quiver</code> shows your arrows)</dd>
             <dt><code>!monsters</code></dt><dd>Which monsters suit you (⚪ too easy to ☠️ deadly)</dd>
             <dt><code>!scout &lt;monster&gt;</code></dt><dd>How a fight would go, without fighting</dd>
             <dt><code>!heal</code></dt><dd>Spend half your mana to restore 25% HP</dd>

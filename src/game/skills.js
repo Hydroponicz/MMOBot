@@ -125,6 +125,8 @@ const ITEMS = {
 
   // Skinning
   rabbit_hide: { name: 'Rabbit Hide', icon: '🐇', value: 2 },
+  // Holds your arrows (they don't take backpack slots). Keep it in your backpack.
+  quiver: { name: 'Quiver', icon: '🧺', value: 125, keep: true, quiverCapacity: 500 },
   squirrel_pelt: { name: 'Squirrel Pelt', icon: '🐿️', value: 5 },
   fox_pelt: { name: 'Fox Pelt', icon: '🦊', value: 9 },
   deer_hide: { name: 'Deer Hide', icon: '🦌', value: 16 },
@@ -542,6 +544,19 @@ const SKILLS = {
     failMessages: ['the metal cracked'],
     recipes: [], // filled in below from SMITHING_RECIPES
   },
+  fletching: {
+    name: 'Fletching',
+    icon: '🪶',
+    command: 'fletch',
+    verb: 'fletched',
+    type: 'process',
+    maxLevel: 500,
+    // Players say what to make ("!fletch arrows", "!fletch oak shortbow", "!fletch quiver").
+    pickBest: false,
+    example: 'arrows, oak shortbow or quiver',
+    failMessages: ['the string snapped'],
+    recipes: [], // filled in below from BOW_LIST / ARROW_LIST
+  },
   alchemy: {
     name: 'Alchemy',
     icon: '⚗️',
@@ -565,6 +580,18 @@ const SKILLS = {
     weaponType: 'sword',
     // power = how hard it is to hit, damage = how hard it hits back. loot: one of these per win.
     monsters: [], // filled in below
+  },
+  archery: {
+    name: 'Archery',
+    icon: '🏹',
+    command: 'shoot',
+    verb: 'shot',
+    type: 'combat',
+    maxLevel: 500,
+    // !shoot fights with your best bow and uses one arrow from your quiver per fight. Same monsters as Swords.
+    weaponType: 'bow',
+    ammo: true,
+    monsters: [], // shared with swords, below
   },
 };
 
@@ -631,6 +658,52 @@ SKILLS.swords.monsters = MONSTER_LIST.map(([id, name, icon, level, xp, loot, rar
     rare: rare || null,
   };
 });
+
+SKILLS.archery.monsters = SKILLS.swords.monsters;
+
+// ---- Fletching: bows, arrows and the quiver ------------------------------------------------
+// Bows follow the same attack ladder as swords (level = Archery level to wield). Arrows add damage
+// on top (level = Archery level to use them); each fletch makes a bundle of 10. Arrows live in your
+// quiver, so they don't take backpack slots.
+const BOW_LIST = [
+  // id, name, logs used, Fletching level, Archery level to wield, attack
+  ['oak_shortbow', 'Oak Shortbow', 'oak_logs', 1, 1, 4],
+  ['willow_bow', 'Willow Bow', 'willow_logs', 20, 20, 10],
+  ['maple_bow', 'Maple Bow', 'maple_logs', 40, 40, 18],
+  ['yew_bow', 'Yew Bow', 'yew_logs', 60, 60, 28],
+  ['magic_bow', 'Magic Bow', 'magic_logs', 80, 80, 40],
+  ['cedar_bow', 'Cedar Bow', 'cedar_logs', 100, 100, 55],
+  ['ironwood_bow', 'Ironwood Bow', 'ironwood_logs', 150, 150, 75],
+  ['crystalwood_bow', 'Crystalwood Bow', 'crystalwood_logs', 250, 250, 110],
+  ['dragonwood_bow', 'Dragonwood Bow', 'dragonwood_logs', 350, 350, 150],
+  ['elder_bow', 'Elder Bow', 'elder_logs', 450, 450, 200],
+];
+const ARROW_LIST = [
+  // id, name, shaft logs, arrowhead metal, Fletching level, Archery level to use, bonus attack
+  ['iron_arrows', 'Iron Arrows', 'oak_logs', 'iron_bar', 1, 1, 1],
+  ['steel_arrows', 'Steel Arrows', 'willow_logs', 'steel_bar', 20, 20, 3],
+  ['mithril_arrows', 'Mithril Arrows', 'maple_logs', 'mithril_bar', 40, 40, 6],
+  ['adamant_arrows', 'Adamant Arrows', 'yew_logs', 'adamantite_bar', 60, 60, 10],
+  ['rune_arrows', 'Rune Arrows', 'magic_logs', 'runite_bar', 80, 80, 15],
+  ['obsidian_arrows', 'Obsidian Arrows', 'cedar_logs', 'obsidian_steel_bar', 100, 100, 20],
+  ['orichalcum_arrows', 'Orichalcum Arrows', 'ironwood_logs', 'orichalcum_bar', 150, 150, 28],
+  ['dragonite_arrows', 'Dragonite Arrows', 'crystalwood_logs', 'dragonite_bar', 250, 250, 40],
+  ['void_arrows', 'Void Arrows', 'dragonwood_logs', 'void_bar', 350, 350, 55],
+  ['celestial_arrows', 'Celestial Arrows', 'elder_logs', 'celestium_bar', 450, 450, 75],
+];
+const ARROWS_PER_FLETCH = 10;
+const logXp = (logs) => SKILLS.woodcutting.resources.find((r) => r.item === logs).xp;
+const barXp = (bar) => SKILLS.smelting.recipes.find((r) => r.item === bar).xp;
+for (const [id, name, logs, fletchLevel, wield, attack] of BOW_LIST) {
+  ITEMS[id] = { name, icon: '🏹', value: Math.round(ITEMS[logs].value * 2 * 1.5 + attack * 5), keep: true, gear: true, slot: 'weapon', level: wield, weaponType: 'bow', attack };
+  SKILLS.fletching.recipes.push({ item: id, level: fletchLevel, kind: 'weapon', group: 'bow', xp: Math.round(logXp(logs) * 2 * 0.8), inputs: { [logs]: 2 } });
+}
+for (const [id, name, logs, bar, fletchLevel, use, attack] of ARROW_LIST) {
+  ITEMS[id] = { name, icon: '🎯', value: Math.max(1, Math.round((ITEMS[logs].value + ITEMS[bar].value + ITEMS.feathers.value) / ARROWS_PER_FLETCH)), keep: true, ammo: 'bow', level: use, attack };
+  SKILLS.fletching.recipes.push({ item: id, level: fletchLevel, kind: 'ammo', group: 'arrows', yield: ARROWS_PER_FLETCH, xp: Math.round((logXp(logs) + barXp(bar)) * 0.6), inputs: { [logs]: 1, feathers: 1, [bar]: 1 } });
+}
+SKILLS.fletching.recipes.push({ item: 'quiver', level: 1, kind: 'tool', xp: 20, inputs: { rabbit_hide: 2 } });
+SKILLS.fletching.recipes.sort((a, b) => a.level - b.level);
 
 // ---- Farming ---------------------------------------------------------------------
 // Everyone starts with a free plot; buy more and seeds. "!plant carrot" puts one seed in each empty plot
@@ -809,6 +882,9 @@ const SHOP = [
       .map(([i, q]) => `${q} ${ITEMS[i].name}`)
       .join(' + ')}.`,
   })),
+  // Added after the seeds and potions so saved price edits (stored by row) stay on the right items.
+  { item: 'oak_shortbow', cost: 500, description: 'A ready-made bow for Archery: !shoot monsters (needs a quiver and arrows). Or !fletch your own from 2 Oak Logs.' },
+  { item: 'quiver', cost: 250, description: 'Holds up to 500 arrows (they don\'t take backpack slots). Needed to !fletch arrows and !shoot. Or !fletch one from 2 Rabbit Hides.' },
 ];
 
 // Backpack: how many items (total, across all stacks) a player can carry. Upgrade with
@@ -844,6 +920,11 @@ for (const id of SKILL_IDS) if (SKILLS[id].type !== 'farm') COMMAND_TO_SKILL[SKI
 const COMBAT_SKILLS = SKILL_IDS.filter((id) => SKILLS[id].type === 'combat');
 // "sword" -> "swords"
 const WEAPON_SKILL = Object.fromEntries(COMBAT_SKILLS.map((id) => [SKILLS[id].weaponType, id]));
+// "Swords" / "Archery": the skill a weapon (or arrow) trains, for labels.
+for (const item of Object.values(ITEMS)) {
+  const type = item.weaponType || item.ammo;
+  if (type && WEAPON_SKILL[type]) item.wieldSkill = SKILLS[WEAPON_SKILL[type]].name;
+}
 
 // Look up an item by a loose name the player typed: "iron", "iron ore", "oak", "steel bar"...
 function findItem(query, candidates) {

@@ -24,6 +24,7 @@ const COMMANDS = [
   'drink',
   'heal',
   'monsters',
+  'targets',
   'casino',
   'slots',
   'roulette',

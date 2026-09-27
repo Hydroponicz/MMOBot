@@ -18,6 +18,7 @@ const {
   maxManaFor,
   findItem,
 } = require('./skills');
+const weaponWords = { archery: /^(bows?|archery|shoot|arrows?|ranged)$/, swords: /^(swords?|fight|melee)$/ };
 const { levelForXp, progress, characterProgress } = require('./xp');
 const casino = require('./casino');
 
@@ -57,6 +58,8 @@ const INFO_COMMANDS = {
   drink: ['drink', 'drink'], quaff: ['drink', 'drink'], potion: ['drink', 'drink'],
   heal: ['healSpell', 'heal'],
   monsters: ['monstersInfo', 'monsters'], mobs: ['monstersInfo', 'monsters'],
+  targets: ['targets', 'targets'], target: ['targets', 'targets'],
+  quiver: ['quiverInfo', 'targets'], arrows: ['quiverInfo', 'targets'],
   scout: ['scout', 'monsters'], check: ['scout', 'monsters'], con: ['scout', 'monsters'],
   commands: ['help', 'commands'], help: ['help', 'commands'], rpg: ['help', 'commands'], mmo: ['help', 'commands'],
 };
@@ -93,6 +96,12 @@ for (const id of SKILL_IDS) {
     // Crops use their full name ("!plant lemon balm" vs "!plant lemon"); ores etc. the first word ("!mine copper").
     const word = SKILLS[id].type === 'farm' ? ITEMS[r.item].name.toLowerCase() : ITEMS[r.item].name.split(' ')[0].toLowerCase();
     GATHER_HINT[r.item] ??= `!${SKILLS[id].command} ${word}`;
+  }
+}
+// Monster loot: feathers -> "!fight chicken".
+for (const id of SKILL_IDS) {
+  for (const m of SKILLS[id].type === 'combat' ? SKILLS[id].monsters : []) {
+    for (const item of m.loot) GATHER_HINT[item] ??= `!${SKILLS[id].command} ${m.name.toLowerCase()}`;
   }
 }
 // Name of anything in a skill's unlock list (items, recipes or monsters).
@@ -180,7 +189,7 @@ class GameEngine extends EventEmitter {
     const result = this.repo.transaction(() => {
       const r =
         skill.type === 'combat'
-          ? this.fight(user, args)
+          ? this.fight(user, args, skill.command === 'fight' ? null : skillId) // !fight picks, !shoot means archery
           : skill.type === 'process'
             ? this.process(user, skillId, args)
             : this.gather(user, skillId, args);
@@ -290,15 +299,24 @@ class GameEngine extends EventEmitter {
       const lacking = Object.entries(r.inputs).filter(([i, q]) => (inv[i] || 0) < q);
       const list = lacking.map(([i, q]) => `${q - (inv[i] || 0)} ${ITEMS[i].name}`).join(' + ');
       const hints = [...new Set(lacking.map(([i]) => GATHER_HINT[i]).filter(Boolean))].join(' / ');
-      return `a ${ITEMS[r.item].name} (${r.kind}) needs ${needs(r)}. You're missing ${list}${hints ? ` — try ${hints}` : ''}`;
+      return `${r.yield ? `${r.yield} ${ITEMS[r.item].name}` : `a ${ITEMS[r.item].name}`} (${r.kind}) needs ${needs(r)}. You're missing ${list}${hints ? ` — try ${hints}` : ''}`;
     };
 
     let recipe;
+    // "!fletch arrows" / "!fletch bow": the best of that kind you can make right now.
+    const q = args.join(' ').toLowerCase().trim();
+    const group = skill.recipes.filter((r) => r.group && (q === r.group || q === `${r.group}s` || `${q}s` === r.group));
+    if (group.length) {
+      const unlocked = group.filter((r) => r.level <= level);
+      if (!unlocked.length) return { consumed: false, reply: `you need ${skill.icon} ${skill.name} level ${group[0].level} for ${ITEMS[group[0].item].name}.` };
+      args = [ITEMS[([...unlocked].reverse().find(hasInputs) || unlocked[0]).item].name];
+    }
     if (args.length) {
       const id = findItem(args.join(' '), skill.recipes.map((r) => r.item));
       if (!id) {
         if (skill.pickBest === false) {
-          return { consumed: false, reply: `unknown item. Try e.g. !${skill.command} bronze sword (sword, helmet, shield, platelegs, platebody) or !${skill.command} skinning knife` };
+          const eg = skill.example || 'bronze sword (sword, helmet, shield, platelegs, platebody) or !smith skinning knife';
+          return { consumed: false, reply: `unknown item. Try e.g. !${skill.command} ${eg}` };
         }
         const opts = skill.recipes.filter((r) => r.level <= level).map((r) => ITEMS[r.item].name.split(' ')[0].toLowerCase());
         return { consumed: false, reply: `unknown recipe. You can ${skill.command}: ${opts.join(', ')} (e.g. !${skill.command} ${opts[opts.length - 1]})` };
@@ -327,17 +345,23 @@ class GameEngine extends EventEmitter {
       }
     }
 
+    // Arrows go in your quiver: you need one, with room.
+    if (ITEMS[recipe.item].ammo) {
+      const q = this.quiver(user.id);
+      if (!q.capacity) return { consumed: false, reply: `you need a 🧺 Quiver to hold arrows! !buy quiver (${fmt(this.shopItems().find((x) => x.item === 'quiver')?.cost ?? 250)} pts) or !fletch quiver (2 Rabbit Hide).` };
+      if (q.arrows + (recipe.yield || 1) > q.capacity) return { consumed: false, reply: `🧺 your quiver is full (${fmt(q.arrows)}/${fmt(q.capacity)} arrows). !shoot some first.` };
+    }
     for (const [item, qty] of Object.entries(recipe.inputs)) this.repo.removeItem(user.id, item, qty);
-    return this.reward(user, skillId, recipe.item, recipe.xp, { rare: false });
+    return this.reward(user, skillId, recipe.item, recipe.xp, { rare: false, qty: recipe.yield || 1 });
   }
 
-  reward(user, skillId, item, baseXp, { rare }) {
+  reward(user, skillId, item, baseXp, { rare, qty: baseQty = 1 }) {
     const skill = SKILLS[skillId];
     const tool = this.currentTool(user.id, skillId);
     const xpGain = this.xpFor(baseXp, tool);
     // Better furnaces sometimes make two (only if there's room in the backpack for the extra one).
-    let qty = 1;
-    if (tool?.doubleChance > 0 && this.rng() < tool.doubleChance) {
+    let qty = baseQty;
+    if (baseQty === 1 && tool?.doubleChance > 0 && this.rng() < tool.doubleChance) {
       const bagNow = this.backpack(user.id);
       if (bagNow.used + 1 < bagNow.capacity) qty = 2;
     }
@@ -345,7 +369,7 @@ class GameEngine extends EventEmitter {
     const text = `${skill.verb} ${rare ? 'a RARE ' : ''}${ITEMS[item].name}`;
     this.emitActivity(user, { kind: rare ? 'rare' : 'action', skill: skillId, item, xp: xpGain, text });
     const gained = this.grantXp(user, skillId, xpGain);
-    const reply = `${skill.icon} you ${skill.verb} ${rare ? 'a RARE ' : ''}${itemLabel(item, qty)}!${qty > 1 ? ' (double!)' : ''} ${gained.text}`;
+    const reply = `${skill.icon} you ${skill.verb} ${rare ? 'a RARE ' : ''}${itemLabel(item, qty)}!${qty > baseQty ? ' (double!)' : ''} ${gained.text}`;
     return { consumed: true, reply: reply + this.fullBagNote(user.id) };
   }
 
@@ -407,10 +431,13 @@ class GameEngine extends EventEmitter {
 
   // Look at every weapon the player owns (worn or in the backpack), take the combat skill they're
   // best at, and pick their strongest weapon for it that they're allowed to use.
-  chooseWeapon(userId) {
+  chooseWeapon(userId, only = null) {
     const xp = this.repo.getSkills(userId);
     const worn = this.repo.getWorn(userId);
-    const owned = [...new Set([worn.weapon, ...Object.keys(this.repo.getInventory(userId))])].filter((id) => ITEMS[id]?.weaponType);
+    const inv = this.repo.getInventory(userId);
+    const owned = [...new Set([worn.weapon, ...Object.keys(inv)])].filter(
+      (id) => ITEMS[id]?.weaponType && (!only || WEAPON_SKILL[ITEMS[id].weaponType] === only)
+    );
     if (!owned.length) return { weapon: null, reason: 'none' };
     const bySkill = {};
     for (const id of owned) {
@@ -418,21 +445,76 @@ class GameEngine extends EventEmitter {
       if (skillId) (bySkill[skillId] ||= []).push(id);
     }
     const skills = Object.keys(bySkill).sort((a, b) => skillLevel(b, xp[b]) - skillLevel(a, xp[a]));
+    let noAmmo = false;
     for (const skillId of skills) {
       const level = skillLevel(skillId, xp[skillId]);
       const usable = bySkill[skillId].filter((id) => ITEMS[id].level <= level).sort((a, b) => ITEMS[b].attack - ITEMS[a].attack);
-      if (usable.length) return { weapon: usable[0], skillId, level, wasWorn: usable[0] === worn.weapon };
+      if (!usable.length) continue;
+      // Bows need a quiver with arrows you can use; the best ones go first.
+      let arrow = null;
+      if (SKILLS[skillId].ammo) {
+        const type = SKILLS[skillId].weaponType;
+        arrow = inv.quiver
+          ? Object.keys(inv).filter((id) => ITEMS[id]?.ammo === type && inv[id] > 0 && ITEMS[id].level <= level).sort((a, b) => ITEMS[b].attack - ITEMS[a].attack)[0]
+          : null;
+        if (!arrow) {
+          noAmmo = true;
+          continue;
+        }
+      }
+      return { weapon: usable[0], skillId, level, arrow, wasWorn: usable[0] === worn.weapon };
     }
+    if (noAmmo) return { weapon: null, reason: 'ammo' };
     const easiest = owned.sort((a, b) => ITEMS[a].level - ITEMS[b].level)[0];
     return { weapon: null, reason: 'level', item: easiest };
   }
 
-  fight(user, args) {
+  // Attack and defence for a fight with this weapon pick (bow attack includes the arrows).
+  fightStats(userId, pick) {
+    return {
+      attack: ITEMS[pick.weapon].attack + (pick.arrow ? ITEMS[pick.arrow].attack : 0),
+      defence: this.combatStats(userId).defence,
+    };
+  }
+
+  // Your quiver: how many arrows it holds and has.
+  quiver(userId) {
+    const inv = this.repo.getInventory(userId);
+    const arrows = Object.entries(inv).reduce((sum, [id, q]) => sum + (ITEMS[id]?.ammo ? q : 0), 0);
+    return { capacity: inv.quiver ? ITEMS.quiver.quiverCapacity : 0, arrows };
+  }
+
+  // !quiver / !arrows
+  quiverInfo(user) {
+    const inv = this.repo.getInventory(user.id);
+    const q = this.quiver(user.id);
+    if (!q.capacity) return `you don't have a 🧺 Quiver. !buy quiver or !fletch quiver (2 Rabbit Hide). It holds ${fmt(ITEMS.quiver.quiverCapacity)} arrows.`;
+    const list = Object.keys(inv).filter((id) => ITEMS[id]?.ammo && inv[id] > 0).map((id) => itemLabel(id, inv[id]));
+    return `🧺 Quiver ${fmt(q.arrows)}/${fmt(q.capacity)} arrows${list.length ? `: ${list.join(', ')}` : '. Empty! !fletch arrows (1 Oak Logs + 1 Feathers + 1 Iron Ingot makes 10)'}.`;
+  }
+
+  noArrowsMessage(user) {
+    const inv = this.repo.getInventory(user.id);
+    if (!inv.quiver) return `🏹 you need a 🧺 Quiver for arrows! !buy quiver (${fmt(this.shopItems().find((x) => x.item === 'quiver')?.cost ?? 250)} pts) or !fletch quiver (2 Rabbit Hide), then !fletch arrows.`;
+    return `🏹 your quiver is empty! !fletch arrows (1 Oak Logs + 1 🪶 Feathers from chickens + 1 Iron Ingot makes 10).`;
+  }
+
+  // What the bot says when someone tries to !shoot without a bow.
+  howToGetBow(user) {
+    const points = this.repo.getUser(user.id).points;
+    const bow = this.shopItems().find((x) => x.item === 'oak_shortbow');
+    const buy = bow ? `🛒 !buy bow (${fmt(bow.cost)} pts, you have ${fmt(points)}) or ` : '';
+    return `🏹 you need a bow! ${buy}!fletch oak shortbow (2 Oak Logs). Plus a 🧺 quiver and arrows: !fletch arrows.`;
+  }
+
+  fight(user, args, only = null) {
     const now = this.now();
     const vit = this.vitals(user.id, now);
     if (vit.ko) return { consumed: false, reply: this.knockedOutMessage(user.id, vit, now) };
-    const pick = this.chooseWeapon(user.id);
+    const pick = this.chooseWeapon(user.id, only);
     if (!pick.weapon) {
+      if (pick.reason === 'ammo') return { consumed: false, reply: this.noArrowsMessage(user) };
+      if (only === 'archery' && pick.reason === 'none') return { consumed: false, reply: this.howToGetBow(user) };
       if (pick.reason === 'level') {
         const it = ITEMS[pick.item];
         const sk = SKILLS[WEAPON_SKILL[it.weaponType]];
@@ -446,8 +528,8 @@ class GameEngine extends EventEmitter {
     }
 
     const skill = SKILLS[pick.skillId];
-    // Rate fights with the weapon you're about to use.
-    const statsFor = { attack: ITEMS[pick.weapon].attack, defence: this.combatStats(user.id).defence };
+    // Rate fights with the weapon (and arrows) you're about to use.
+    const statsFor = this.fightStats(user.id, pick);
     const odds = (m) => this.assessFight(pick.level, statsFor, m, vit.maxHp);
     let monster;
     if (args.length) {
@@ -459,7 +541,7 @@ class GameEngine extends EventEmitter {
       if ((!o.canWin || o.taken >= vit.hp) && !(warned && warned.monster === monster.id && now - warned.at < 120_000)) {
         this.fightWarned.set(user.id, { monster: monster.id, at: now });
         const why = !o.canWin ? `you can't beat it yet (it has ${fmt(monster.hp)} HP, you hit for ~${fmt(Math.round(o.hit))})` : `it would deal ~${fmt(Math.round(o.taken))} damage and you have ${fmt(Math.floor(vit.hp))} HP`;
-        return { consumed: false, reply: `${o.rating.icon} a ${monster.icon} ${monster.name} (level ${monster.level}) will probably knock you out: ${why}. Type !fight ${monster.name.toLowerCase()} again within 2 min to fight anyway.` };
+        return { consumed: false, reply: `${o.rating.icon} a ${monster.icon} ${monster.name} (level ${monster.level}) will probably knock you out: ${why}. Type !${skill.command} ${monster.name.toLowerCase()} again within 2 min to fight anyway.` };
       }
     } else {
       // The best XP you can get safely: the strongest "good match" your current HP can handle.
@@ -478,8 +560,15 @@ class GameEngine extends EventEmitter {
       swapped = ` (equipped your ${ITEMS[pick.weapon].name})`;
     }
 
-    const stats = this.combatStats(user.id);
+    const stats = this.fightStats(user.id, pick);
     const weapon = ITEMS[pick.weapon];
+    // Each fight uses one arrow, win or lose.
+    let ammoNote = '';
+    if (pick.arrow) {
+      this.repo.removeItem(user.id, pick.arrow, 1);
+      const left = this.repo.getInventory(user.id)[pick.arrow] || 0;
+      ammoNote = left <= 10 ? ` 🎯 ${left ? `${left} ${ITEMS[pick.arrow].name} left` : `that was your last ${ITEMS[pick.arrow].name.replace(/s$/, '')}`}!` : '';
+    }
     const f = this.simulateFight(pick.level, stats, monster, vit.hp);
     const hpLeft = Math.max(0, vit.hp - f.taken);
     const tag = `${monster.icon} ${monster.name}${monster.level > pick.level ? ` (level ${monster.level})` : ''}`;
@@ -492,7 +581,7 @@ class GameEngine extends EventEmitter {
       const potion = this.shopItems().find((x) => x.item === 'minor_health_potion');
       return {
         consumed: true,
-        reply: `💀 the ${tag} knocked you out!${swapped} You hit it for ${fmt(f.dealt)} of its ${fmt(monster.hp)} HP. ${gained.text} Back at full HP in ${this.cfg.hpRegenHours}h, or !drink a health potion${potion ? ` (!buy minor health potion, ${fmt(potion.cost)} pts)` : ''}.`,
+        reply: `💀 the ${tag} knocked you out!${swapped} You hit it for ${fmt(f.dealt)} of its ${fmt(monster.hp)} HP. ${gained.text} Back at full HP in ${this.cfg.hpRegenHours}h, or !drink a health potion${potion ? ` (!buy minor health potion, ${fmt(potion.cost)} pts)` : ''}.${ammoNote}`,
       };
     }
     this.repo.setVitals(user.id, { hp: hpLeft, mana: vit.mana, koUntil: 0 }, now);
@@ -500,7 +589,7 @@ class GameEngine extends EventEmitter {
     const hpText = () => `❤️ ${fmt(Math.ceil(hpLeft))}/${fmt(this.vitals(user.id, now).maxHp)} HP`;
     if (f.outcome === 'fled') {
       const gained = this.grantXp(user, pick.skillId, this.xpFor(monster.xp * 0.25));
-      return { consumed: true, reply: `${monster.icon} you couldn't beat the ${tag} and backed off.${swapped} ${gained.text} | ${hpText()}` };
+      return { consumed: true, reply: `${monster.icon} you couldn't beat the ${tag} and backed off.${swapped} ${gained.text} | ${hpText()}${ammoNote}` };
     }
 
     let loot;
@@ -525,11 +614,13 @@ class GameEngine extends EventEmitter {
     let easy = '';
     if (rating.id === 'easy') {
       const better = this.bestMonster(skill, odds, vit.maxHp);
-      easy = better && better.xp > monster.xp ? ` ⚪ Too easy for you, try !fight ${better.name.toLowerCase()} for ${fmt(this.xpFor(better.xp))} XP.` : ' ⚪ Too easy for you.';
+      easy = better && better.xp > monster.xp
+        ? ` ⚪ Too easy for you, try !${skill.command} ${better.name.toLowerCase()} for ${fmt(this.xpFor(better.xp))} XP. !targets shows your best fights.`
+        : ' ⚪ Too easy for you. !targets shows your best fights.';
     }
     return {
       consumed: true,
-      reply: `${weapon.icon} you defeated a ${tag}${swapped} and looted ${rare ? 'a RARE ' : ''}${itemLabel(loot)}! ${gained.text} | ${hpText()}${f.taken >= 0.5 ? ` (-${fmt(Math.round(f.taken))})` : ''}${low}${easy}${this.fullBagNote(user.id)}`,
+      reply: `${weapon.icon} you defeated a ${tag}${swapped} and looted ${rare ? 'a RARE ' : ''}${itemLabel(loot)}! ${gained.text} | ${hpText()}${f.taken >= 0.5 ? ` (-${fmt(Math.round(f.taken))})` : ''}${low}${easy}${ammoNote}${this.fullBagNote(user.id)}`,
     };
   }
 
@@ -588,7 +679,7 @@ class GameEngine extends EventEmitter {
   // "Monsters for you: ⚪ Goblin 10 · 🟢 Wolf 20 · 🟠 Bandit 30 · ☠️ Skeleton 40"
   monsterList(user, pick, vit) {
     const skill = SKILLS[pick.skillId];
-    const stats = { attack: ITEMS[pick.weapon].attack, defence: this.combatStats(user.id).defence };
+    const stats = this.fightStats(user.id, pick);
     const rated = skill.monsters.map((m) => ({ m, r: this.assessFight(pick.level, stats, m, vit.maxHp).rating }));
     const i = Math.max(0, rated.findIndex((x) => x.r.id !== 'easy' && x.r.id !== 'fair') - 1);
     const shown = rated.slice(Math.max(0, i - 2), i + 4);
@@ -599,20 +690,48 @@ class GameEngine extends EventEmitter {
   monstersInfo(user) {
     const vit = this.vitals(user.id);
     const pick = this.chooseWeapon(user.id);
-    if (!pick.weapon) return this.howToGetSword(user);
+    if (!pick.weapon) return pick.reason === 'ammo' ? this.noArrowsMessage(user) : this.howToGetSword(user);
     return this.monsterList(user, pick, vit);
+  }
+
+  // !targets [bow|sword]: the monsters that suit you best right now, from your level, weapon (and
+  // arrows), armor and HP. Good matches first, by XP, plus one stretch goal.
+  targets(user, args) {
+    const only = Object.keys(weaponWords).find((id) => weaponWords[id].test(String(args[0] || '').toLowerCase())) || null;
+    const now = this.now();
+    const vit = this.vitals(user.id, now);
+    if (vit.ko) return this.knockedOutMessage(user.id, vit, now);
+    const pick = this.chooseWeapon(user.id, only);
+    if (!pick.weapon) {
+      if (pick.reason === 'ammo') return this.noArrowsMessage(user);
+      return only === 'archery' ? this.howToGetBow(user) : this.howToGetSword(user);
+    }
+    const skill = SKILLS[pick.skillId];
+    const stats = this.fightStats(user.id, pick);
+    const rated = skill.monsters.map((m) => ({ m, o: this.assessFight(pick.level, stats, m, vit.maxHp) }));
+    let best = rated.filter((x) => x.o.canWin && x.o.rating.id === 'fair');
+    if (!best.length) best = rated.filter((x) => x.o.rating.id === 'easy');
+    best = best.sort((a, b) => b.m.xp - a.m.xp).slice(0, 4);
+    const stretch = rated.find((x) => x.o.rating.id === 'tough');
+    const show = (x) => `${x.o.rating.icon} ${x.m.icon} ${x.m.name} ${x.m.level} (${fmt(this.xpFor(x.m.xp))} XP, ~${Math.max(1, Math.round(x.o.cost * 100))}% HP)`;
+    const gear = `${skill.name} ${pick.level}, ${ITEMS[pick.weapon].name}${pick.arrow ? ` + ${ITEMS[pick.arrow].name}` : ''}, +${stats.defence} def`;
+    const safe = best.find((x) => x.o.taken < vit.hp * 0.8);
+    // Low HP holding you back from your best fight? Say so.
+    const hpNote = safe === best[0] ? '' : ` ⚠️ You're at ${fmt(Math.floor(vit.hp))}/${fmt(vit.maxHp)} HP: !drink a potion or !heal ${safe ? 'for the tougher ones' : 'first'}.`;
+    const go = safe || best[0];
+    return `🎯 Best fights for you (${gear}): ${best.map(show).join(' · ')}${stretch ? ` | Stretch: ${show(stretch)}` : ''}.${hpNote} Try !${skill.command} ${go.m.name.toLowerCase()}`;
   }
 
   // !scout <monster>: how a fight would go, without fighting.
   scout(user, args) {
     const vit = this.vitals(user.id);
     const pick = this.chooseWeapon(user.id);
-    if (!pick.weapon) return this.howToGetSword(user);
+    if (!pick.weapon) return pick.reason === 'ammo' ? this.noArrowsMessage(user) : this.howToGetSword(user);
     const skill = SKILLS[pick.skillId];
     if (!args.length) return this.monsterList(user, pick, vit);
     const m = this.findMonster(skill, args);
     if (!m) return `unknown monster. ${this.monsterList(user, pick, vit)}`;
-    const stats = { attack: ITEMS[pick.weapon].attack, defence: this.combatStats(user.id).defence };
+    const stats = this.fightStats(user.id, pick);
     const o = this.assessFight(pick.level, stats, m, vit.maxHp);
     const verdict = !o.canWin
       ? `you can't beat it yet, you'd need ~${o.rounds} rounds`
@@ -842,8 +961,12 @@ class GameEngine extends EventEmitter {
       const tip =
         found.item === 'smithing_hammer'
           ? ' Now try !smith bronze sword.'
-          : found.weaponType
+          : found.weaponType === 'bow'
+            ? ` Now get a quiver and arrows, then !shoot.`
+            : found.weaponType
             ? ' Now try !fight.'
+            : found.item === 'quiver'
+              ? ' Now !fletch arrows.'
             : found.item === 'skinning_knife'
               ? ' Now try !skin.'
               : found.seedFor
@@ -1044,8 +1167,8 @@ class GameEngine extends EventEmitter {
   backpack(userId) {
     const tiers = this.backpackTiers();
     const tier = Math.min(this.repo.getEquipment(userId).backpack || 0, tiers.length - 1);
-    // Seeds live in a seed pouch and don't take backpack slots.
-    const used = Object.entries(this.repo.getInventory(userId)).reduce((s, [id, q]) => s + (ITEMS[id] && !ITEMS[id].seedFor ? q : 0), 0);
+    // Seeds live in a seed pouch and arrows in the quiver: neither takes backpack slots.
+    const used = Object.entries(this.repo.getInventory(userId)).reduce((s, [id, q]) => s + (ITEMS[id] && !ITEMS[id].seedFor && !ITEMS[id].ammo ? q : 0), 0);
     const next = tiers[tier + 1];
     return {
       level: tier + 1,
@@ -1159,7 +1282,7 @@ class GameEngine extends EventEmitter {
     const on = (list) => list.filter((c) => !off.includes(c)).map((c) => `${p}${c}`).join(' ');
     const skills = on(SKILL_IDS.flatMap((id) => (SKILLS[id].type === 'farm' ? ['plant', 'harvest'] : [SKILLS[id].command])));
     const tools = Object.keys(TOOL_TO_SKILL).join('/');
-    return `Skills: ${skills} (e.g. ${p}mine iron, ${p}smith bronze sword) | Gear: ${p}gear ${p}equip ${p}equipped ${p}shop ${p}buy, ${p}upgrade ${tools}/backpack | Combat: ${on(['hp', 'drink', 'heal', 'monsters'])}${off.includes('monsters') ? '' : ` ${p}scout`} | Info: ${on(['stats', 'inv', 'sell', 'points', 'top'])}${this.cfg.casinoEnabled === false ? '' : ` | Casino: ${p}casino`} | ${this.siteUrl}`;
+    return `Skills: ${skills} (e.g. ${p}mine iron, ${p}smith bronze sword) | Gear: ${p}gear ${p}equip ${p}equipped ${p}shop ${p}buy, ${p}upgrade ${tools}/backpack | Combat: ${on(['targets', 'hp', 'drink', 'heal', 'monsters'])}${off.includes('monsters') ? '' : ` ${p}scout`} | Info: ${on(['stats', 'inv', 'sell', 'points', 'top'])}${this.cfg.casinoEnabled === false ? '' : ` | Casino: ${p}casino`} | ${this.siteUrl}`;
   }
 
   // ---- Tools & upgrades (!upgrade rod, !upgrade backpack) --------------------
@@ -1596,12 +1719,17 @@ class GameEngine extends EventEmitter {
           maxMana: vit.maxMana,
           knockedOutUntil: vit.ko ? vit.koUntil : null,
           hpRegenHours: this.cfg.hpRegenHours,
+          // What !fight would use, so the ratings below say which weapon they're for.
+          ratedWith: (() => {
+            const pick = this.chooseWeapon(userId);
+            return pick.weapon ? `${SKILLS[pick.skillId].name} ${pick.level} · ${ITEMS[pick.weapon].name}${pick.arrow ? ` + ${ITEMS[pick.arrow].name}` : ''}` : null;
+          })(),
           // Every monster rated for this player (with their best usable weapon, or bare hands).
           monsters: (() => {
             const pick = this.chooseWeapon(userId);
             const skillId = pick.skillId || COMBAT_SKILLS[0];
             const level = pick.level || this.combatLevel(userId);
-            const stats = { attack: pick.weapon ? ITEMS[pick.weapon].attack : 0, defence: st.defence };
+            const stats = pick.weapon ? this.fightStats(userId, pick) : { attack: 0, defence: st.defence };
             return SKILLS[skillId].monsters.map((m) => {
               const o = this.assessFight(level, stats, m, vit.maxHp);
               return { id: m.id, name: m.name, icon: m.icon, level: m.level, hp: m.hp, xp: this.xpFor(m.xp), rating: o.rating.id, label: o.rating.label, ratingIcon: o.rating.icon, cost: o.canWin ? Math.round(o.cost * 100) : null };
@@ -1644,7 +1772,7 @@ class GameEngine extends EventEmitter {
             grow: r.grow ? Math.max(1, Math.round(r.grow * (this.cfg.growMultiplier ?? 1))) : undefined,
             seedCost: r.seed ? this.seedPrice(r) : undefined,
             loot: r.loot ? r.loot.map((i) => ({ item: ITEMS[i].name, icon: ITEMS[i].icon, value: this.sellValue(i) })) : undefined,
-            stats: r.item && ITEMS[r.item].gear ? { slot: ITEMS[r.item].slot, attack: ITEMS[r.item].attack, defence: ITEMS[r.item].defence, wear: ITEMS[r.item].level } : undefined,
+            stats: r.item && (ITEMS[r.item].gear || ITEMS[r.item].ammo) ? { slot: ITEMS[r.item].slot, attack: ITEMS[r.item].attack, defence: ITEMS[r.item].defence, wear: ITEMS[r.item].level, skill: ITEMS[r.item].wieldSkill, ammo: !!ITEMS[r.item].ammo } : undefined,
             inputs: r.inputs
               ? Object.entries(r.inputs).map(([i, q]) => ({ qty: q, item: ITEMS[i].name, icon: ITEMS[i].icon }))
               : undefined,

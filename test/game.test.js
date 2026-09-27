@@ -128,7 +128,7 @@ test('!stats, !inv, !top, !points and !commands respond', () => {
   assert.match(say('!top'), /1\. Alice/);
   assert.match(say('!top fishing'), /Fishing: 1\. Alice Lv2/);
   assert.match(say('!points'), /points/);
-  assert.match(say('!commands'), /!fish !mine !chop !dig !skin !plant !harvest !smelt !smith !brew !fight/);
+  assert.match(say('!commands'), /!fish !mine !chop !dig !skin !plant !harvest !smelt !smith !fletch !brew !fight !shoot/);
   assert.equal(say('!unknowncommand'), null);
 });
 
@@ -136,7 +136,7 @@ test('profile exposes everything the website needs', () => {
   const { repo, engine, say } = setup();
   say('!fish');
   const p = engine.profile(repo.getUserByName('alice').id);
-  assert.equal(p.skills.length, 10);
+  assert.equal(p.skills.length, 12);
   assert.equal(p.skills[0].id, 'fishing');
   assert.equal(p.skills[0].level, 2);
   assert.equal(p.skills[0].rank, 1);
@@ -408,7 +408,7 @@ test('rod prices saved before the tool rework still apply', () => {
 test('the shop sells a smithing hammer (500) and a sword (1,000) via !buy', () => {
   const { repo, say } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
-  assert.match(say('!shop'), /🔨 Smithing Hammer 500, 🗡️ Bronze Sword 1,000, 🔪 Skinning Knife 500, 🟫 Farm Plot 750 pts, potions from 150 \(!buy minor health potion\), plus seeds/);
+  assert.match(say('!shop'), /🔨 Smithing Hammer 500, 🗡️ Bronze Sword 1,000, 🔪 Skinning Knife 500, 🟫 Farm Plot 750, 🏹 Oak Shortbow 500, 🧺 Quiver 250 pts, potions from 150 \(!buy minor health potion\), plus seeds/);
   assert.match(say('!buy hammer'), /Smithing Hammer costs 500 pts, you have 5/);
   repo.addPoints(u.id, 2000);
   assert.match(say('!buy hammer'), /bought 🔨 Smithing Hammer for 500 pts! Now try !smith bronze sword/);
@@ -565,7 +565,7 @@ test('fights are rated for you: !scout, !monsters, too-easy tips and a best-matc
   assert.match(say('!scout'), /Monsters for you/);
 
   // Beating something far below you says so and points at a better fight.
-  assert.match(say('!fight chicken'), /you defeated a 🐔 Chicken.* ⚪ Too easy for you, try !fight orc for 105 XP\./);
+  assert.match(say('!fight chicken'), /you defeated a 🐔 Chicken.* ⚪ Too easy for you, try !fight orc for 105 XP\. !targets shows your best fights\./);
   tick();
   // A bare !fight picks the best safe match.
   assert.match(say('!fight'), /you defeated a 👹 Orc \(level 55\)/);
@@ -574,6 +574,64 @@ test('fights are rated for you: !scout, !monsters, too-easy tips and a best-matc
   repo.setVitals(u.id, { hp: 30, mana: 0, koUntil: 0 }, 1_000_000 + 62_000);
   assert.match(say('!fight troll'), /🔴 a 🧌 Troll \(level 70\) will probably knock you out: it would deal ~\d+ damage and you have 30 HP/);
   assert.match(say('!fight'), /you defeated a .*(Bandit|Wolf|Goblin|Skeleton)/, 'the default picks something your HP can take');
+});
+
+test('!targets recommends monsters from your level, gear and HP', () => {
+  const { repo, say } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!targets'), /you need a sword/);
+  repo.addXp(u.id, 'swords', xpForLevel(40));
+  repo.addItem(u.id, 'mithril_sword', 1);
+  for (const piece of ['helmet', 'shield', 'platelegs', 'platebody']) {
+    repo.addItem(u.id, `mithril_${piece}`, 1);
+    say(`!equip mithril ${piece}`);
+  }
+  assert.match(say('!targets'), /🎯 Best fights for you \(Swords 40, Mithril Sword, \+53 def\): 🟢 👹 Orc 55 \(105 XP, ~13% HP\) · 🟢 💀 Skeleton 40 \(75 XP, ~5% HP\) · 🟢 🥷 Bandit 30 \(55 XP, ~1% HP\) · 🟢 🐺 Wolf 20/);
+  assert.match(say('!targets'), /Try !fight orc$/);
+  repo.setVitals(u.id, { hp: 20, mana: 0, koUntil: 0 }, 1_000_000);
+  assert.match(say('!targets'), /⚠️ You're at 20\/450 HP: !drink a potion or !heal for the tougher ones\. Try !fight bandit$/);
+  repo.setVitals(u.id, { hp: 1, mana: 0, koUntil: 0 }, 1_000_000);
+  assert.match(say('!targets'), /⚠️ You're at 1\/450 HP: !drink a potion or !heal first\./);
+  assert.match(say('!targets bow'), /you need a bow! 🛒 !buy bow \(500 pts/);
+});
+
+test('fletching: arrows (oak + feather + iron ingot), bows and a quiver; archery with !shoot', () => {
+  const { repo, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!shoot'), /you need a bow! 🛒 !buy bow \(500 pts, you have 5\) or !fletch oak shortbow \(2 Oak Logs\)/);
+  assert.match(say('!fletch'), /nothing to fletch yet/);
+  assert.match(say('!fletch spear'), /unknown item. Try e.g. !fletch arrows, oak shortbow or quiver/);
+
+  // Arrows need a quiver.
+  repo.addItem(u.id, 'oak_logs', 3);
+  repo.addItem(u.id, 'feathers', 1);
+  repo.addItem(u.id, 'iron_bar', 1);
+  assert.match(say('!fletch arrows'), /you need a 🧺 Quiver to hold arrows! !buy quiver \(250 pts\) or !fletch quiver/);
+  repo.addPoints(u.id, 1000);
+  assert.match(say('!buy quiver'), /bought 🧺 Quiver for 250 pts! Now !fletch arrows/);
+  assert.match(say('!fletch arrows'), /🪶 you fletched 🎯 10x Iron Arrows! \+33 XP/);
+  tick();
+  assert.match(say('!fletch bow'), /🪶 you fletched 🏹 Oak Shortbow! \+40 XP/);
+  const bag = repo.getInventory(u.id);
+  assert.equal(bag.iron_arrows, 10);
+  assert.equal(bag.oak_logs, undefined);
+  assert.match(say('!inv'), /\(2\/10\)/, 'arrows sit in the quiver, not the backpack (quiver + bow)');
+  assert.match(say('!quiver'), /🧺 Quiver 10\/500 arrows: 🎯 10x Iron Arrows/);
+
+  // !shoot fights with the bow and uses an arrow; Archery gets the XP.
+  tick();
+  assert.match(say('!shoot chicken'), /🏹 you defeated a 🐔 Chicken \(equipped your Oak Shortbow\).*\+10 XP.*Archery level 2!.* 🎯 9 Iron Arrows left!/);
+  assert.equal(repo.getInventory(u.id).iron_arrows, 9);
+  assert.equal(repo.getSkills(u.id).archery, 10);
+  assert.equal(repo.getSkills(u.id).swords || 0, 0);
+
+  // Out of arrows: !shoot says so, and !fight falls back to a sword.
+  repo.removeItem(u.id, 'iron_arrows', 9);
+  tick();
+  assert.match(say('!shoot'), /your quiver is empty! !fletch arrows/);
+  repo.addItem(u.id, 'bronze_sword', 1);
+  assert.match(say('!fight chicken'), /🗡️ you defeated a 🐔 Chicken \(equipped your Bronze Sword\)/);
+  assert.match(say('!targets bow'), /your quiver is empty/);
 });
 
 test('!drink picks the right potion, !heal spends mana, potions can be bought and brewed', () => {

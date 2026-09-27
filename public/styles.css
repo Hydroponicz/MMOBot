@@ -24,6 +24,8 @@
   --farming: #84cc16;
   --swords: #f87171;
   --alchemy: #a78bfa;
+  --fletching: #eab308;
+  --archery: #2dd4bf;
 }
 
 * { box-sizing: border-box; }
@@ -446,3 +448,5 @@ tr.locked td { opacity: 0.55; }
 .mchip.r-tough { border-color: #f97316; }
 .mchip.r-hard { border-color: #dc2626; }
 .mchip.r-deadly { border-color: #7f1d1d; background: rgba(127, 29, 29, 0.25); }
+.kind-ammo { background: rgba(234, 179, 8, 0.15); color: var(--fletching); }
+.kind-weapon { background: rgba(248, 113, 113, 0.15); color: var(--swords); }
