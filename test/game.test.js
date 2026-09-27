@@ -144,3 +144,86 @@ test('profile exposes everything the website needs', () => {
   assert.equal(p.inventory[0].id, 'shrimp');
   assert.equal(p.character.level, 1);
 });
+
+test('everyone starts with the Basic Rod; !rod shows it', () => {
+  const { say } = setup();
+  assert.match(say('!rod'), /🎣 Basic Rod: 18% snap chance, \+0% XP, rare finds x1 \(tier 1\/10\)\. Next: Oak Rod at Fishing level 50/);
+});
+
+test('!upgrade rod checks the Fishing level, then upgrades one tier at a time', () => {
+  const { repo, engine, say } = setup();
+  assert.match(say('!upgrade'), /usage: !upgrade rod/);
+  assert.match(say('!upgrade pickaxe'), /can't upgrade "pickaxe"/);
+  assert.match(say('!upgrade rod'), /can be upgraded to 🌳 Oak Rod at Fishing level 50 \(you are 1\)/);
+
+  const u = repo.getUserByName('alice');
+  repo.addXp(u.id, 'fishing', xpForLevel(120));
+  assert.match(say('!upgrade rod'), /upgraded to 🌳 Oak Rod: 15% snap chance, \+10% XP, rare finds x1.1! Next: Willow Rod at level 100/);
+  assert.match(say('!upgrade rod'), /upgraded to 🌿 Willow Rod/);
+  assert.match(say('!upgrade rod'), /can be upgraded to 🍁 Maple Rod at Fishing level 150 \(you are 120\)/);
+  assert.equal(engine.toolTier(u.id, 'fishing'), 2);
+
+  const fishing = engine.profile(u.id).skills.find((s) => s.id === 'fishing');
+  assert.equal(fishing.maxLevel, 500);
+  assert.equal(fishing.tool.name, 'Willow Rod');
+  assert.equal(fishing.tool.canUpgrade, false);
+  assert.deepEqual(fishing.tool.next, { name: 'Maple Rod', icon: '🍁', level: 150 });
+});
+
+test('the best rod is the last upgrade', () => {
+  const { repo, say } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addXp(u.id, 'fishing', xpForLevel(500));
+  for (let i = 0; i < 9; i++) assert.match(say('!upgrade rod'), /upgraded to/);
+  assert.match(say('!rod'), /🔱 Poseidon's Rod.*tier 10\/10.*best rod/);
+  assert.match(say('!upgrade rod'), /already wield the best rod/);
+});
+
+test('Fishing goes to level 500; other skills stop at 99', () => {
+  const { repo, engine } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addXp(u.id, 'fishing', 10 ** 9);
+  repo.addXp(u.id, 'mining', 10 ** 9);
+  const p = engine.profile(u.id);
+  assert.equal(p.skills.find((s) => s.id === 'fishing').level, 500);
+  assert.equal(p.skills.find((s) => s.id === 'mining').level, 99);
+});
+
+test('the rod sets the snap chance and boosts fishing XP', () => {
+  // rolls: snap check, snap message; afterwards everything rolls 0.99 (no snap, no rare)
+  const { repo, say, tick } = setup({ rolls: [0.16, 0.5] });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!fish'), /better luck next time/, '0.16 < 18% Basic Rod snap chance');
+
+  repo.addXp(u.id, 'fishing', xpForLevel(50));
+  repo.setEquipment(u.id, 'rod', 1); // Oak Rod: 15% snap, +10% XP
+  tick();
+  const before = repo.getSkills(u.id).fishing;
+  assert.match(say('!fish sardine', 'Alice'), /\+20 XP/, '18 base XP * 1.1');
+  assert.equal(repo.getSkills(u.id).fishing - before, 20);
+});
+
+test('reaching a rod level announces the upgrade', () => {
+  const { repo, say } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addXp(u.id, 'fishing', xpForLevel(50) - 5);
+  assert.match(say('!fish'), /Fishing level 50!.*You can now !upgrade rod!/);
+});
+
+test('one skill alone cannot max character level; overall rank uses the same rule', () => {
+  const { repo, engine } = setup();
+  const { CHARACTER_XP_CAP_PER_SKILL, levelForXp } = require('../src/game/xp');
+  const fisher = repo.upsertUser({ kickUserId: '1', username: 'Fisher' });
+  const allRounder = repo.upsertUser({ kickUserId: '2', username: 'AllRounder' });
+  repo.addXp(fisher.id, 'fishing', xpForLevel(500));
+  for (const s of ['fishing', 'mining', 'woodcutting', 'digging', 'smelting']) repo.addXp(allRounder.id, s, xpForLevel(80));
+
+  const fisherChar = engine.profile(fisher.id).character.level;
+  assert.equal(fisherChar, levelForXp(CHARACTER_XP_CAP_PER_SKILL / 5, 120));
+  assert.ok(fisherChar < 80, `fishing-only character level ${fisherChar} should be below an all-80 player`);
+  assert.equal(engine.profile(allRounder.id).character.level, 80);
+
+  assert.deepEqual(repo.leaderboard('overall').map((r) => r.username), ['AllRounder', 'Fisher']);
+  assert.equal(repo.rank(allRounder.id, 'overall'), 1);
+  assert.equal(repo.rank(fisher.id, 'overall'), 2);
+});

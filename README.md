@@ -13,9 +13,10 @@ Viewers type commands in your Kick chat to train skills, collect loot and level 
   | `!dig` | 🏺 Digging | Old bones → Dragon relics |
   | `!smelt` | 🔥 Smelting | Turns mined ores into bars (e.g. copper + tin → bronze) |
 - Target a specific resource you've unlocked: `!mine iron`, `!chop oak`, `!smelt steel`.
-- **XP and levels** (1–99 per skill), plus an overall **character level** (up to 120) based on combined XP.
+- **XP and levels**: 1–99 per skill, and **Fishing goes to 500**. An overall **character level** (up to 120) is based on combined XP, with each skill counting up to its level-120 XP, so no single skill can max it alone.
+- **Fishing rods**: everyone starts with a Basic Rod. Every 50 Fishing levels, `!upgrade rod` moves you up one tier, through 10 rods up to Poseidon's Rod at level 450. Better rods snap less often, give bonus Fishing XP and improve rare-find odds. `!rod` shows your current rod.
 - **Points**: viewers earn points for chatting (rate-limited), for every action, and by selling loot (`!sell all`).
-- Extra commands: `!stats [name]`, `!inv`, `!sell <item> [amount|all]`, `!points`, `!top [skill|points]`, `!commands`.
+- Extra commands: `!rod`, `!upgrade rod`, `!stats [name]`, `!inv`, `!sell <item> [amount|all]`, `!points`, `!top [skill|points]`, `!commands`.
 - A per-viewer action cooldown (default 30s) that warns only once, so spamming doesn't flood chat.
 - **Website**: home page with live feed and top players, character sheets, per-skill leaderboards, a "How to play" guide generated from the game data, and an admin page.
 - **OBS overlay** at `/overlay.html` that pops up level-ups and rare drops on stream.
@@ -104,5 +105,7 @@ Kick can only deliver webhooks to a public URL. Run a tunnel (e.g. `cloudflared 
 
 - **Game content**: edit `src/game/skills.js` to change items, XP values, unlock levels, sell prices, rare-drop odds and fail messages. The website's guide page updates automatically.
 - **Pacing**: `ACTION_COOLDOWN_SECONDS`, `CHAT_POINTS`, `CHAT_POINTS_COOLDOWN_SECONDS` in `.env`. Change the level curve in `src/game/xp.js`.
+- **Rods**: edit the `tool.tiers` list under `fishing` in `skills.js` to change unlock levels, snap chance, XP bonus and rare odds. Any skill can get an upgradable tool the same way (e.g. a pickaxe for Mining with `id: 'pickaxe'`), and `!upgrade pickaxe` then works automatically.
+- **Level caps**: set `maxLevel` on a skill (Fishing uses `maxLevel: 500`; the default is 99).
 - **New skill**: add an entry to `SKILLS` in `skills.js` (with `command`, `resources` and `rares`), add its items to `ITEMS`, and add a color variable `--<skillid>` in `public/styles.css`. Existing players get the new skill automatically.
 - **Quiet mode**: `REPLY_IN_CHAT=false` stops the bot from replying in chat. Progress still tracks and shows on the site and overlay.

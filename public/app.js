@@ -39,7 +39,7 @@
   };
   const skillIcon = (id) => state.site?.skills.find((s) => s.id === id)?.icon || '✨';
   const feedIcon = (a) =>
-    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
+    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
 
   // ---- live activity (SSE) ----------------------------------------------
   const listeners = new Set();
@@ -107,10 +107,25 @@
         </div>
         <div class="bar" title="${s.percent}%"><span style="width:${s.percent}%"></span></div>
         <div class="skill-meta"><span>${fmt(s.xp)} xp</span><span>${toNext}</span></div>
+        ${s.tool ? toolRow(s.tool) : ''}
         <div class="skill-next">
           ${s.nextUnlock ? `Next unlock: ${s.nextUnlock.icon} <b>${esc(s.nextUnlock.item)}</b> at level ${s.nextUnlock.level}` : 'All tiers unlocked 🏅'}
           ${s.rank ? `<span style="float:right">Rank #${fmt(s.rank)}</span>` : ''}
         </div>
+      </div>`;
+  }
+
+  function toolRow(t) {
+    const status = !t.next
+      ? '<span class="tool-max">Max tier 🏆</span>'
+      : t.canUpgrade
+        ? `<span class="tool-ready">Type <code>!upgrade ${esc(t.id)}</code></span>`
+        : `<span class="muted">Next: ${t.next.icon} ${esc(t.next.name)} at ${t.next.level}</span>`;
+    return `
+      <div class="tool-row" title="${Math.round(t.snapChance * 1000) / 10}% snap chance · +${Math.round(t.xpBonus * 100)}% XP · rare finds x${t.rareBonus}">
+        <span class="tool-icon">${t.icon}</span>
+        <span class="tool-name"><b>${esc(t.name)}</b><small>Tier ${t.tier}/${t.tiers} · +${Math.round(t.xpBonus * 100)}% XP</small></span>
+        ${status}
       </div>`;
   }
 
@@ -308,6 +323,17 @@
             )
             .join('')}
         </tbody></table></div>`;
+    const toolTable = (t) => `
+      <h3 style="margin:22px 0 8px">Rods <code>${esc(t.command)}</code></h3>
+      <p class="muted" style="margin-top:0">Everyone starts with a Basic Rod. Every 50 Fishing levels you can upgrade to the next rod, one tier at a time.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Level</th><th>Rod</th><th class="num" title="Chance your line snaps">Snap</th><th class="num" title="Bonus Fishing XP">XP</th><th class="num" title="Rare-find odds multiplier">Rare</th></tr></thead>
+        <tbody>${t.tiers
+          .map(
+            (r) => `<tr><td><b>${r.level}</b></td><td>${r.icon} ${esc(r.name)}</td><td class="num">${Math.round(r.snapChance * 1000) / 10}%</td>
+            <td class="num">+${Math.round(r.xpBonus * 100)}%</td><td class="num">x${r.rareBonus}</td></tr>`
+          )
+          .join('')}</tbody></table></div>`;
     $app.innerHTML = `
       <h1>How to play</h1>
       <div class="grid grid-2">
@@ -319,6 +345,7 @@
             <li>Higher levels unlock better resources. Target one directly, e.g. <code>!mine iron</code> or <code>!chop oak</code>.</li>
             <li>Mine ores, then <code>!smelt</code> them into bars for Smelting XP and more valuable loot.</li>
             <li>Just chatting earns <b>${g.chatPoints} points</b> (once every ${g.chatCooldown}s). <code>!sell</code> loot for even more.</li>
+            <li>Fishing goes all the way to <b>level 500</b>. Every 50 levels, <code>!upgrade rod</code> for fewer snapped lines, bonus XP and better rare odds.</li>
             <li>Your <b>character level</b> grows with the combined XP of all skills — train them all!</li>
           </ol>
         </section>
@@ -326,6 +353,8 @@
           <h2>Chat commands</h2>
           <dl class="kv">
             ${g.skills.map((s) => `<dt><code>${esc(s.command)}</code></dt><dd>${s.icon} Train ${esc(s.name)}</dd>`).join('')}
+            <dt><code>!rod</code></dt><dd>Show your fishing rod</dd>
+            <dt><code>!upgrade rod</code></dt><dd>Upgrade your rod (every 50 Fishing levels)</dd>
             <dt><code>!stats [name]</code></dt><dd>Show levels and points</dd>
             <dt><code>!inv</code></dt><dd>Show your bag</dd>
             <dt><code>!sell all</code></dt><dd>Sell everything for points</dd>
@@ -339,7 +368,9 @@
       <h2 style="margin:28px 0 12px">Skills &amp; unlocks</h2>
       <div class="grid grid-guide">
         ${g.skills
-          .map((s) => `<section class="panel"><h2>${s.icon} ${esc(s.name)} <code>${esc(s.command)}</code></h2>${tierTable(s)}</section>`)
+          .map(
+            (s) => `<section class="panel"><h2>${s.icon} ${esc(s.name)} <code>${esc(s.command)}</code> <span class="muted" style="font-size:.8rem;font-weight:600">max level ${s.maxLevel}</span></h2>${tierTable(s)}${s.tool ? toolTable(s.tool) : ''}</section>`
+          )
           .join('')}
       </div>`;
   };

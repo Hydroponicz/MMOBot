@@ -15,6 +15,16 @@ const ITEMS = {
   lobster: { name: 'Lobster', icon: '🦞', value: 55 },
   swordfish: { name: 'Swordfish', icon: '🗡️', value: 85 },
   shark: { name: 'Shark', icon: '🦈', value: 140 },
+  anglerfish: { name: 'Anglerfish', icon: '🐡', value: 200 },
+  manta_ray: { name: 'Manta Ray', icon: '🌊', value: 280 },
+  giant_squid: { name: 'Giant Squid', icon: '🦑', value: 360 },
+  giant_octopus: { name: 'Giant Octopus', icon: '🐙', value: 460 },
+  abyssal_eel: { name: 'Abyssal Eel', icon: '🐍', value: 600 },
+  blue_marlin: { name: 'Blue Marlin', icon: '🐬', value: 750 },
+  coelacanth: { name: 'Coelacanth', icon: '🦕', value: 900 },
+  sea_serpent: { name: 'Sea Serpent', icon: '🐉', value: 1100 },
+  leviathan: { name: 'Leviathan', icon: '🐋', value: 1300 },
+  celestial_whale: { name: 'Celestial Whale', icon: '🐳', value: 1600 },
   message_bottle: { name: 'Message in a Bottle', icon: '🍾', value: 400, rare: true },
   golden_fish: { name: 'Golden Fish', icon: '🐠', value: 1500, rare: true },
 
@@ -73,6 +83,7 @@ const SKILLS = {
     command: 'fish',
     verb: 'caught',
     type: 'gather',
+    maxLevel: 500,
     failMessages: ['nothing is biting', 'the line snapped', 'a seagull stole your catch'],
     resources: [
       { item: 'shrimp', level: 1, xp: 10 },
@@ -84,7 +95,36 @@ const SKILLS = {
       { item: 'lobster', level: 50, xp: 100 },
       { item: 'swordfish', level: 65, xp: 135 },
       { item: 'shark', level: 80, xp: 180 },
+      { item: 'anglerfish', level: 100, xp: 280 },
+      { item: 'manta_ray', level: 130, xp: 390 },
+      { item: 'giant_squid', level: 160, xp: 500 },
+      { item: 'giant_octopus', level: 200, xp: 640 },
+      { item: 'abyssal_eel', level: 250, xp: 820 },
+      { item: 'blue_marlin', level: 300, xp: 1000 },
+      { item: 'coelacanth', level: 350, xp: 1200 },
+      { item: 'sea_serpent', level: 400, xp: 1420 },
+      { item: 'leviathan', level: 450, xp: 1650 },
+      { item: 'celestial_whale', level: 500, xp: 1900 },
     ],
+    // Upgradable tool: "!upgrade rod". Everyone starts with the first tier; a new tier unlocks every
+    // 50 Fishing levels. snapChance = chance an action fails, xpBonus = extra Fishing XP,
+    // rareBonus = multiplier on rare-find odds.
+    tool: {
+      id: 'rod',
+      name: 'Rod',
+      tiers: [
+        { name: 'Basic Rod', icon: '🎣', level: 1, snapChance: 0.18, xpBonus: 0, rareBonus: 1 },
+        { name: 'Oak Rod', icon: '🌳', level: 50, snapChance: 0.15, xpBonus: 0.1, rareBonus: 1.1 },
+        { name: 'Willow Rod', icon: '🌿', level: 100, snapChance: 0.13, xpBonus: 0.2, rareBonus: 1.2 },
+        { name: 'Maple Rod', icon: '🍁', level: 150, snapChance: 0.11, xpBonus: 0.3, rareBonus: 1.3 },
+        { name: 'Yew Rod', icon: '🌲', level: 200, snapChance: 0.09, xpBonus: 0.4, rareBonus: 1.4 },
+        { name: 'Steel Rod', icon: '⚙️', level: 250, snapChance: 0.075, xpBonus: 0.55, rareBonus: 1.5 },
+        { name: 'Mithril Rod', icon: '🔷', level: 300, snapChance: 0.06, xpBonus: 0.7, rareBonus: 1.65 },
+        { name: 'Adamant Rod', icon: '🟢', level: 350, snapChance: 0.045, xpBonus: 0.85, rareBonus: 1.8 },
+        { name: 'Runite Rod', icon: '🔹', level: 400, snapChance: 0.035, xpBonus: 1, rareBonus: 2 },
+        { name: "Poseidon's Rod", icon: '🔱', level: 450, snapChance: 0.02, xpBonus: 1.25, rareBonus: 2.5 },
+      ],
+    },
     rares: [
       { item: 'message_bottle', chance: 1 / 120, xp: 150 },
       { item: 'golden_fish', chance: 1 / 1000, xp: 750 },
@@ -180,6 +220,13 @@ const SKILLS = {
 
 const SKILL_IDS = Object.keys(SKILLS);
 
+// Skills cap at 99 unless they set their own maxLevel.
+const DEFAULT_MAX_LEVEL = 99;
+const maxLevel = (skillId) => SKILLS[skillId]?.maxLevel || DEFAULT_MAX_LEVEL;
+
+// "rod" -> "fishing"
+const TOOL_TO_SKILL = Object.fromEntries(SKILL_IDS.filter((id) => SKILLS[id].tool).map((id) => [SKILLS[id].tool.id, id]));
+
 // "!fish" -> "fishing"
 const COMMAND_TO_SKILL = Object.fromEntries(SKILL_IDS.map((id) => [SKILLS[id].command, id]));
 
@@ -196,4 +243,4 @@ function findItem(query, candidates) {
   );
 }
 
-module.exports = { ITEMS, SKILLS, SKILL_IDS, COMMAND_TO_SKILL, findItem };
+module.exports = { ITEMS, SKILLS, SKILL_IDS, COMMAND_TO_SKILL, TOOL_TO_SKILL, maxLevel, findItem };

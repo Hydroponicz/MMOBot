@@ -139,15 +139,22 @@ td.wrap { white-space: normal; }
 .skill-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; position: relative; overflow: hidden; }
 .skill-card::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--c, var(--accent)); }
 .skill-top { display: flex; align-items: center; gap: 12px; }
-.skill-icon { flex-shrink: 0; font-size: 1.8rem; width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center;
+.skill-icon { flex-shrink: 0; font-size: 1.6rem; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center;
   background: color-mix(in srgb, var(--c) 15%, transparent); }
 .skill-top > div:nth-child(2) { min-width: 0; }
 .skill-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .skill-cmd { font: 600 0.8rem ui-monospace, monospace; color: var(--muted); }
-.skill-level { margin-left: auto; flex-shrink: 0; font-size: 1.8rem; font-weight: 800; color: var(--c); }
+.skill-level { margin-left: auto; flex-shrink: 0; font-size: 1.6rem; font-weight: 800; color: var(--c); }
 .bar { height: 10px; background: var(--panel-2); border-radius: 999px; overflow: hidden; margin: 14px 0 6px; }
 .bar > span { display: block; height: 100%; background: var(--c, var(--accent)); border-radius: inherit; transition: width 0.6s ease; }
 .skill-meta { display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--muted); }
+.tool-row { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; row-gap: 4px; align-items: center; margin-top: 10px; padding: 8px 10px; border-radius: 10px; background: var(--panel-2); font-size: 0.82rem; }
+.tool-icon { font-size: 1.3rem; }
+.tool-name { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.tool-name small { color: var(--muted); }
+.tool-row > :last-child { grid-column: 1 / -1; }
+.tool-ready { color: var(--accent); font-weight: 600; }
+.tool-max { color: var(--gold); font-weight: 600; }
 .skill-next { margin-top: 10px; font-size: 0.82rem; color: var(--muted); border-top: 1px dashed var(--border); padding-top: 10px; }
 
 .inv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }

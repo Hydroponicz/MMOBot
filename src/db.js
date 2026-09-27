@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const { SKILL_IDS } = require('./game/skills');
+const { CHARACTER_XP_CAP_PER_SKILL: CAP } = require('./game/xp');
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -35,6 +36,14 @@ CREATE TABLE IF NOT EXISTS inventory (
   item TEXT NOT NULL,
   qty INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, item)
+);
+
+-- Upgradable tools, e.g. slot "rod". Tier 0 (the starter tool) is implied when there's no row.
+CREATE TABLE IF NOT EXISTS equipment (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  slot TEXT NOT NULL,
+  tier INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, slot)
 );
 
 CREATE TABLE IF NOT EXISTS activity (
@@ -91,6 +100,11 @@ function createRepo(db) {
     ),
     removeItem: db.prepare('UPDATE inventory SET qty = qty - ? WHERE user_id = ? AND item = ? AND qty >= ?'),
     cleanInventory: db.prepare('DELETE FROM inventory WHERE user_id = ? AND qty <= 0'),
+    equipment: db.prepare('SELECT slot, tier FROM equipment WHERE user_id = ?'),
+    setEquipment: db.prepare(
+      `INSERT INTO equipment (user_id, slot, tier) VALUES (?, ?, ?)
+       ON CONFLICT(user_id, slot) DO UPDATE SET tier = excluded.tier`
+    ),
     addPoints: db.prepare(
       'UPDATE users SET points = points + ?, lifetime_points = lifetime_points + MAX(?, 0) WHERE id = ?'
     ),
@@ -129,8 +143,10 @@ function createRepo(db) {
      WHERE s.skill = ? AND s.xp > 0 ORDER BY s.xp DESC, u.id ASC LIMIT ? OFFSET ?`
   );
   const leaderboardOverall = db.prepare(
-    `SELECT u.id, u.username, u.avatar_url, SUM(s.xp) AS xp FROM skills s JOIN users u ON u.id = s.user_id
-     GROUP BY u.id HAVING SUM(s.xp) > 0 ORDER BY xp DESC, u.id ASC LIMIT ? OFFSET ?`
+    // Ranked like character level: each skill counts up to the character XP cap.
+    `SELECT u.id, u.username, u.avatar_url, SUM(s.xp) AS xp, SUM(MIN(s.xp, ${CAP})) AS char_xp
+     FROM skills s JOIN users u ON u.id = s.user_id
+     GROUP BY u.id HAVING SUM(s.xp) > 0 ORDER BY char_xp DESC, xp DESC, u.id ASC LIMIT ? OFFSET ?`
   );
   const leaderboardPoints = db.prepare(
     `SELECT id, username, avatar_url, points FROM users WHERE points > 0
@@ -140,8 +156,9 @@ function createRepo(db) {
     `SELECT COUNT(*) + 1 AS rank FROM skills WHERE skill = ? AND xp > (SELECT xp FROM skills WHERE user_id = ? AND skill = ?)`
   );
   const rankOverall = db.prepare(
-    `SELECT COUNT(*) + 1 AS rank FROM (SELECT user_id, SUM(xp) AS t FROM skills GROUP BY user_id)
-     WHERE t > (SELECT COALESCE(SUM(xp), 0) FROM skills WHERE user_id = ?)`
+    `WITH t AS (SELECT user_id, SUM(MIN(xp, ${CAP})) AS c, SUM(xp) AS x FROM skills GROUP BY user_id),
+          me AS (SELECT c, x FROM t WHERE user_id = ?)
+     SELECT COUNT(*) + 1 AS rank FROM t, me WHERE t.c > me.c OR (t.c = me.c AND t.x > me.x)`
   );
 
   const repo = {
@@ -197,6 +214,11 @@ function createRepo(db) {
       if (res.changes === 0) throw new Error(`not enough ${item}`);
       stmt.cleanInventory.run(userId);
     },
+
+    getEquipment(userId) {
+      return Object.fromEntries(stmt.equipment.all(userId).map((r) => [r.slot, r.tier]));
+    },
+    setEquipment: (userId, slot, tier) => stmt.setEquipment.run(userId, slot, tier),
 
     addPoints: (userId, amount) => stmt.addPoints.run(amount, amount, userId),
     chatTick: (userId) => stmt.chatTick.run(userId),

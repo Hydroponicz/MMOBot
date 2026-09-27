@@ -1,8 +1,8 @@
 // JSON API consumed by the website (public/app.js) and the OBS overlay.
 const crypto = require('node:crypto');
 const express = require('express');
-const { SKILLS, SKILL_IDS } = require('../game/skills');
-const { levelForXp, characterProgress } = require('../game/xp');
+const { SKILLS, SKILL_IDS, maxLevel } = require('../game/skills');
+const { levelForXp, progress, CHARACTER_MAX_LEVEL } = require('../game/xp');
 const { makeIsAdmin } = require('./auth');
 
 function apiRouter({ engine, repo, kick, bot, config }) {
@@ -51,7 +51,7 @@ function apiRouter({ engine, repo, kick, bot, config }) {
       xp: r.xp ?? null,
       points: r.points ?? null,
       level:
-        kind === 'points' ? null : kind === 'overall' ? characterProgress(r.xp, SKILL_IDS.length).level : levelForXp(r.xp),
+        kind === 'points' ? null : kind === 'overall' ? progress(r.char_xp / SKILL_IDS.length, CHARACTER_MAX_LEVEL).level : levelForXp(r.xp, maxLevel(kind)),
     }));
     res.json({ kind, rows });
   });

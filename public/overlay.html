@@ -20,6 +20,7 @@
     .ev.levelup, .ev.charlevel { border-left-color: #ffc940; }
     .ev.levelup b, .ev.charlevel b { color: #ffc940; }
     .ev.rare { border-left-color: #c084fc; }
+    .ev.upgrade { border-left-color: #38bdf8; }
     .ev.rare b { color: #c084fc; }
     @keyframes in { from { transform: translateX(-110%); opacity: 0; } to { transform: none; opacity: 1; } }
     @keyframes out { to { opacity: 0; transform: translateY(-10px); } }
@@ -28,12 +29,12 @@
 <body>
   <script>
     const showAll = new URLSearchParams(location.search).has('all');
-    const icons = { levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', action: '✨' };
+    const icons = { levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', action: '✨' };
     const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
     const es = new EventSource('/api/events');
     es.addEventListener('activity', (e) => {
       const a = JSON.parse(e.data);
-      if (!showAll && !['levelup', 'charlevel', 'rare'].includes(a.kind)) return;
+      if (!showAll && !['levelup', 'charlevel', 'rare', 'upgrade'].includes(a.kind)) return;
       const el = document.createElement('div');
       el.className = `ev ${a.kind}`;
       el.innerHTML = `<span class="ic">${icons[a.kind] || '✨'}</span><span><b>${esc(a.username)}</b> ${esc(a.text)}</span>`;

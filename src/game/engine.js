@@ -1,8 +1,10 @@
 const { EventEmitter } = require('node:events');
-const { ITEMS, SKILLS, SKILL_IDS, COMMAND_TO_SKILL, findItem } = require('./skills');
+const { ITEMS, SKILLS, SKILL_IDS, COMMAND_TO_SKILL, TOOL_TO_SKILL, maxLevel, findItem } = require('./skills');
 const { levelForXp, progress, characterProgress } = require('./xp');
 
 const fmt = (n) => Number(n).toLocaleString('en-US');
+const pct = (x) => `${Math.round(x * 1000) / 10}%`;
+const skillLevel = (skillId, xp) => levelForXp(xp, maxLevel(skillId));
 const itemLabel = (id, qty = 1) => `${ITEMS[id].icon} ${qty > 1 ? `${fmt(qty)}x ` : ''}${ITEMS[id].name}`;
 
 // Commands that don't count as "actions" (no cooldown).
@@ -12,6 +14,8 @@ const INFO_COMMANDS = {
   points: 'points', pts: 'points', balance: 'points',
   sell: 'sell',
   top: 'top', leaderboard: 'top', lb: 'top',
+  upgrade: 'upgrade',
+  rod: 'toolInfo',
   commands: 'help', help: 'help', rpg: 'help', mmo: 'help',
 };
 
@@ -79,14 +83,17 @@ class GameEngine extends EventEmitter {
   gather(user, skillId, args) {
     const skill = SKILLS[skillId];
     const xp = this.repo.getSkills(user.id)[skillId];
-    const level = levelForXp(xp);
+    const level = skillLevel(skillId, xp);
     const unlocked = skill.resources.filter((r) => r.level <= level);
+    const tool = this.currentTool(user.id, skillId);
 
     let target = null;
     if (args.length) {
       const id = findItem(args.join(' '), skill.resources.map((r) => r.item));
       if (!id) {
-        const opts = skill.resources.map((r) => `${ITEMS[r.item].name} (${r.level})`).join(', ');
+        // Everything unlocked plus the next unlock, to keep the message short.
+        const shown = skill.resources.filter((r) => r.level <= level || r === skill.resources.find((x) => x.level > level));
+        const opts = shown.map((r) => `${ITEMS[r.item].name} (${r.level})`).join(', ');
         return { consumed: false, reply: `unknown target. ${skill.name} options: ${opts}` };
       }
       target = skill.resources.find((r) => r.item === id);
@@ -98,17 +105,18 @@ class GameEngine extends EventEmitter {
       }
     }
 
-    // Small failure chance that shrinks as you level.
-    const failChance = Math.max(0.03, 0.15 - level * 0.0015);
+    // Failure chance: set by your tool if the skill has one, otherwise shrinks as you level.
+    const failChance = tool ? tool.snapChance : Math.max(0.03, 0.15 - level * 0.0015);
     if (this.rng() < failChance) {
       const msg = skill.failMessages[Math.floor(this.rng() * skill.failMessages.length)];
-      return { consumed: true, reply: `${skill.icon} ${msg}... better luck next time!` };
+      const hint = tool && this.canUpgrade(user.id, skillId, level) ? ` (tip: !upgrade ${skill.tool.id})` : '';
+      return { consumed: true, reply: `${skill.icon} ${msg}... better luck next time!${hint}` };
     }
 
     let drop = null;
     let rare = false;
     for (const r of skill.rares || []) {
-      if (this.rng() < r.chance) {
+      if (this.rng() < r.chance * (tool ? tool.rareBonus : 1)) {
         drop = r;
         rare = true;
         break;
@@ -138,7 +146,7 @@ class GameEngine extends EventEmitter {
 
   process(user, skillId, args) {
     const skill = SKILLS[skillId];
-    const level = levelForXp(this.repo.getSkills(user.id)[skillId]);
+    const level = skillLevel(skillId, this.repo.getSkills(user.id)[skillId]);
     const inv = this.repo.getInventory(user.id);
     const hasInputs = (r) => Object.entries(r.inputs).every(([item, qty]) => (inv[item] || 0) >= qty);
     const describe = (r) =>
@@ -167,12 +175,13 @@ class GameEngine extends EventEmitter {
     return this.reward(user, skillId, recipe.item, recipe.xp, { rare: false });
   }
 
-  reward(user, skillId, item, xpGain, { rare }) {
+  reward(user, skillId, item, baseXp, { rare }) {
     const skill = SKILLS[skillId];
+    const tool = this.currentTool(user.id, skillId);
+    const xpGain = Math.round(baseXp * (1 + (tool?.xpBonus || 0)));
     const before = this.repo.getSkills(user.id);
-    const totalBefore = SKILL_IDS.reduce((s, id) => s + before[id], 0);
-    const levelBefore = levelForXp(before[skillId]);
-    const charBefore = characterProgress(totalBefore, SKILL_IDS.length).level;
+    const levelBefore = skillLevel(skillId, before[skillId]);
+    const charBefore = characterProgress(SKILL_IDS.map((id) => before[id])).level;
 
     const points = Math.max(1, Math.round(xpGain / 10));
     this.repo.addXp(user.id, skillId, xpGain);
@@ -180,8 +189,8 @@ class GameEngine extends EventEmitter {
     this.repo.addPoints(user.id, points);
 
     const xpAfter = before[skillId] + xpGain;
-    const levelAfter = levelForXp(xpAfter);
-    const charAfter = characterProgress(totalBefore + xpGain, SKILL_IDS.length).level;
+    const levelAfter = skillLevel(skillId, xpAfter);
+    const charAfter = characterProgress(SKILL_IDS.map((id) => before[id] + (id === skillId ? xpGain : 0))).level;
 
     let reply = `${skill.icon} you ${skill.verb} ${rare ? 'a RARE ' : ''}${itemLabel(item)}! +${xpGain} XP, +${points} pts`;
     const text = `${skill.verb} ${rare ? 'a RARE ' : ''}${ITEMS[item].name}`;
@@ -191,9 +200,12 @@ class GameEngine extends EventEmitter {
       reply += ` 🎉 ${skill.name} level ${levelAfter}!`;
       const unlocks = (skill.resources || skill.recipes).filter((r) => r.level > levelBefore && r.level <= levelAfter);
       if (unlocks.length) reply += ` Unlocked: ${unlocks.map((r) => ITEMS[r.item].name).join(', ')}.`;
+      if (skill.tool && this.canUpgrade(user.id, skillId, levelAfter) && !this.canUpgrade(user.id, skillId, levelBefore)) {
+        reply += ` 🔧 You can now !upgrade ${skill.tool.id}!`;
+      }
       this.emitActivity(user, { kind: 'levelup', skill: skillId, text: `reached ${skill.name} level ${levelAfter}` });
     } else {
-      const p = progress(xpAfter);
+      const p = progress(xpAfter, maxLevel(skillId));
       reply += ` (${skill.name} ${levelAfter}, ${p.percent}%)`;
     }
     if (charAfter > charBefore) {
@@ -286,7 +298,7 @@ class GameEngine extends EventEmitter {
       .map((r, i) => {
         if (kind === 'points') return `${i + 1}. ${r.username} ${fmt(r.points)}`;
         if (kind === 'overall') return `${i + 1}. ${r.username} (${fmt(r.xp)} xp)`;
-        return `${i + 1}. ${r.username} Lv${levelForXp(r.xp)}`;
+        return `${i + 1}. ${r.username} Lv${skillLevel(kind, r.xp)}`;
       })
       .join(' | ');
     return `${label}: ${list}`;
@@ -294,7 +306,71 @@ class GameEngine extends EventEmitter {
 
   help() {
     const skills = SKILL_IDS.map((id) => `!${SKILLS[id].command}`).join(' ');
-    return `Skills: ${skills} (add a target, e.g. !mine iron) | Info: !stats !inv !sell !points !top | Login & track progress: ${this.siteUrl}`;
+    return `Skills: ${skills} (add a target, e.g. !mine iron) | Gear: !rod !upgrade rod | Info: !stats !inv !sell !points !top | Login & track progress: ${this.siteUrl}`;
+  }
+
+  // ---- Tools (!upgrade rod) --------------------------------------------------
+
+  toolTier(userId, skillId) {
+    const t = SKILLS[skillId].tool;
+    if (!t) return null;
+    return Math.min(this.repo.getEquipment(userId)[t.id] || 0, t.tiers.length - 1);
+  }
+
+  currentTool(userId, skillId) {
+    const tier = this.toolTier(userId, skillId);
+    return tier === null ? null : SKILLS[skillId].tool.tiers[tier];
+  }
+
+  canUpgrade(userId, skillId, level) {
+    const t = SKILLS[skillId].tool;
+    const next = t?.tiers[this.toolTier(userId, skillId) + 1];
+    return Boolean(next && level >= next.level);
+  }
+
+  describeTool(tool) {
+    return `${tool.icon} ${tool.name}: ${pct(tool.snapChance)} snap chance, +${Math.round(tool.xpBonus * 100)}% XP, rare finds x${tool.rareBonus}`;
+  }
+
+  // !upgrade rod: checks your Fishing level and moves you up one rod tier.
+  upgrade(user, args) {
+    const toolIds = Object.keys(TOOL_TO_SKILL);
+    const which = (args[0] || '').toLowerCase();
+    const skillId = TOOL_TO_SKILL[which];
+    if (!skillId) {
+      const list = toolIds.map((t) => `!upgrade ${t}`).join(', ');
+      return which ? `you can't upgrade "${which}" (yet). Try ${list}` : `usage: ${list}`;
+    }
+    const skill = SKILLS[skillId];
+    const t = skill.tool;
+    const level = skillLevel(skillId, this.repo.getSkills(user.id)[skillId]);
+    const tier = this.toolTier(user.id, skillId);
+    const current = t.tiers[tier];
+    const next = t.tiers[tier + 1];
+    if (!next) return `you already wield the best ${t.name.toLowerCase()} in the land: ${current.icon} ${current.name}! 🏆`;
+    if (level < next.level) {
+      return `your ${current.icon} ${current.name} can be upgraded to ${next.icon} ${next.name} at ${skill.name} level ${next.level} (you are ${level}).`;
+    }
+
+    this.repo.setEquipment(user.id, t.id, tier + 1);
+    this.emitActivity(user, { kind: 'upgrade', skill: skillId, text: `upgraded to the ${next.name}` });
+    const after = t.tiers[tier + 2];
+    const upcoming = after
+      ? ` Next: ${after.name} at level ${after.level}.`
+      : ` That is the best ${t.name.toLowerCase()} there is! 🏆`;
+    return `🔧 upgraded to ${this.describeTool(next)}!${upcoming}`;
+  }
+
+  // !rod: show your current rod.
+  toolInfo(user) {
+    const skillId = TOOL_TO_SKILL.rod;
+    const t = SKILLS[skillId].tool;
+    const tier = this.toolTier(user.id, skillId);
+    const next = t.tiers[tier + 1];
+    const level = skillLevel(skillId, this.repo.getSkills(user.id)[skillId]);
+    let tail = ` This is the best ${t.name.toLowerCase()} there is! 🏆`;
+    if (next) tail = level >= next.level ? ` Ready: type !upgrade ${t.id} for the ${next.name}!` : ` Next: ${next.name} at ${SKILLS[skillId].name} level ${next.level}.`;
+    return `${this.describeTool(t.tiers[tier])} (tier ${tier + 1}/${t.tiers.length}).${tail}`;
   }
 
   // ---- Data for the website ---------------------------------------------
@@ -305,15 +381,30 @@ class GameEngine extends EventEmitter {
     const xp = this.repo.getSkills(userId);
     const skills = SKILL_IDS.map((id) => {
       const s = SKILLS[id];
-      const p = progress(xp[id]);
+      const p = progress(xp[id], maxLevel(id));
       const tiers = s.resources || s.recipes;
       const next = tiers.find((r) => r.level > p.level);
+      let tool = null;
+      if (s.tool) {
+        const tier = this.toolTier(userId, id);
+        const nextTool = s.tool.tiers[tier + 1];
+        tool = {
+          id: s.tool.id,
+          tier: tier + 1,
+          tiers: s.tool.tiers.length,
+          ...s.tool.tiers[tier],
+          next: nextTool ? { name: nextTool.name, icon: nextTool.icon, level: nextTool.level } : null,
+          canUpgrade: Boolean(nextTool && p.level >= nextTool.level),
+        };
+      }
       return {
         id,
         name: s.name,
         icon: s.icon,
         command: `${this.cfg.prefix}${s.command}`,
         ...p,
+        maxLevel: maxLevel(id),
+        tool,
         rank: xp[id] > 0 ? this.repo.rank(userId, id) : null,
         nextUnlock: next ? { level: next.level, item: ITEMS[next.item].name, icon: ITEMS[next.item].icon } : null,
       };
@@ -333,7 +424,7 @@ class GameEngine extends EventEmitter {
       actions: user.actions_count,
       joinedAt: user.created_at,
       lastSeenAt: user.last_seen_at,
-      character: characterProgress(totalXp, SKILL_IDS.length),
+      character: characterProgress(SKILL_IDS.map((id) => xp[id])),
       totalXp,
       totalLevel: skills.reduce((s, x) => s + x.level, 0),
       overallRank: totalXp > 0 ? this.repo.rank(userId, 'overall') : null,
@@ -369,6 +460,14 @@ class GameEngine extends EventEmitter {
               ? Object.entries(r.inputs).map(([i, q]) => ({ qty: q, item: ITEMS[i].name, icon: ITEMS[i].icon }))
               : undefined,
           })),
+          maxLevel: maxLevel(id),
+          tool: s.tool
+            ? {
+                id: s.tool.id,
+                command: `${this.cfg.prefix}upgrade ${s.tool.id}`,
+                tiers: s.tool.tiers.map((t) => ({ ...t })),
+              }
+            : null,
           rares: (s.rares || []).map((r) => ({
             item: ITEMS[r.item].name,
             icon: ITEMS[r.item].icon,
