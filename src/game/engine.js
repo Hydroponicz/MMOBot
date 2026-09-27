@@ -1,5 +1,5 @@
 const { EventEmitter } = require('node:events');
-const { ITEMS, SKILLS, SKILL_IDS, COMMAND_TO_SKILL, TOOL_TO_SKILL, maxLevel, findItem } = require('./skills');
+const { ITEMS, SKILLS, SKILL_IDS, BACKPACK_TIERS, COMMAND_TO_SKILL, TOOL_TO_SKILL, maxLevel, findItem } = require('./skills');
 const { levelForXp, progress, characterProgress } = require('./xp');
 
 const fmt = (n) => Number(n).toLocaleString('en-US');
@@ -7,27 +7,40 @@ const pct = (x) => `${Math.round(x * 1000) / 10}%`;
 const skillLevel = (skillId, xp) => levelForXp(xp, maxLevel(skillId));
 const itemLabel = (id, qty = 1) => `${ITEMS[id].icon} ${qty > 1 ? `${fmt(qty)}x ` : ''}${ITEMS[id].name}`;
 
-// Commands that don't count as "actions" (no cooldown).
+// Commands that don't count as "actions" (no cooldown), mapped to [handler, name used to enable/disable it].
 const INFO_COMMANDS = {
-  stats: 'stats', level: 'stats', lvl: 'stats', skills: 'stats', xp: 'stats',
-  inv: 'inventory', inventory: 'inventory', bag: 'inventory',
-  points: 'points', pts: 'points', balance: 'points',
-  sell: 'sell',
-  top: 'top', leaderboard: 'top', lb: 'top',
-  upgrade: 'upgrade',
-  rod: 'toolInfo',
-  commands: 'help', help: 'help', rpg: 'help', mmo: 'help',
+  stats: ['stats', 'stats'], level: ['stats', 'stats'], lvl: ['stats', 'stats'], skills: ['stats', 'stats'], xp: ['stats', 'stats'],
+  inv: ['inventory', 'inv'], inventory: ['inventory', 'inv'], bag: ['inventory', 'inv'], backpack: ['inventory', 'inv'],
+  points: ['points', 'points'], pts: ['points', 'points'], balance: ['points', 'points'],
+  sell: ['sell', 'sell'],
+  top: ['top', 'top'], leaderboard: ['top', 'top'], lb: ['top', 'top'],
+  upgrade: ['upgrade', 'upgrade'],
+  rod: ['toolInfo', 'rod'],
+  commands: ['help', 'commands'], help: ['help', 'commands'], rpg: ['help', 'commands'], mmo: ['help', 'commands'],
 };
 
+// Where each ore comes from, for "missing ore" hints: copper_ore -> "!mine copper".
+const GATHER_HINT = {};
+for (const id of SKILL_IDS) {
+  for (const r of SKILLS[id].resources || []) {
+    GATHER_HINT[r.item] ??= `!${SKILLS[id].command} ${ITEMS[r.item].name.split(' ')[0].toLowerCase()}`;
+  }
+}
+
 class GameEngine extends EventEmitter {
-  constructor({ repo, config, rng = Math.random, now = () => Date.now() }) {
+  // settings: a Settings instance (live, admin-editable). Tests may pass a plain { game, all } object.
+  constructor({ repo, config, settings, rng = Math.random, now = () => Date.now() }) {
     super();
     this.repo = repo;
-    this.cfg = config.game;
+    this.settings = settings || staticSettings(config);
     this.siteUrl = config.baseUrl;
     this.rng = rng;
     this.now = now;
     this.cooldownWarned = new Map(); // userId -> last_action_at we already warned about
+  }
+
+  get cfg() {
+    return this.settings.game;
   }
 
   // Entry point for every chat message. Returns { reply } where reply may be null.
@@ -37,16 +50,18 @@ class GameEngine extends EventEmitter {
     this.repo.chatTick(user.id);
     this.awardChatPoints(user);
 
+    const { prefix, disabledCommands = [] } = this.cfg;
     const text = content.trim();
-    if (!text.startsWith(this.cfg.prefix)) return { reply: null };
-    const [rawCmd, ...args] = text.slice(this.cfg.prefix.length).split(/\s+/);
+    if (!text.startsWith(prefix)) return { reply: null };
+    const [rawCmd, ...args] = text.slice(prefix.length).split(/\s+/);
     const cmd = (rawCmd || '').toLowerCase();
 
     let reply = null;
     if (COMMAND_TO_SKILL[cmd]) {
-      reply = this.runAction(user, COMMAND_TO_SKILL[cmd], args);
+      if (!disabledCommands.includes(cmd)) reply = this.runAction(user, COMMAND_TO_SKILL[cmd], args);
     } else if (INFO_COMMANDS[cmd]) {
-      reply = this[INFO_COMMANDS[cmd]](user, args);
+      const [handler, name] = INFO_COMMANDS[cmd];
+      if (!disabledCommands.includes(name)) reply = this[handler](user, args);
     }
     return { reply: reply ? `@${user.username} ${reply}` : null };
   }
@@ -86,6 +101,13 @@ class GameEngine extends EventEmitter {
     const level = skillLevel(skillId, xp);
     const unlocked = skill.resources.filter((r) => r.level <= level);
     const tool = this.currentTool(user.id, skillId);
+
+    // Gathering needs a free backpack slot.
+    const bag = this.backpack(user.id);
+    if (bag.used >= bag.capacity) {
+      const next = bag.next ? ` or !upgrade backpack (${fmt(bag.next.capacity)} slots for ${fmt(bag.next.cost)} pts)` : '';
+      return { consumed: false, reply: `🎒 your backpack is full (${bag.used}/${bag.capacity})! !sell or !smelt to make room${next}.` };
+    }
 
     let target = null;
     if (args.length) {
@@ -144,30 +166,41 @@ class GameEngine extends EventEmitter {
     return weighted[weighted.length - 1].r;
   }
 
+  // Smelting: turns ores from the backpack into ingots (one ore type) and alloys (mixed ores).
+  // Always frees backpack space, so it works even when the backpack is full.
   process(user, skillId, args) {
     const skill = SKILLS[skillId];
     const level = skillLevel(skillId, this.repo.getSkills(user.id)[skillId]);
     const inv = this.repo.getInventory(user.id);
     const hasInputs = (r) => Object.entries(r.inputs).every(([item, qty]) => (inv[item] || 0) >= qty);
-    const describe = (r) =>
-      `${ITEMS[r.item].name} needs ${Object.entries(r.inputs).map(([i, q]) => `${q} ${ITEMS[i].name}`).join(' + ')}`;
+    const needs = (r) => Object.entries(r.inputs).map(([i, q]) => `${q} ${ITEMS[i].name}`).join(' + ');
+    const missing = (r) => {
+      const lacking = Object.entries(r.inputs).filter(([i, q]) => (inv[i] || 0) < q);
+      const list = lacking.map(([i, q]) => `${q - (inv[i] || 0)} ${ITEMS[i].name}`).join(' + ');
+      const hints = [...new Set(lacking.map(([i]) => GATHER_HINT[i]).filter(Boolean))].join(' / ');
+      return `a ${ITEMS[r.item].name} (${r.kind}) needs ${needs(r)}. You're missing ${list}${hints ? ` — try ${hints}` : ''}`;
+    };
 
     let recipe;
     if (args.length) {
       const id = findItem(args.join(' '), skill.recipes.map((r) => r.item));
       if (!id) {
-        const opts = skill.recipes.map((r) => `${ITEMS[r.item].name} (${r.level})`).join(', ');
-        return { consumed: false, reply: `unknown bar. Options: ${opts}` };
+        const opts = skill.recipes.filter((r) => r.level <= level).map((r) => ITEMS[r.item].name.split(' ')[0].toLowerCase());
+        return { consumed: false, reply: `unknown recipe. You can smelt: ${opts.join(', ')} (e.g. !smelt ${opts[opts.length - 1]})` };
       }
       recipe = skill.recipes.find((r) => r.item === id);
       if (recipe.level > level) {
         return { consumed: false, reply: `you need ${skill.icon} ${skill.name} level ${recipe.level} for ${ITEMS[id].name}.` };
       }
-      if (!hasInputs(recipe)) return { consumed: false, reply: `not enough materials: ${describe(recipe)}. Try !mine` };
+      if (!hasInputs(recipe)) return { consumed: false, reply: missing(recipe) };
     } else {
       recipe = [...skill.recipes].reverse().find((r) => r.level <= level && hasInputs(r));
       if (!recipe) {
-        return { consumed: false, reply: `you have nothing to smelt! ${describe(skill.recipes[0])}. Use !mine copper / !mine tin` };
+        // Point at the closest thing they could make: the unlocked recipe they're fewest ores away from.
+        const unlocked = skill.recipes.filter((r) => r.level <= level);
+        const gap = (r) => Object.entries(r.inputs).reduce((s, [i, q]) => s + Math.max(0, q - (inv[i] || 0)), 0);
+        const closest = unlocked.reduce((best, r) => (gap(r) < gap(best) ? r : best), unlocked[0]);
+        return { consumed: false, reply: `nothing to smelt! ${missing(closest)}` };
       }
     }
 
@@ -178,20 +211,21 @@ class GameEngine extends EventEmitter {
   reward(user, skillId, item, baseXp, { rare }) {
     const skill = SKILLS[skillId];
     const tool = this.currentTool(user.id, skillId);
-    const xpGain = Math.round(baseXp * (1 + (tool?.xpBonus || 0)));
+    const xpGain = Math.max(1, Math.round(baseXp * (1 + (tool?.xpBonus || 0)) * this.cfg.xpMultiplier));
     const before = this.repo.getSkills(user.id);
     const levelBefore = skillLevel(skillId, before[skillId]);
     const charBefore = characterProgress(SKILL_IDS.map((id) => before[id])).level;
 
-    const points = Math.max(1, Math.round(xpGain / 10));
+    const points = Math.round(Math.max(1, xpGain / 10) * this.cfg.pointsMultiplier);
     this.repo.addXp(user.id, skillId, xpGain);
     this.repo.addItem(user.id, item, 1);
-    this.repo.addPoints(user.id, points);
+    if (points > 0) this.repo.addPoints(user.id, points);
 
     const xpAfter = before[skillId] + xpGain;
     const levelAfter = skillLevel(skillId, xpAfter);
     const charAfter = characterProgress(SKILL_IDS.map((id) => before[id] + (id === skillId ? xpGain : 0))).level;
 
+    const bag = this.backpack(user.id);
     let reply = `${skill.icon} you ${skill.verb} ${rare ? 'a RARE ' : ''}${itemLabel(item)}! +${xpGain} XP, +${points} pts`;
     const text = `${skill.verb} ${rare ? 'a RARE ' : ''}${ITEMS[item].name}`;
     this.emitActivity(user, { kind: rare ? 'rare' : 'action', skill: skillId, item, xp: xpGain, text });
@@ -212,12 +246,40 @@ class GameEngine extends EventEmitter {
       reply += ` ⭐ Character level ${charAfter}!`;
       this.emitActivity(user, { kind: 'charlevel', text: `reached character level ${charAfter}` });
     }
+    if (bag.used >= bag.capacity) reply += ` 🎒 Backpack full (${bag.used}/${bag.capacity})!`;
     return { consumed: true, reply };
   }
 
   emitActivity(user, entry) {
     const id = this.repo.logActivity({ userId: user.id, ...entry });
     this.emit('activity', { id, username: user.username, created_at: this.now(), skill: null, item: null, xp: 0, ...entry });
+  }
+
+  // ---- Backpack ----------------------------------------------------------
+
+  backpackTiers() {
+    const live = this.settings.all.backpack;
+    return BACKPACK_TIERS.map((t, i) => ({ ...t, ...(live?.[i] || {}) }));
+  }
+
+  backpack(userId) {
+    const tiers = this.backpackTiers();
+    const tier = Math.min(this.repo.getEquipment(userId).backpack || 0, tiers.length - 1);
+    const used = Object.entries(this.repo.getInventory(userId)).reduce((s, [id, q]) => s + (ITEMS[id] ? q : 0), 0);
+    const next = tiers[tier + 1];
+    return {
+      level: tier + 1,
+      levels: tiers.length,
+      name: tiers[tier].name,
+      icon: tiers[tier].icon,
+      capacity: tiers[tier].capacity,
+      used,
+      next: next ? { level: tier + 2, name: next.name, icon: next.icon, capacity: next.capacity, cost: next.cost } : null,
+    };
+  }
+
+  sellValue(itemId) {
+    return Math.round(ITEMS[itemId].value * this.cfg.sellMultiplier);
   }
 
   // ---- Info commands -----------------------------------------------------
@@ -235,13 +297,15 @@ class GameEngine extends EventEmitter {
   }
 
   inventory(user) {
+    const bag = this.backpack(user.id);
+    const head = `${bag.icon} ${bag.name} (${bag.used}/${bag.capacity})`;
     const inv = Object.entries(this.repo.getInventory(user.id)).filter(([id]) => ITEMS[id]);
-    if (!inv.length) return 'your bag is empty. Try !fish !mine !chop !dig';
-    const worth = inv.reduce((s, [id, q]) => s + ITEMS[id].value * q, 0);
+    if (!inv.length) return `${head} is empty. Try !fish !mine !chop !dig`;
+    const worth = inv.reduce((s, [id, q]) => s + this.sellValue(id) * q, 0);
     inv.sort((a, b) => ITEMS[b[0]].value * b[1] - ITEMS[a[0]].value * a[1]);
     const shown = inv.slice(0, 8).map(([id, q]) => itemLabel(id, q)).join(', ');
     const more = inv.length > 8 ? ` +${inv.length - 8} more` : '';
-    return `🎒 ${shown}${more} (worth ${fmt(worth)} pts — !sell all)`;
+    return `${head}: ${shown}${more} (worth ${fmt(worth)} pts — !sell all)`;
   }
 
   points(user) {
@@ -274,7 +338,7 @@ class GameEngine extends EventEmitter {
       let sum = 0;
       for (const [id, qty] of entries) {
         this.repo.removeItem(user.id, id, qty);
-        sum += ITEMS[id].value * qty;
+        sum += this.sellValue(id) * qty;
       }
       this.repo.addPoints(user.id, sum);
       return sum;
@@ -305,11 +369,22 @@ class GameEngine extends EventEmitter {
   }
 
   help() {
-    const skills = SKILL_IDS.map((id) => `!${SKILLS[id].command}`).join(' ');
-    return `Skills: ${skills} (add a target, e.g. !mine iron) | Gear: !rod !upgrade rod | Info: !stats !inv !sell !points !top | Login & track progress: ${this.siteUrl}`;
+    const p = this.cfg.prefix;
+    const off = this.cfg.disabledCommands || [];
+    const on = (list) => list.filter((c) => !off.includes(c)).map((c) => `${p}${c}`).join(' ');
+    const skills = on(SKILL_IDS.map((id) => SKILLS[id].command));
+    return `Skills: ${skills} (add a target, e.g. ${p}mine iron) | Gear: ${p}rod ${p}upgrade rod ${p}upgrade backpack | Info: ${on(['stats', 'inv', 'sell', 'points', 'top'])} | Login & track progress: ${this.siteUrl}`;
   }
 
-  // ---- Tools (!upgrade rod) --------------------------------------------------
+  // ---- Tools & upgrades (!upgrade rod, !upgrade backpack) --------------------
+
+  // Tool tiers with the live (admin-editable) numbers applied.
+  toolTiers(skillId) {
+    const t = SKILLS[skillId].tool;
+    if (!t) return null;
+    const live = this.settings.all[`${t.id}s`];
+    return t.tiers.map((tier, i) => ({ ...tier, ...(live?.[i] || {}) }));
+  }
 
   toolTier(userId, skillId) {
     const t = SKILLS[skillId].tool;
@@ -319,12 +394,12 @@ class GameEngine extends EventEmitter {
 
   currentTool(userId, skillId) {
     const tier = this.toolTier(userId, skillId);
-    return tier === null ? null : SKILLS[skillId].tool.tiers[tier];
+    return tier === null ? null : this.toolTiers(skillId)[tier];
   }
 
   canUpgrade(userId, skillId, level) {
-    const t = SKILLS[skillId].tool;
-    const next = t?.tiers[this.toolTier(userId, skillId) + 1];
+    const tiers = this.toolTiers(skillId);
+    const next = tiers?.[this.toolTier(userId, skillId) + 1];
     return Boolean(next && level >= next.level);
   }
 
@@ -332,45 +407,82 @@ class GameEngine extends EventEmitter {
     return `${tool.icon} ${tool.name}: ${pct(tool.snapChance)} snap chance, +${Math.round(tool.xpBonus * 100)}% XP, rare finds x${tool.rareBonus}`;
   }
 
-  // !upgrade rod: checks your Fishing level and moves you up one rod tier.
-  upgrade(user, args) {
-    const toolIds = Object.keys(TOOL_TO_SKILL);
-    const which = (args[0] || '').toLowerCase();
-    const skillId = TOOL_TO_SKILL[which];
-    if (!skillId) {
-      const list = toolIds.map((t) => `!upgrade ${t}`).join(', ');
-      return which ? `you can't upgrade "${which}" (yet). Try ${list}` : `usage: ${list}`;
+  // Deducts the cost if the player can afford it. Returns null on success, or a reply explaining why not.
+  pay(user, cost, what) {
+    const balance = this.repo.getUser(user.id).points;
+    if (balance < cost) {
+      return `the ${what} costs ${fmt(cost)} pts, you have ${fmt(balance)} (${fmt(cost - balance)} more needed). Earn points with skills, !sell and chatting.`;
     }
+    if (cost > 0) this.repo.addPoints(user.id, -cost);
+    return null;
+  }
+
+  upgrade(user, args) {
+    const which = (args[0] || '').toLowerCase();
+    if (['backpack', 'bag', 'pack'].includes(which)) return this.upgradeBackpack(user);
+    const skillId = TOOL_TO_SKILL[which];
+    const options = [...Object.keys(TOOL_TO_SKILL), 'backpack'].map((t) => `!upgrade ${t}`).join(', ');
+    if (!skillId) return which ? `you can't upgrade "${which}" (yet). Try ${options}` : `usage: ${options}`;
+    return this.upgradeTool(user, skillId);
+  }
+
+  // !upgrade rod: needs the Fishing level for the next rod, and its price in points. One tier at a time.
+  upgradeTool(user, skillId) {
     const skill = SKILLS[skillId];
     const t = skill.tool;
+    const tiers = this.toolTiers(skillId);
     const level = skillLevel(skillId, this.repo.getSkills(user.id)[skillId]);
     const tier = this.toolTier(user.id, skillId);
-    const current = t.tiers[tier];
-    const next = t.tiers[tier + 1];
+    const current = tiers[tier];
+    const next = tiers[tier + 1];
     if (!next) return `you already wield the best ${t.name.toLowerCase()} in the land: ${current.icon} ${current.name}! 🏆`;
     if (level < next.level) {
-      return `your ${current.icon} ${current.name} can be upgraded to ${next.icon} ${next.name} at ${skill.name} level ${next.level} (you are ${level}).`;
+      return `your ${current.icon} ${current.name} can be upgraded to ${next.icon} ${next.name} at ${skill.name} level ${next.level} (you are ${level}) for ${fmt(next.cost)} pts.`;
     }
+    return this.repo.transaction(() => {
+      const refused = this.pay(user, next.cost, next.name);
+      if (refused) return refused;
+      this.repo.setEquipment(user.id, t.id, tier + 1);
+      this.emitActivity(user, { kind: 'upgrade', skill: skillId, text: `upgraded to the ${next.name}` });
+      const after = tiers[tier + 2];
+      const upcoming = after
+        ? ` Next: ${after.name} at level ${after.level} for ${fmt(after.cost)} pts.`
+        : ` That is the best ${t.name.toLowerCase()} there is! 🏆`;
+      return `🔧 upgraded to ${this.describeTool(next)} for ${fmt(next.cost)} pts!${upcoming}`;
+    });
+  }
 
-    this.repo.setEquipment(user.id, t.id, tier + 1);
-    this.emitActivity(user, { kind: 'upgrade', skill: skillId, text: `upgraded to the ${next.name}` });
-    const after = t.tiers[tier + 2];
-    const upcoming = after
-      ? ` Next: ${after.name} at level ${after.level}.`
-      : ` That is the best ${t.name.toLowerCase()} there is! 🏆`;
-    return `🔧 upgraded to ${this.describeTool(next)}!${upcoming}`;
+  // !upgrade backpack: more slots for points. No level requirement.
+  upgradeBackpack(user) {
+    const bag = this.backpack(user.id);
+    if (!bag.next) return `your ${bag.icon} ${bag.name} is already the biggest backpack there is (${bag.capacity} slots)! 🏆`;
+    return this.repo.transaction(() => {
+      const refused = this.pay(user, bag.next.cost, `${bag.next.name} (${bag.next.capacity} slots)`);
+      if (refused) return refused;
+      this.repo.setEquipment(user.id, 'backpack', bag.level);
+      this.emitActivity(user, { kind: 'upgrade', text: `upgraded to the ${bag.next.name} (${bag.next.capacity} slots)` });
+      const after = this.backpackTiers()[bag.level + 1];
+      const upcoming = after ? ` Next: ${after.capacity} slots for ${fmt(after.cost)} pts.` : ' That is the biggest backpack there is! 🏆';
+      return `🎒 upgraded to the ${bag.next.icon} ${bag.next.name}: ${bag.next.capacity} slots (level ${bag.level + 1}/${bag.levels}) for ${fmt(bag.next.cost)} pts!${upcoming}`;
+    });
   }
 
   // !rod: show your current rod.
   toolInfo(user) {
     const skillId = TOOL_TO_SKILL.rod;
     const t = SKILLS[skillId].tool;
+    const tiers = this.toolTiers(skillId);
     const tier = this.toolTier(user.id, skillId);
-    const next = t.tiers[tier + 1];
+    const next = tiers[tier + 1];
     const level = skillLevel(skillId, this.repo.getSkills(user.id)[skillId]);
     let tail = ` This is the best ${t.name.toLowerCase()} there is! 🏆`;
-    if (next) tail = level >= next.level ? ` Ready: type !upgrade ${t.id} for the ${next.name}!` : ` Next: ${next.name} at ${SKILLS[skillId].name} level ${next.level}.`;
-    return `${this.describeTool(t.tiers[tier])} (tier ${tier + 1}/${t.tiers.length}).${tail}`;
+    if (next) {
+      tail =
+        level >= next.level
+          ? ` Ready: !upgrade ${t.id} for the ${next.name} (${fmt(next.cost)} pts)!`
+          : ` Next: ${next.name} at ${SKILLS[skillId].name} level ${next.level} for ${fmt(next.cost)} pts.`;
+    }
+    return `${this.describeTool(tiers[tier])} (tier ${tier + 1}/${tiers.length}).${tail}`;
   }
 
   // ---- Data for the website ---------------------------------------------
@@ -386,14 +498,15 @@ class GameEngine extends EventEmitter {
       const next = tiers.find((r) => r.level > p.level);
       let tool = null;
       if (s.tool) {
+        const toolTiers = this.toolTiers(id);
         const tier = this.toolTier(userId, id);
-        const nextTool = s.tool.tiers[tier + 1];
+        const nextTool = toolTiers[tier + 1];
         tool = {
           id: s.tool.id,
           tier: tier + 1,
-          tiers: s.tool.tiers.length,
-          ...s.tool.tiers[tier],
-          next: nextTool ? { name: nextTool.name, icon: nextTool.icon, level: nextTool.level } : null,
+          tiers: toolTiers.length,
+          ...toolTiers[tier],
+          next: nextTool ? { name: nextTool.name, icon: nextTool.icon, level: nextTool.level, cost: nextTool.cost } : null,
           canUpgrade: Boolean(nextTool && p.level >= nextTool.level),
         };
       }
@@ -412,7 +525,7 @@ class GameEngine extends EventEmitter {
     const totalXp = SKILL_IDS.reduce((s, id) => s + xp[id], 0);
     const inventory = Object.entries(this.repo.getInventory(userId))
       .filter(([id]) => ITEMS[id])
-      .map(([id, qty]) => ({ id, qty, ...ITEMS[id], rare: !!ITEMS[id].rare }))
+      .map(([id, qty]) => ({ id, qty, ...ITEMS[id], value: this.sellValue(id), rare: !!ITEMS[id].rare }))
       .sort((a, b) => b.value * b.qty - a.value * a.qty);
     return {
       id: user.id,
@@ -431,6 +544,7 @@ class GameEngine extends EventEmitter {
       skills,
       inventory,
       inventoryValue: inventory.reduce((s, i) => s + i.value * i.qty, 0),
+      backpack: this.backpack(userId),
       cooldownEndsAt: user.last_action_at + this.cfg.actionCooldown * 1000,
     };
   }
@@ -442,6 +556,9 @@ class GameEngine extends EventEmitter {
       actionCooldown: this.cfg.actionCooldown,
       chatPoints: this.cfg.chatPoints,
       chatCooldown: this.cfg.chatCooldown,
+      xpMultiplier: this.cfg.xpMultiplier,
+      disabledCommands: this.cfg.disabledCommands || [],
+      backpack: this.backpackTiers().map((t, i) => ({ level: i + 1, ...t })),
       skills: SKILL_IDS.map((id) => {
         const s = SKILLS[id];
         return {
@@ -455,23 +572,20 @@ class GameEngine extends EventEmitter {
             xp: r.xp,
             item: ITEMS[r.item].name,
             icon: ITEMS[r.item].icon,
-            value: ITEMS[r.item].value,
+            value: this.sellValue(r.item),
+            kind: r.kind,
             inputs: r.inputs
               ? Object.entries(r.inputs).map(([i, q]) => ({ qty: q, item: ITEMS[i].name, icon: ITEMS[i].icon }))
               : undefined,
           })),
           maxLevel: maxLevel(id),
           tool: s.tool
-            ? {
-                id: s.tool.id,
-                command: `${this.cfg.prefix}upgrade ${s.tool.id}`,
-                tiers: s.tool.tiers.map((t) => ({ ...t })),
-              }
+            ? { id: s.tool.id, command: `${this.cfg.prefix}upgrade ${s.tool.id}`, tiers: this.toolTiers(id) }
             : null,
           rares: (s.rares || []).map((r) => ({
             item: ITEMS[r.item].name,
             icon: ITEMS[r.item].icon,
-            value: ITEMS[r.item].value,
+            value: this.sellValue(r.item),
             odds: `1 in ${Math.round(1 / r.chance)}`,
             xp: r.xp,
           })),
@@ -479,6 +593,14 @@ class GameEngine extends EventEmitter {
       }),
     };
   }
+}
+
+// Fixed settings built from config, for tests and scripts that don't need live editing.
+function staticSettings(config) {
+  return {
+    game: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, disabledCommands: [], ...config.game },
+    all: {},
+  };
 }
 
 module.exports = { GameEngine };

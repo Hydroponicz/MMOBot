@@ -119,14 +119,29 @@
     const status = !t.next
       ? '<span class="tool-max">Max tier 🏆</span>'
       : t.canUpgrade
-        ? `<span class="tool-ready">Type <code>!upgrade ${esc(t.id)}</code></span>`
-        : `<span class="muted">Next: ${t.next.icon} ${esc(t.next.name)} at ${t.next.level}</span>`;
+        ? `<span class="tool-ready">Ready: <code>!upgrade ${esc(t.id)}</code> · ${fmt(t.next.cost)} pts</span>`
+        : `<span class="muted">Next: ${t.next.icon} ${esc(t.next.name)} at level ${t.next.level} · ${fmt(t.next.cost)} pts</span>`;
     return `
       <div class="tool-row" title="${Math.round(t.snapChance * 1000) / 10}% snap chance · +${Math.round(t.xpBonus * 100)}% XP · rare finds x${t.rareBonus}">
         <span class="tool-icon">${t.icon}</span>
         <span class="tool-name"><b>${esc(t.name)}</b><small>Tier ${t.tier}/${t.tiers} · +${Math.round(t.xpBonus * 100)}% XP</small></span>
         ${status}
       </div>`;
+  }
+
+  function backpackBar(b) {
+    const full = b.used >= b.capacity;
+    const pctUsed = Math.min(100, Math.round((b.used / b.capacity) * 100));
+    return `
+      <div class="bag-head">
+        <span class="tool-icon">${b.icon}</span>
+        <span class="tool-name"><b>${esc(b.name)}</b><small>Level ${b.level}/${b.levels}${
+          b.next ? ` · next: ${b.next.capacity} slots for ${fmt(b.next.cost)} pts (<code>!upgrade backpack</code>)` : ' · biggest backpack 🏆'
+        }</small></span>
+        <span class="bag-count ${full ? 'full' : ''}">${b.used}/${b.capacity}</span>
+      </div>
+      <div class="bar" style="--c:${full ? 'var(--danger)' : 'var(--gold)'};margin-top:8px"><span style="width:${pctUsed}%"></span></div>
+      ${full ? `<p class="bag-warn">Backpack full: <code>!sell</code>, <code>!smelt</code> or <code>!upgrade backpack</code> to keep gathering.</p>` : ''}`;
   }
 
   function characterSheet(p, activity, isMe) {
@@ -168,7 +183,8 @@
 
       <div class="grid grid-2" style="margin-top:28px">
         <section class="panel">
-          <div class="panel-head"><h2>Inventory</h2><span class="badge gold">Worth ${fmt(p.inventoryValue)} pts</span></div>
+          <div class="panel-head"><h2>Backpack</h2><span class="badge gold">Worth ${fmt(p.inventoryValue)} pts</span></div>
+          ${backpackBar(p.backpack)}
           ${inv}
           ${p.inventory.length ? `<p class="muted" style="margin-bottom:0">Sell in chat with <code>!sell all</code> or <code>!sell trout 5</code>.</p>` : ''}
         </section>
@@ -309,10 +325,11 @@
     const g = await api('/guide');
     const tierTable = (s) => `
       <div class="table-wrap"><table>
-        <thead><tr><th>Level</th><th>${s.type === 'process' ? 'Bar' : 'Resource'}</th>${s.type === 'process' ? '<th>Needs</th>' : ''}<th class="num">XP</th><th class="num">Sells for</th></tr></thead>
+        <thead><tr><th>Level</th><th>${s.type === 'process' ? 'Makes' : 'Resource'}</th>${s.type === 'process' ? '<th>Type</th><th>Needs (from your backpack)</th>' : ''}<th class="num">XP</th><th class="num">Sells for</th></tr></thead>
         <tbody>${s.tiers
           .map(
             (t) => `<tr><td><b>${t.level}</b></td><td>${t.icon} ${esc(t.item)}</td>
+            ${t.kind ? `<td><span class="kind kind-${esc(t.kind)}">${esc(t.kind)}</span></td>` : ''}
             ${t.inputs ? `<td class="wrap">${t.inputs.map((i) => `${i.qty}× ${i.icon} ${esc(i.item)}`).join(' + ')}</td>` : ''}
             <td class="num">${t.xp}</td><td class="num">${fmt(t.value)} pts</td></tr>`
           )
@@ -325,13 +342,13 @@
         </tbody></table></div>`;
     const toolTable = (t) => `
       <h3 style="margin:22px 0 8px">Rods <code>${esc(t.command)}</code></h3>
-      <p class="muted" style="margin-top:0">Everyone starts with a Basic Rod. Every 50 Fishing levels you can upgrade to the next rod, one tier at a time.</p>
+      <p class="muted" style="margin-top:0">Everyone starts with a Basic Rod. Each rod unlocks at a Fishing level and costs points. Upgrade one tier at a time.</p>
       <div class="table-wrap"><table>
-        <thead><tr><th>Level</th><th>Rod</th><th class="num" title="Chance your line snaps">Snap</th><th class="num" title="Bonus Fishing XP">XP</th><th class="num" title="Rare-find odds multiplier">Rare</th></tr></thead>
+        <thead><tr><th>Level</th><th>Rod</th><th class="num" title="Chance your line snaps">Snap</th><th class="num" title="Bonus Fishing XP">XP</th><th class="num" title="Rare-find odds multiplier">Rare</th><th class="num">Cost</th></tr></thead>
         <tbody>${t.tiers
           .map(
             (r) => `<tr><td><b>${r.level}</b></td><td>${r.icon} ${esc(r.name)}</td><td class="num">${Math.round(r.snapChance * 1000) / 10}%</td>
-            <td class="num">+${Math.round(r.xpBonus * 100)}%</td><td class="num">x${r.rareBonus}</td></tr>`
+            <td class="num">+${Math.round(r.xpBonus * 100)}%</td><td class="num">x${r.rareBonus}</td><td class="num">${r.cost ? `${fmt(r.cost)} pts` : 'free'}</td></tr>`
           )
           .join('')}</tbody></table></div>`;
     $app.innerHTML = `
@@ -343,9 +360,11 @@
             <li>Type a skill command in chat, like <code>${esc(g.skills[0].command)}</code>. Your character is created automatically.</li>
             <li>Each action gives XP and an item. You can act once every <b>${g.actionCooldown}s</b>.</li>
             <li>Higher levels unlock better resources. Target one directly, e.g. <code>!mine iron</code> or <code>!chop oak</code>.</li>
-            <li>Mine ores, then <code>!smelt</code> them into bars for Smelting XP and more valuable loot.</li>
+            <li>Mine ores, then <code>!smelt</code> them into <b>ingots</b> (one ore) and <b>alloys</b> (mixed ores, e.g. copper + tin = bronze). The ores come out of your backpack.</li>
+            <li>Your backpack holds <b>${g.backpack[0].capacity} items</b> to start. When it's full, <code>!sell</code>, <code>!smelt</code> or <code>!upgrade backpack</code> (up to ${g.backpack[g.backpack.length - 1].capacity} slots).</li>
             <li>Just chatting earns <b>${g.chatPoints} points</b> (once every ${g.chatCooldown}s). <code>!sell</code> loot for even more.</li>
-            <li>Fishing goes all the way to <b>level 500</b>. Every 50 levels, <code>!upgrade rod</code> for fewer snapped lines, bonus XP and better rare odds.</li>
+            <li>Fishing goes all the way to <b>level 500</b>. Every 50 levels, <code>!upgrade rod</code> (costs points) for fewer snapped lines, bonus XP and better rare odds.</li>
+            ${g.xpMultiplier !== 1 ? `<li><b>🔥 ${g.xpMultiplier}× XP event is on right now!</b></li>` : ''}
             <li>Your <b>character level</b> grows with the combined XP of all skills — train them all!</li>
           </ol>
         </section>
@@ -354,9 +373,10 @@
           <dl class="kv">
             ${g.skills.map((s) => `<dt><code>${esc(s.command)}</code></dt><dd>${s.icon} Train ${esc(s.name)}</dd>`).join('')}
             <dt><code>!rod</code></dt><dd>Show your fishing rod</dd>
-            <dt><code>!upgrade rod</code></dt><dd>Upgrade your rod (every 50 Fishing levels)</dd>
+            <dt><code>!upgrade rod</code></dt><dd>Upgrade your rod (every 50 Fishing levels, costs points)</dd>
+            <dt><code>!upgrade backpack</code></dt><dd>More backpack slots (costs points)</dd>
             <dt><code>!stats [name]</code></dt><dd>Show levels and points</dd>
-            <dt><code>!inv</code></dt><dd>Show your bag</dd>
+            <dt><code>!inv</code></dt><dd>Show your backpack</dd>
             <dt><code>!sell all</code></dt><dd>Sell everything for points</dd>
             <dt><code>!sell trout 5</code></dt><dd>Sell a specific item</dd>
             <dt><code>!points</code></dt><dd>Show your points</dd>
@@ -365,6 +385,14 @@
           </dl>
         </section>
       </div>
+      <section class="panel" style="margin-top:16px">
+        <h2>🎒 Backpacks <code>!upgrade backpack</code></h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Level</th><th>Backpack</th><th class="num">Slots</th><th class="num">Cost</th></tr></thead>
+          <tbody>${g.backpack
+            .map((b) => `<tr><td><b>${b.level}</b></td><td>${b.icon} ${esc(b.name)}</td><td class="num">${b.capacity}</td><td class="num">${b.cost ? `${fmt(b.cost)} pts` : 'free'}</td></tr>`)
+            .join('')}</tbody></table></div>
+      </section>
       <h2 style="margin:28px 0 12px">Skills &amp; unlocks</h2>
       <div class="grid grid-guide">
         ${g.skills
@@ -375,18 +403,35 @@
       </div>`;
   };
 
+  const ADMIN_TABS = [
+    ['overview', '📡 Overview'],
+    ['settings', '⚙️ Settings'],
+    ['players', '👥 Players'],
+    ['logs', '📜 Logs'],
+  ];
+
   pages.admin = async (_, query) => {
     if (!state.isAdmin) {
       $app.innerHTML = `<div class="panel empty"><span class="ic">🔒</span>Admins only. Log in with the channel owner's Kick account.</div>`;
       return;
     }
+    const tab = ADMIN_TABS.some(([id]) => id === query.get('tab')) ? query.get('tab') : 'overview';
+    const header = `
+      <h1>Admin</h1>
+      <div class="tabs">${ADMIN_TABS.map(([id, label]) => `<a class="tab ${id === tab ? 'active' : ''}" href="#/admin?tab=${id}">${label}</a>`).join('')}</div>`;
+    return adminPages[tab](query, header);
+  };
+
+  const adminPages = {};
+
+  adminPages.overview = async (query, header) => {
     const s = await api('/admin/status');
     const ok = query.get('ok');
     const err = query.get('error');
     const dot = (on) => `<span class="status-dot ${on ? 'on' : ''}"></span>`;
     const subs = s.subscriptions;
     $app.innerHTML = `
-      <h1>Admin</h1>
+      ${header}
       ${ok ? `<div class="alert ok">${esc(ok)}</div>` : ''}${err ? `<div class="alert err">${esc(err)}</div>` : ''}
       ${
         s.persistentStorage
@@ -537,6 +582,256 @@
         toast(`Failed: ${err.message}`);
       }
     };
+  };
+
+  // ---- Admin: settings ---------------------------------------------------
+  adminPages.settings = async (query, header) => {
+    const d = await api('/admin/settings');
+    const isOver = (section) => d.overridden.includes(section);
+    const resetBtn = (section) =>
+      isOver(section) ? `<button type="button" class="btn btn-sm" data-reset="${section}">Reset to defaults</button>` : '';
+
+    const fieldInput = (section, key, spec) => {
+      const v = d.values[section][key];
+      const id = `f-${section}-${key}`;
+      let input;
+      if (spec.type === 'bool') {
+        input = `<label class="switch"><input type="checkbox" id="${id}" name="${key}" ${v ? 'checked' : ''}><span></span></label>`;
+      } else if (spec.type === 'list') {
+        input = `<input type="text" id="${id}" name="${key}" value="${esc(v.join(', '))}" placeholder="none">`;
+      } else if (spec.type === 'string') {
+        input = `<input type="text" id="${id}" name="${key}" value="${esc(v)}" maxlength="${spec.maxLength || 50}">`;
+      } else {
+        input = `<input type="number" id="${id}" name="${key}" value="${esc(v)}" min="${spec.min}" max="${spec.max}" step="${spec.type === 'int' ? 1 : 'any'}">`;
+      }
+      const def = d.defaults[section][key];
+      return `<div class="field">
+        <label for="${id}">${esc(spec.label)}</label>${input}
+        <small>${esc(spec.help || '')}${String(v) !== String(def) ? ` <span class="muted">(default: ${esc(Array.isArray(def) ? def.join(', ') || 'none' : def)})</span>` : ''}</small>
+      </div>`;
+    };
+    const fieldSection = (section, title, blurb) => `
+      <form class="panel settings-form" data-section="${section}" data-kind="fields">
+        <div class="panel-head"><h2>${title}</h2>${resetBtn(section)}</div>
+        <p class="muted">${blurb}</p>
+        <div class="fields">${Object.entries(d.fields[section]).map(([k, spec]) => fieldInput(section, k, spec)).join('')}</div>
+        <button class="btn btn-primary">Save ${title.toLowerCase()}</button>
+      </form>`;
+    const tableSection = (section, blurb) => {
+      const t = d.tables[section];
+      const cols = Object.entries(t.columns);
+      return `
+      <form class="panel settings-form" data-section="${section}" data-kind="table">
+        <div class="panel-head"><h2>${esc(t.label)}</h2>${resetBtn(section)}</div>
+        <p class="muted">${blurb}</p>
+        <div class="table-wrap"><table class="edit-table">
+          <thead><tr><th>#</th><th>Name</th>${cols.map(([, c]) => `<th>${esc(c.label)}</th>`).join('')}</tr></thead>
+          <tbody>${d.values[section]
+            .map(
+              (row, i) => `<tr data-row="${i}"><td>${i + 1}</td><td>${esc(t.names[i])}</td>${cols
+                .map(
+                  ([k, c]) =>
+                    `<td><input type="number" name="${k}" value="${esc(row[k])}" min="${c.min}" max="${c.max}" step="${c.type === 'int' ? 1 : 'any'}" aria-label="${esc(`${t.names[i]} ${c.label}`)}"></td>`
+                )
+                .join('')}</tr>`
+            )
+            .join('')}</tbody>
+        </table></div>
+        <button class="btn btn-primary" style="margin-top:12px">Save ${esc(t.label.toLowerCase())}</button>
+      </form>`;
+    };
+    const off = d.values.disabledCommands;
+    const env = d.environment;
+
+    $app.innerHTML = `
+      ${header}
+      <p class="muted">Changes apply instantly in chat and on the site, and are kept across redeploys. Kick credentials and URLs are set in Railway's Variables tab.</p>
+      <div class="grid grid-2">
+        <div class="stack">
+          ${fieldSection('general', 'General', 'Commands, cooldowns and chat behaviour.')}
+          ${fieldSection('economy', 'Economy', 'Multipliers for XP, points and prices. Great for double-XP events.')}
+        </div>
+        <div class="stack">
+          <form class="panel settings-form" data-section="disabledCommands" data-kind="commands">
+            <div class="panel-head"><h2>Commands</h2>${resetBtn('disabledCommands')}</div>
+            <p class="muted">Untick a command to switch it off. The bot ignores switched-off commands.</p>
+            <div class="checks">${d.commands
+              .map((c) => `<label class="check"><input type="checkbox" name="${esc(c)}" ${off.includes(c) ? '' : 'checked'}> <code>${esc(d.values.general.prefix + c)}</code></label>`)
+              .join('')}</div>
+            <button class="btn btn-primary">Save commands</button>
+          </form>
+          <section class="panel">
+            <h2>Environment <span class="muted" style="font-size:.8rem">(read-only)</span></h2>
+            <dl class="kv">
+              <dt>Channel</dt><dd>${esc(env.channel || '—')}</dd>
+              <dt>Site URL</dt><dd>${esc(env.baseUrl)}</dd>
+              <dt>Kick client ID</dt><dd>${esc(env.kickClientId)}</dd>
+              <dt>Database</dt><dd>${esc(env.dbPath)}</dd>
+              <dt>Dev mode</dt><dd>${env.devMode ? 'on' : 'off'}</dd>
+            </dl>
+          </section>
+        </div>
+      </div>
+      <div class="stack" style="margin-top:16px">
+        ${tableSection('rods', 'Fishing level needed, price and stats for each rod. Levels must go up from tier to tier; the first rod is free at level 1.')}
+        ${tableSection('backpack', 'Slots and price for each backpack level. Slots must go up from level to level.')}
+      </div>`;
+
+    $app.querySelectorAll('[data-reset]').forEach((b) => {
+      b.onclick = async () => {
+        if (!confirm('Reset this section to its defaults?')) return;
+        await api(`/admin/settings/${b.dataset.reset}`, { method: 'DELETE' });
+        toast('Reset to defaults');
+        route();
+      };
+    });
+    $app.querySelectorAll('.settings-form').forEach((form) => {
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const { section, kind } = form.dataset;
+        let value;
+        if (kind === 'fields') {
+          value = {};
+          for (const [k, spec] of Object.entries(d.fields[section])) {
+            const el = form.elements[k];
+            value[k] = spec.type === 'bool' ? el.checked : el.value;
+          }
+        } else if (kind === 'commands') {
+          value = d.commands.filter((c) => !form.elements[c].checked);
+        } else {
+          value = [...form.querySelectorAll('tr[data-row]')].map((tr) =>
+            Object.fromEntries([...tr.querySelectorAll('input')].map((i) => [i.name, i.value]))
+          );
+        }
+        const btn = form.querySelector('.btn-primary');
+        btn.disabled = true;
+        try {
+          await api(`/admin/settings/${section}`, { method: 'PUT', body: { value } });
+          toast('Saved ✓ Live now');
+          route();
+        } catch (err) {
+          toast(`Not saved: ${err.message}`);
+          btn.disabled = false;
+        }
+      };
+    });
+  };
+
+  // ---- Admin: players ----------------------------------------------------
+  adminPages.players = async (query, header) => {
+    const q = query.get('q') || '';
+    const { players } = await api(`/admin/players?q=${encodeURIComponent(q)}`);
+    $app.innerHTML = `
+      ${header}
+      <section class="panel">
+        <form class="form-row" id="player-search">
+          <input type="text" name="q" value="${esc(q)}" placeholder="Search by Kick username" style="max-width:none" aria-label="Search players">
+          <button class="btn btn-primary">Search</button>
+        </form>
+        <div class="table-wrap" style="margin-top:14px"><table>
+          <thead><tr><th>Player</th><th class="num">Points</th><th class="num">Messages</th><th class="num">Actions</th><th>Last seen</th><th>Give / take points</th></tr></thead>
+          <tbody>${
+            players.length
+              ? players
+                  .map(
+                    (p) => `<tr>
+              <td><a href="${playerLink(p.username)}">${esc(p.username)}</a></td>
+              <td class="num" data-points="${p.id}">${fmt(p.points)}</td>
+              <td class="num">${fmt(p.message_count)}</td><td class="num">${fmt(p.actions_count)}</td>
+              <td>${ago(p.last_seen_at)}</td>
+              <td><form class="form-row points-form" data-id="${p.id}" data-name="${esc(p.username)}">
+                <input type="number" name="delta" step="1" placeholder="+500 or -100" style="max-width:130px" aria-label="Points to add or remove">
+                <input type="text" name="reason" placeholder="reason (optional)" style="max-width:170px" aria-label="Reason">
+                <button class="btn btn-sm">Apply</button></form></td>
+            </tr>`
+                  )
+                  .join('')
+              : `<tr><td colspan="6" class="empty">No players found.</td></tr>`
+          }</tbody>
+        </table></div>
+      </section>`;
+    $app.querySelector('#player-search').onsubmit = (e) => {
+      e.preventDefault();
+      location.hash = `#/admin?tab=players&q=${encodeURIComponent(e.target.q.value.trim())}`;
+    };
+    $app.querySelectorAll('.points-form').forEach((f) => {
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        const delta = Number(f.delta.value);
+        if (!Number.isInteger(delta) || !delta) return toast('Enter a whole number, e.g. 500 or -100');
+        if (!confirm(`${delta > 0 ? 'Give' : 'Take'} ${fmt(Math.abs(delta))} points ${delta > 0 ? 'to' : 'from'} ${f.dataset.name}?`)) return;
+        try {
+          const r = await api(`/admin/players/${f.dataset.id}/points`, { method: 'POST', body: { delta, reason: f.reason.value } });
+          $app.querySelector(`[data-points="${f.dataset.id}"]`).textContent = fmt(r.player.points);
+          f.reset();
+          toast('Points updated');
+        } catch (err) {
+          toast(`Failed: ${err.message}`);
+        }
+      };
+    });
+  };
+
+  // ---- Admin: logs -------------------------------------------------------
+  adminPages.logs = async (query, header) => {
+    const filters = { level: query.get('level') || '', source: query.get('source') || '', q: query.get('q') || '' };
+    const qs = (extra = {}) => new URLSearchParams(Object.entries({ ...filters, ...extra }).filter(([, v]) => v)).toString();
+    const data = await api(`/admin/logs?${qs()}`);
+    const time = (ts) => new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const row = (l) => `<tr class="log-${esc(l.level)}"><td class="log-ts">${time(l.ts)}</td><td><span class="log-level">${esc(l.level)}</span></td><td>${esc(l.source)}</td><td class="log-msg">${esc(l.message)}</td></tr>`;
+    let oldest = data.logs.length ? data.logs[data.logs.length - 1].id : null;
+    let newest = data.logs.length ? data.logs[0].id : 0;
+
+    $app.innerHTML = `
+      ${header}
+      <section class="panel">
+        <form class="log-filters" id="log-filters">
+          <select name="level" aria-label="Level">
+            <option value="">All levels</option>
+            <option value="warn" ${filters.level === 'warn' ? 'selected' : ''}>Warnings &amp; errors</option>
+            <option value="error" ${filters.level === 'error' ? 'selected' : ''}>Errors only</option>
+          </select>
+          <select name="source" aria-label="Source">
+            <option value="">All sources</option>
+            ${data.sources.map((src) => `<option ${src === filters.source ? 'selected' : ''}>${esc(src)}</option>`).join('')}
+          </select>
+          <input type="text" name="q" value="${esc(filters.q)}" placeholder="Search messages" aria-label="Search">
+          <button class="btn btn-primary">Filter</button>
+          <label class="check"><input type="checkbox" id="log-live" checked> Live</label>
+        </form>
+        <p class="muted" style="font-size:.85rem">Sources: <b>chat</b> = commands and bot replies, <b>kick</b> = Kick API, <b>webhook</b> = incoming chat events, <b>auth</b> = logins, <b>admin</b> = changes made here. Kept for 14 days.</p>
+        <div class="table-wrap log-wrap"><table class="log-table">
+          <thead><tr><th>Time</th><th>Level</th><th>Source</th><th>Message</th></tr></thead>
+          <tbody id="log-rows">${data.logs.length ? data.logs.map(row).join('') : '<tr><td colspan="4" class="empty">No logs match.</td></tr>'}</tbody>
+        </table></div>
+        <button class="btn" id="log-more" style="margin-top:12px" ${data.logs.length < 200 ? 'hidden' : ''}>Load older</button>
+      </section>`;
+
+    $app.querySelector('#log-filters').onsubmit = (e) => {
+      e.preventDefault();
+      const f = e.target;
+      const next = new URLSearchParams({ tab: 'logs', level: f.level.value, source: f.source.value, q: f.q.value.trim() });
+      [...next.keys()].forEach((k) => !next.get(k) && next.delete(k));
+      location.hash = `#/admin?${next}`;
+    };
+    const more = $app.querySelector('#log-more');
+    more.onclick = async () => {
+      const older = await api(`/admin/logs?${qs({ before: oldest })}`);
+      $app.querySelector('#log-rows').insertAdjacentHTML('beforeend', older.logs.map(row).join(''));
+      if (older.logs.length) oldest = older.logs[older.logs.length - 1].id;
+      more.hidden = older.logs.length < 200;
+    };
+    // Live tail: poll for new lines every 5 seconds while this tab is open.
+    const timer = setInterval(async () => {
+      if (!$app.querySelector('#log-live')?.checked) return;
+      const fresh = (await api(`/admin/logs?${qs({ limit: 100 })}`).catch(() => ({ logs: [] }))).logs.filter((l) => l.id > newest);
+      if (!fresh.length) return;
+      newest = fresh[0].id;
+      const rows = $app.querySelector('#log-rows');
+      rows.querySelector('.empty')?.parentElement.remove();
+      rows.insertAdjacentHTML('afterbegin', fresh.map(row).join(''));
+    }, 5000);
+    return () => clearInterval(timer);
   };
 
   pages.dev = async () => {

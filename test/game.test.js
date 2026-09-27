@@ -79,7 +79,7 @@ test('smelting consumes ores and produces bars', () => {
   say('!mine tin');
   tick();
   const reply = say('!smelt');
-  assert.match(reply, /smelted .*Bronze Bar/);
+  assert.match(reply, /smelted .*Bronze Alloy/);
   const u = repo.getUserByName('alice');
   const inv = repo.getInventory(u.id);
   assert.equal(inv.copper_ore, undefined);
@@ -158,7 +158,10 @@ test('!upgrade rod checks the Fishing level, then upgrades one tier at a time', 
 
   const u = repo.getUserByName('alice');
   repo.addXp(u.id, 'fishing', xpForLevel(120));
-  assert.match(say('!upgrade rod'), /upgraded to 🌳 Oak Rod: 15% snap chance, \+10% XP, rare finds x1.1! Next: Willow Rod at level 100/);
+  assert.match(say('!upgrade rod'), /Oak Rod costs 2,000 pts, you have 5/);
+  repo.addPoints(u.id, 12_000);
+  assert.match(say('!upgrade rod'), /upgraded to 🌳 Oak Rod: 15% snap chance, \+10% XP, rare finds x1.1 for 2,000 pts! Next: Willow Rod at level 100 for 10,000 pts/);
+  assert.equal(repo.getUser(u.id).points, 10_005);
   assert.match(say('!upgrade rod'), /upgraded to 🌿 Willow Rod/);
   assert.match(say('!upgrade rod'), /can be upgraded to 🍁 Maple Rod at Fishing level 150 \(you are 120\)/);
   assert.equal(engine.toolTier(u.id, 'fishing'), 2);
@@ -167,13 +170,14 @@ test('!upgrade rod checks the Fishing level, then upgrades one tier at a time', 
   assert.equal(fishing.maxLevel, 500);
   assert.equal(fishing.tool.name, 'Willow Rod');
   assert.equal(fishing.tool.canUpgrade, false);
-  assert.deepEqual(fishing.tool.next, { name: 'Maple Rod', icon: '🍁', level: 150 });
+  assert.deepEqual(fishing.tool.next, { name: 'Maple Rod', icon: '🍁', level: 150, cost: 30000 });
 });
 
 test('the best rod is the last upgrade', () => {
   const { repo, say } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
   repo.addXp(u.id, 'fishing', xpForLevel(500));
+  repo.addPoints(u.id, 10_000_000);
   for (let i = 0; i < 9; i++) assert.match(say('!upgrade rod'), /upgraded to/);
   assert.match(say('!rod'), /🔱 Poseidon's Rod.*tier 10\/10.*best rod/);
   assert.match(say('!upgrade rod'), /already wield the best rod/);
@@ -226,4 +230,100 @@ test('one skill alone cannot max character level; overall rank uses the same rul
   assert.deepEqual(repo.leaderboard('overall').map((r) => r.username), ['AllRounder', 'Fisher']);
   assert.equal(repo.rank(allRounder.id, 'overall'), 1);
   assert.equal(repo.rank(fisher.id, 'overall'), 2);
+});
+
+// ---- Backpack, smelting, live settings ----------------------------------
+
+function withLiveSettings() {
+  const { Settings } = require('../src/settings');
+  const repo = openDb(':memory:');
+  const settings = new Settings({ config: { ...baseConfig, adminUsers: [], kick: { channel: 'streamer' } }, repo });
+  let t = 1_000_000;
+  const engine = new GameEngine({ repo, config: baseConfig, settings, rng: () => 0.99, now: () => t });
+  const say = (content) => engine.handleChat({ kickUserId: '1', username: 'Alice', content }).reply;
+  return { repo, engine, settings, say, tick: () => (t += 31_000) };
+}
+
+test('the backpack starts with 10 slots; gathering stops when full without using the cooldown', () => {
+  const { repo, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addItem(u.id, 'logs', 9);
+  assert.match(say('!fish'), /Shrimp.*🎒 Backpack full \(10\/10\)!/);
+  tick();
+  assert.match(say('!mine'), /backpack is full \(10\/10\)! !sell or !smelt to make room or !upgrade backpack \(20 slots for 100 pts\)/);
+  assert.match(say('!chop'), /backpack is full/, 'no cooldown was used');
+  assert.match(say('!inv'), /👝 Cloth Pouch \(10\/10\)/);
+});
+
+test('!upgrade backpack costs points and grows to 100 slots at level 10', () => {
+  const { repo, engine, say } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!upgrade backpack'), /costs 100 pts, you have 5/);
+  repo.addPoints(u.id, 1_000_000);
+  assert.match(say('!upgrade backpack'), /upgraded to the 👜 Leather Satchel: 20 slots \(level 2\/10\) for 100 pts! Next: 30 slots for 250 pts/);
+  for (let i = 0; i < 8; i++) assert.match(say('!upgrade bag'), /upgraded/);
+  assert.match(say('!upgrade backpack'), /already the biggest backpack there is \(100 slots\)/);
+  const bag = engine.profile(u.id).backpack;
+  assert.equal(bag.level, 10);
+  assert.equal(bag.capacity, 100);
+  assert.equal(repo.getUser(u.id).points, 1_000_005 - (100 + 250 + 500 + 1000 + 2000 + 4000 + 7500 + 12500 + 20000));
+});
+
+test('smelting uses ores from the backpack, explains what is missing, and works when full', () => {
+  const { repo, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!smelt'), /nothing to smelt! a Bronze Alloy \(alloy\) needs 1 Copper Ore \+ 1 Tin Ore\. You're missing 1 Copper Ore \+ 1 Tin Ore — try !mine copper \/ !mine tin/);
+  repo.addItem(u.id, 'copper_ore', 1);
+  assert.match(say('!smelt bronze'), /missing 1 Tin Ore — try !mine tin/);
+  assert.match(say('!smelt steel'), /need 🔥 Smelting level 30 for Steel Alloy/);
+  assert.match(say('!smelt banana'), /unknown recipe. You can smelt: bronze/);
+
+  repo.addItem(u.id, 'tin_ore', 1);
+  repo.addItem(u.id, 'logs', 8); // backpack now full (10/10)
+  assert.match(say('!smelt'), /smelted 🟤 Bronze Alloy/);
+  assert.deepEqual(repo.getInventory(u.id), { bronze_bar: 1, logs: 8 });
+
+  repo.addXp(u.id, 'smelting', xpForLevel(30));
+  repo.addItem(u.id, 'iron_ore', 1);
+  tick();
+  assert.match(say('!smelt'), /Iron Ingot/, 'iron ore alone makes an ingot');
+  repo.addItem(u.id, 'iron_ore', 1);
+  repo.addItem(u.id, 'coal', 2);
+  tick();
+  assert.match(say('!smelt'), /Steel Alloy/, 'best recipe you have ores for');
+});
+
+test('admin settings apply live: XP multiplier, prices, disabled commands', () => {
+  const { repo, settings, say, tick } = withLiveSettings();
+  const { SettingsError } = require('../src/settings');
+  assert.match(say('!fish'), /\+10 XP/);
+  settings.update('economy', { xpMultiplier: 2 });
+  tick();
+  assert.match(say('!fish'), /\+20 XP/);
+
+  const rods = settings.all.rods.map((r) => ({ ...r }));
+  rods[1].cost = 50;
+  settings.update('rods', rods);
+  const u = repo.getUserByName('alice');
+  repo.addXp(u.id, 'fishing', xpForLevel(60));
+  assert.match(say('!upgrade rod'), /the Oak Rod costs 50 pts/);
+  repo.addPoints(u.id, 100);
+  assert.match(say('!upgrade rod'), /upgraded to 🌳 Oak Rod.* for 50 pts/);
+
+  settings.update('disabledCommands', ['dig']);
+  assert.equal(say('!dig'), null);
+  assert.doesNotMatch(say('!commands'), /!dig/);
+
+  settings.update('general', { prefix: '?' });
+  assert.equal(say('!points'), null);
+  assert.match(say('?points'), /points/);
+
+  assert.throws(() => settings.update('general', { actionCooldown: -1 }), SettingsError);
+  assert.throws(() => settings.update('rods', rods.slice(1)), /needs exactly 10 rows/);
+  rods[2].level = 10;
+  assert.throws(() => settings.update('rods', rods), /tier 3 fishing level must be higher than tier 2/);
+
+  settings.reset('general');
+  assert.equal(settings.all.general.prefix, '!');
+  assert.equal(settings.all.economy.xpMultiplier, 2, 'other sections keep their changes');
 });

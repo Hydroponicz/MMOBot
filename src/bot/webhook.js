@@ -18,7 +18,10 @@ function webhookRouter({ bot, kick, repo, config, logger = console }) {
       } catch (err) {
         logger.error('[webhook] signature check failed:', err.message);
       }
-      if (!ok) return res.status(401).send('invalid signature');
+      if (!ok) {
+        logger.warn(`[webhook] rejected a request with an invalid signature (type ${type || 'unknown'})`);
+        return res.status(401).send('invalid signature');
+      }
     }
 
     // Acknowledge fast; Kick retries on slow/failed deliveries.

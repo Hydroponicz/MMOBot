@@ -10,11 +10,14 @@ const { webhookRouter } = require('./bot/webhook');
 const { createSessions } = require('./web/session');
 const { authRouter, sessionMiddleware } = require('./web/auth');
 const { apiRouter } = require('./web/api');
+const { Settings } = require('./settings');
+const { createLogger } = require('./logger');
 
-function createApp({ config, repo, logger = console }) {
-  const engine = new GameEngine({ repo, config });
+function createApp({ config, repo, logger: baseLogger = console, settings = new Settings({ config, repo }) }) {
+  const logger = { ...baseLogger, info: (baseLogger.info || baseLogger.log).bind(baseLogger) };
+  const engine = new GameEngine({ repo, config, settings });
   const kick = new KickApi({ config, repo, logger });
-  const bot = new ChatBot({ engine, kick, config, logger });
+  const bot = new ChatBot({ engine, kick, logger });
   const sessions = createSessions({ secret: config.sessionSecret, secure: config.baseUrl.startsWith('https://') });
 
   const app = express();
@@ -24,12 +27,12 @@ function createApp({ config, repo, logger = console }) {
   // Webhooks need the raw body for signature checks, so mount before any JSON parsing.
   app.use('/webhooks', webhookRouter({ bot, kick, repo, config, logger }));
   app.use(sessionMiddleware({ sessions, repo }));
-  app.use('/auth', authRouter({ kick, repo, sessions, config, logger }));
-  app.use('/api', apiRouter({ engine, repo, kick, bot, config }));
+  app.use('/auth', authRouter({ kick, repo, sessions, config, settings, logger }));
+  app.use('/api', apiRouter({ engine, repo, kick, bot, config, settings, logger }));
   app.use(express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'] }));
   app.get('/healthz', (req, res) => res.json({ ok: true }));
 
-  return { app, engine, kick, bot };
+  return { app, engine, kick, bot, settings };
 }
 
 // Use SESSION_SECRET if set; otherwise generate one once and keep it in the database,
@@ -55,34 +58,36 @@ async function keepChatSubscribed(kick, logger = console) {
 
 if (require.main === module) {
   const repo = openDb(config.dbPath);
+  const logger = createLogger({ repo });
   config.sessionSecret = resolveSessionSecret(config, repo);
-  const { app, kick } = createApp({ config, repo });
+  const { app, kick } = createApp({ config, repo, logger });
+  process.on('unhandledRejection', (err) => logger.error('[server] unhandled promise rejection:', err));
 
   const server = app.listen(config.port, () => {
-    console.log(`MMOBot running at ${config.baseUrl} (port ${config.port})`);
-    console.log(`  database: ${config.dbPath}`);
-    console.log(`  webhook URL for your Kick app: ${config.baseUrl}/webhooks/kick`);
-    console.log(`  redirect URL for your Kick app: ${config.baseUrl}/auth/callback`);
-    if (config.devMode) console.log('  DEV_MODE on: test chat page enabled (turn off for public sites)');
-    if (!kick.configured) console.log('  ! KICK_CLIENT_ID / KICK_CLIENT_SECRET not set — Kick login and chat are disabled');
+    logger.info(`[server] MMOBot started at ${config.baseUrl} (port ${config.port})`);
+    logger.info(`  database: ${config.dbPath}`);
+    logger.info(`  webhook URL for your Kick app: ${config.baseUrl}/webhooks/kick`);
+    logger.info(`  redirect URL for your Kick app: ${config.baseUrl}/auth/callback`);
+    if (config.devMode) logger.info('  DEV_MODE on: test chat page enabled (turn off for public sites)');
+    if (!kick.configured) logger.info('  ! KICK_CLIENT_ID / KICK_CLIENT_SECRET not set — Kick login and chat are disabled');
     if (config.onRailway && config.baseUrl.startsWith('http://localhost')) {
-      console.warn('  ! No public URL: in Railway open this service → Settings → Networking → Generate Domain, then redeploy.');
+      logger.warn('  ! No public URL: in Railway open this service → Settings → Networking → Generate Domain, then redeploy.');
     }
     if (!config.persistentStorage) {
-      console.warn('  ! No Railway volume attached: player progress will be LOST on every redeploy. Attach a volume to this service.');
+      logger.warn('  ! No Railway volume attached: player progress will be LOST on every redeploy. Attach a volume to this service.');
     }
   });
 
-  keepChatSubscribed(kick);
+  keepChatSubscribed(kick, logger);
   const timers = [
-    setInterval(() => keepChatSubscribed(kick), 30 * 60 * 1000),
+    setInterval(() => keepChatSubscribed(kick, logger), 30 * 60 * 1000),
     setInterval(() => repo.prune(), 60 * 60 * 1000),
   ];
   timers.forEach((t) => t.unref());
 
   // Railway sends SIGTERM on redeploy: finish in-flight requests and close the database cleanly.
   const shutdown = (signal) => {
-    console.log(`${signal} received, shutting down`);
+    logger.info(`${signal} received, shutting down`);
     timers.forEach(clearInterval);
     server.close(() => {
       repo.close();

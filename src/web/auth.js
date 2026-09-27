@@ -28,13 +28,17 @@ border-radius:14px;padding:28px;text-align:center}h1{font-size:1.3rem;margin:.4e
 p{color:#8b98a8}</style></head><body><main><div class="i">${ok ? '✅' : '⚠️'}</div><h1>${esc(title)}</h1>
 <p>${body}</p></main></body></html>`;
 
-const makeIsAdmin = (config) => (user) =>
-  Boolean(user) &&
-  (user.username.toLowerCase() === config.kick.channel || config.adminUsers.includes(user.username.toLowerCase()));
+// The channel owner is always admin; extra admins are editable on the admin page (settings).
+const makeIsAdmin = (config, settings) => (user) => {
+  if (!user) return false;
+  const name = user.username.toLowerCase();
+  const extra = settings ? settings.all.general.adminUsers : config.adminUsers || [];
+  return name === config.kick.channel || extra.includes(name);
+};
 
-function authRouter({ kick, repo, sessions, config, logger = console }) {
+function authRouter({ kick, repo, sessions, config, settings, logger = console }) {
   const router = express.Router();
-  const isAdmin = makeIsAdmin(config);
+  const isAdmin = makeIsAdmin(config, settings);
 
   // One-time link (made on the admin page) that lets the bot account be connected from a private
   // window, where you can log into kick.com as the bot instead of your main account.

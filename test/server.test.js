@@ -154,3 +154,54 @@ test('bot login link: works without a session, rejects the channel account, acce
   // The link is single-use.
   assert.equal((await fetch(`${s.url}/auth/connect/bot?link=good`, { redirect: 'manual' })).status, 403);
 });
+
+test('admin API: settings, logs and players need an admin; logs record chat commands', async (t) => {
+  const { createSessions } = require('../src/web/session');
+  const { createLogger } = require('../src/logger');
+  const repo = openDb(':memory:');
+  const config = makeConfig();
+  const logger = createLogger({ repo, echo: { log() {}, warn() {}, error() {} } });
+  const ctx = createApp({ config, repo, logger });
+  const server = await new Promise((r) => {
+    const s = ctx.app.listen(0, () => r(s));
+  });
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${server.address().port}`;
+
+  for (const path of ['/api/admin/settings', '/api/admin/logs', '/api/admin/players']) {
+    assert.equal((await fetch(url + path)).status, 403, path);
+  }
+
+  // Log in as the channel owner.
+  const owner = repo.upsertUser({ kickUserId: '99', username: 'streamer' });
+  let cookie;
+  createSessions({ secret: config.sessionSecret, secure: false }).write({ cookie: (n, v) => (cookie = `${n}=${v}`) }, 'mmo_session', { uid: owner.id }, 60_000);
+  const api = (path, opts = {}) =>
+    fetch(url + path, { ...opts, headers: { cookie, 'Content-Type': 'application/json' }, body: opts.body && JSON.stringify(opts.body) });
+
+  const s = await (await api('/api/admin/settings')).json();
+  assert.equal(s.values.general.actionCooldown, 30);
+  assert.equal(s.values.rods.length, 10);
+  assert.equal(s.values.backpack[9].capacity, 100);
+
+  const bad = await api('/api/admin/settings/general', { method: 'PUT', body: { value: { actionCooldown: 'soon' } } });
+  assert.equal(bad.status, 400);
+  assert.match((await bad.json()).error, /must be a number/);
+  const ok = await api('/api/admin/settings/general', { method: 'PUT', body: { value: { actionCooldown: 5, adminUsers: 'ModOne, @ModTwo' } } });
+  assert.equal(ok.status, 200);
+  assert.deepEqual(ctx.settings.all.general.adminUsers, ['modone', 'modtwo']);
+  assert.equal(ctx.engine.cfg.actionCooldown, 5);
+
+  ctx.bot.handleMessage({ kickUserId: '5', username: 'Viewer', content: '!fish' });
+  const logs = await (await api('/api/admin/logs?source=chat')).json();
+  assert.match(logs.logs[0].message, /^Viewer: !fish → @Viewer/);
+  const adminLogs = await (await api('/api/admin/logs?q=changed%20general')).json();
+  assert.match(adminLogs.logs[0].message, /streamer changed general settings/);
+
+  const found = await (await api('/api/admin/players?q=view')).json();
+  assert.equal(found.players[0].username, 'Viewer');
+  const give = await api(`/api/admin/players/${found.players[0].id}/points`, { method: 'POST', body: { delta: 500, reason: 'giveaway' } });
+  assert.equal((await give.json()).player.points, found.players[0].points + 500);
+  const take = await api(`/api/admin/players/${found.players[0].id}/points`, { method: 'POST', body: { delta: -1e9 } });
+  assert.equal((await take.json()).player.points, 0, 'never below zero');
+});

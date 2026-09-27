@@ -11,14 +11,20 @@ Viewers type commands in your Kick chat to train skills, collect loot and level 
   | `!mine` | ⛏️ Mining | Copper/Tin → Runite ore |
   | `!chop` | 🪓 Woodcutting | Logs → Redwood |
   | `!dig` | 🏺 Digging | Old bones → Dragon relics |
-  | `!smelt` | 🔥 Smelting | Turns mined ores into bars (e.g. copper + tin → bronze) |
+  | `!smelt` | 🔥 Smelting | Turns ores from your backpack into ingots (one ore) and alloys (mixed ores, e.g. copper + tin → bronze) |
 - Target a specific resource you've unlocked: `!mine iron`, `!chop oak`, `!smelt steel`.
 - **XP and levels**: 1–99 per skill, and **Fishing goes to 500**. An overall **character level** (up to 120) is based on combined XP, with each skill counting up to its level-120 XP, so no single skill can max it alone.
-- **Fishing rods**: everyone starts with a Basic Rod. Every 50 Fishing levels, `!upgrade rod` moves you up one tier, through 10 rods up to Poseidon's Rod at level 450. Better rods snap less often, give bonus Fishing XP and improve rare-find odds. `!rod` shows your current rod.
+- **Backpack**: holds 10 items to start. When it's full, gathering stops until you `!sell`, `!smelt` (always frees space) or `!upgrade backpack`. There are 10 backpack levels, up to 100 slots, and each costs more points than the last.
+- **Fishing rods**: everyone starts with a Basic Rod. Every 50 Fishing levels, `!upgrade rod` (costs points, rising with each rod) moves you up one tier, through 10 rods up to Poseidon's Rod at level 450. Better rods snap less often, give bonus Fishing XP and improve rare-find odds. `!rod` shows your current rod.
 - **Points**: viewers earn points for chatting (rate-limited), for every action, and by selling loot (`!sell all`).
-- Extra commands: `!rod`, `!upgrade rod`, `!stats [name]`, `!inv`, `!sell <item> [amount|all]`, `!points`, `!top [skill|points]`, `!commands`.
+- Extra commands: `!rod`, `!upgrade rod`, `!upgrade backpack`, `!stats [name]`, `!inv`, `!sell <item> [amount|all]`, `!points`, `!top [skill|points]`, `!commands`.
 - A per-viewer action cooldown (default 30s) that warns only once, so spamming doesn't flood chat.
-- **Website**: home page with live feed and top players, character sheets, per-skill leaderboards, a "How to play" guide generated from the game data, and an admin page.
+- **Website**: home page with live feed and top players, character sheets, per-skill leaderboards, and a "How to play" guide generated from the game data.
+- **Admin page**:
+  - **Overview**: Kick connection status and the bot account.
+  - **Settings**: edit live, with no redeploy. Covers the command prefix, cooldowns, chat points, reply on/off, extra admins, XP/points/sell multipliers (e.g. double-XP events), switching individual commands on and off, and every rod's and backpack's price and stats.
+  - **Players**: search players and give or take points.
+  - **Logs**: chat commands and bot replies, Kick/webhook errors, logins and admin changes. Filter by level, source or text, with live tail. Kept for 14 days.
 - **OBS overlay** at `/overlay.html` that pops up level-ups and rare drops on stream.
 - **Test mode**: play from the browser (`DEV_MODE=true`) or terminal (`npm run simulate`) without connecting to Kick.
 
@@ -104,7 +110,7 @@ Kick can only deliver webhooks to a public URL. Run a tunnel (e.g. `cloudflared 
 ## Customizing
 
 - **Game content**: edit `src/game/skills.js` to change items, XP values, unlock levels, sell prices, rare-drop odds and fail messages. The website's guide page updates automatically.
-- **Pacing**: `ACTION_COOLDOWN_SECONDS`, `CHAT_POINTS`, `CHAT_POINTS_COOLDOWN_SECONDS` in `.env`. Change the level curve in `src/game/xp.js`.
+- **Pacing and prices**: change them on **Admin → Settings**. They take effect immediately and are stored in the database. The `ACTION_COOLDOWN_SECONDS`, `CHAT_POINTS` and similar variables only set the starting defaults. Change the level curve in `src/game/xp.js`.
 - **Rods**: edit the `tool.tiers` list under `fishing` in `skills.js` to change unlock levels, snap chance, XP bonus and rare odds. Any skill can get an upgradable tool the same way (e.g. a pickaxe for Mining with `id: 'pickaxe'`), and `!upgrade pickaxe` then works automatically.
 - **Level caps**: set `maxLevel` on a skill (Fishing uses `maxLevel: 500`; the default is 99).
 - **New skill**: add an entry to `SKILLS` in `skills.js` (with `command`, `resources` and `rares`), add its items to `ITEMS`, and add a color variable `--<skillid>` in `public/styles.css`. Existing players get the new skill automatically.

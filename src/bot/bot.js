@@ -2,10 +2,9 @@
 // plus a rate-limited outgoing chat queue.
 
 class ChatBot {
-  constructor({ engine, kick, config, logger = console }) {
+  constructor({ engine, kick, logger = console }) {
     this.engine = engine;
     this.kick = kick;
-    this.replyInChat = config.game.replyInChat;
     this.log = logger;
     this.queue = [];
     this.sending = false;
@@ -29,7 +28,8 @@ class ChatBot {
     }
     if (reply) {
       this.stats.commands++;
-      if (this.replyInChat) this.say(reply);
+      this.log.info(`[chat] ${msg.username}: ${msg.content.trim().slice(0, 200)} → ${reply}`);
+      if (this.engine.cfg.replyInChat) this.say(reply);
     }
     return reply;
   }

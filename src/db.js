@@ -58,6 +58,15 @@ CREATE TABLE IF NOT EXISTS activity (
 );
 CREATE INDEX IF NOT EXISTS idx_activity_user ON activity(user_id, id DESC);
 
+CREATE TABLE IF NOT EXISTS logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  level TEXT NOT NULL,
+  source TEXT NOT NULL,
+  message TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs(ts);
+
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -131,6 +140,13 @@ function createRepo(db) {
     deleteSetting: db.prepare('DELETE FROM settings WHERE key = ?'),
     markProcessed: db.prepare('INSERT OR IGNORE INTO processed_messages (id, created_at) VALUES (?, ?)'),
     pruneProcessed: db.prepare('DELETE FROM processed_messages WHERE created_at < ?'),
+    addLog: db.prepare('INSERT INTO logs (ts, level, source, message) VALUES (?, ?, ?, ?)'),
+    pruneLogs: db.prepare('DELETE FROM logs WHERE ts < ? OR id <= (SELECT MAX(id) FROM logs) - 50000'),
+    logSources: db.prepare('SELECT DISTINCT source FROM logs ORDER BY source'),
+    searchUsers: db.prepare(
+      `SELECT id, username, points, message_count, actions_count, last_seen_at FROM users
+       WHERE username_lower LIKE ? ESCAPE '\\' ORDER BY last_seen_at DESC LIMIT 25`
+    ),
     totals: db.prepare(
       `SELECT (SELECT COUNT(*) FROM users) AS players,
               (SELECT COALESCE(SUM(actions_count), 0) FROM users) AS actions,
@@ -257,10 +273,41 @@ function createRepo(db) {
       return stmt.markProcessed.run(String(id), Date.now()).changes > 0;
     },
 
+    addLog: ({ level, source, message }) => stmt.addLog.run(Date.now(), level, source, message),
+
+    // Newest first. Filters: level ('error' | 'warn' | 'info'), source, text search, before (id, for paging).
+    logs({ level, source, q, before, limit = 200 } = {}) {
+      const where = [];
+      const params = [];
+      if (level === 'error') where.push("level = 'error'");
+      else if (level === 'warn') where.push("level IN ('warn', 'error')");
+      if (source) {
+        where.push('source = ?');
+        params.push(source);
+      }
+      if (q) {
+        where.push("message LIKE ? ESCAPE '\\'");
+        params.push(`%${String(q).replace(/[\\%_]/g, (c) => '\\' + c)}%`);
+      }
+      if (before) {
+        where.push('id < ?');
+        params.push(Number(before));
+      }
+      const sql = `SELECT * FROM logs ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY id DESC LIMIT ?`;
+      return db.prepare(sql).all(...params, Math.min(Math.max(Number(limit) || 200, 1), 1000));
+    },
+    logSources: () => stmt.logSources.all().map((r) => r.source),
+
+    searchUsers(q) {
+      const term = String(q || '').toLowerCase().replace(/^@/, '').replace(/[\\%_]/g, (c) => '\\' + c);
+      return stmt.searchUsers.all(`%${term}%`);
+    },
+
     prune() {
       const day = 24 * 60 * 60 * 1000;
       stmt.pruneProcessed.run(Date.now() - day);
       stmt.pruneActivity.run(Date.now() - 30 * day);
+      stmt.pruneLogs.run(Date.now() - 14 * day);
     },
 
     close: () => db.close(),

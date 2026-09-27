@@ -4,10 +4,11 @@ const express = require('express');
 const { SKILLS, SKILL_IDS, maxLevel } = require('../game/skills');
 const { levelForXp, progress, CHARACTER_MAX_LEVEL } = require('../game/xp');
 const { makeIsAdmin } = require('./auth');
+const { SettingsError } = require('../settings');
 
-function apiRouter({ engine, repo, kick, bot, config }) {
+function apiRouter({ engine, repo, kick, bot, config, settings, logger = console }) {
   const router = express.Router();
-  const isAdmin = makeIsAdmin(config);
+  const isAdmin = makeIsAdmin(config, settings);
   router.use(express.json({ limit: '16kb' }));
 
   const requireAdmin = (req, res, next) => (isAdmin(req.user) ? next() : res.status(403).json({ error: 'admins only' }));
@@ -104,7 +105,7 @@ function apiRouter({ engine, repo, kick, bot, config }) {
       stats: bot.stats,
       subscriptions,
       subscriptionError,
-      settings: config.game,
+      settings: engine.cfg,
     });
   });
 
@@ -124,6 +125,52 @@ function apiRouter({ engine, repo, kick, bot, config }) {
     const exp = Date.now() + 30 * 60 * 1000;
     repo.setSetting('bot_link', { code, exp });
     res.json({ url: `${config.baseUrl}/auth/connect/bot?link=${code}`, expiresAt: exp });
+  });
+
+  // ---- Admin: settings --------------------------------------------------
+
+  router.get('/admin/settings', requireAdmin, (req, res) => res.json(settings.describe()));
+
+  router.put('/admin/settings/:section', requireAdmin, (req, res) => {
+    try {
+      settings.update(req.params.section, req.body?.value);
+      logger.info(`[admin] ${req.user.username} changed ${req.params.section} settings: ${JSON.stringify(req.body?.value).slice(0, 1000)}`);
+      res.json(settings.describe());
+    } catch (err) {
+      if (err instanceof SettingsError) return res.status(400).json({ error: err.message });
+      throw err;
+    }
+  });
+
+  router.delete('/admin/settings/:section', requireAdmin, (req, res) => {
+    settings.reset(req.params.section);
+    logger.info(`[admin] ${req.user.username} reset ${req.params.section} settings to defaults`);
+    res.json(settings.describe());
+  });
+
+  // ---- Admin: logs --------------------------------------------------------
+
+  router.get('/admin/logs', requireAdmin, (req, res) => {
+    const { level, source, q, before, limit } = req.query;
+    res.json({ logs: repo.logs({ level, source, q, before, limit }), sources: repo.logSources() });
+  });
+
+  // ---- Admin: players -----------------------------------------------------
+
+  router.get('/admin/players', requireAdmin, (req, res) => {
+    res.json({ players: repo.searchUsers(req.query.q || '') });
+  });
+
+  router.post('/admin/players/:id/points', requireAdmin, (req, res) => {
+    const user = repo.getUser(Number(req.params.id));
+    const delta = Number(req.body?.delta);
+    if (!user) return res.status(404).json({ error: 'player not found' });
+    if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 1e12) return res.status(400).json({ error: 'enter a whole number of points' });
+    const applied = Math.max(delta, -user.points); // never below zero
+    repo.addPoints(user.id, applied);
+    const reason = String(req.body?.reason || '').slice(0, 200);
+    logger.info(`[admin] ${req.user.username} ${applied >= 0 ? 'gave' : 'took'} ${Math.abs(applied)} points ${applied >= 0 ? 'to' : 'from'} ${user.username}${reason ? ` (${reason})` : ''}`);
+    res.json({ player: repo.getUser(user.id) });
   });
 
   router.post('/admin/disconnect/:kind', requireAdmin, (req, res) => {

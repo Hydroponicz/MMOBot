@@ -65,15 +65,15 @@ const ITEMS = {
   treasure_map: { name: 'Treasure Map', icon: '🗺️', value: 450, rare: true },
   pirate_chest: { name: "Pirate's Chest", icon: '🧰', value: 2000, rare: true },
 
-  // Smelting
-  bronze_bar: { name: 'Bronze Bar', icon: '🟤', value: 10 },
-  iron_bar: { name: 'Iron Bar', icon: '🔩', value: 22 },
-  silver_bar: { name: 'Silver Bar', icon: '🥈', value: 40 },
-  steel_bar: { name: 'Steel Bar', icon: '⚙️', value: 60 },
-  gold_bar: { name: 'Gold Bar', icon: '🟨', value: 80 },
-  mithril_bar: { name: 'Mithril Bar', icon: '🔷', value: 170 },
-  adamantite_bar: { name: 'Adamantite Bar', icon: '🟩', value: 270 },
-  runite_bar: { name: 'Runite Bar', icon: '🟦', value: 420 },
+  // Smelting (item ids keep their original "_bar" names so existing inventories carry over)
+  bronze_bar: { name: 'Bronze Alloy', icon: '🟤', value: 10 },
+  iron_bar: { name: 'Iron Ingot', icon: '🔩', value: 22 },
+  silver_bar: { name: 'Silver Ingot', icon: '🥈', value: 40 },
+  steel_bar: { name: 'Steel Alloy', icon: '⚙️', value: 60 },
+  gold_bar: { name: 'Gold Ingot', icon: '🟨', value: 80 },
+  mithril_bar: { name: 'Mithril Alloy', icon: '🔷', value: 170 },
+  adamantite_bar: { name: 'Adamantite Alloy', icon: '🟩', value: 270 },
+  runite_bar: { name: 'Runite Alloy', icon: '🟦', value: 420 },
 };
 
 const SKILLS = {
@@ -107,22 +107,22 @@ const SKILLS = {
       { item: 'celestial_whale', level: 500, xp: 1900 },
     ],
     // Upgradable tool: "!upgrade rod". Everyone starts with the first tier; a new tier unlocks every
-    // 50 Fishing levels. snapChance = chance an action fails, xpBonus = extra Fishing XP,
-    // rareBonus = multiplier on rare-find odds.
+    // 50 Fishing levels and costs points. snapChance = chance an action fails, xpBonus = extra Fishing
+    // XP, rareBonus = multiplier on rare-find odds. Numbers can be changed live on the admin page.
     tool: {
       id: 'rod',
       name: 'Rod',
       tiers: [
-        { name: 'Basic Rod', icon: '🎣', level: 1, snapChance: 0.18, xpBonus: 0, rareBonus: 1 },
-        { name: 'Oak Rod', icon: '🌳', level: 50, snapChance: 0.15, xpBonus: 0.1, rareBonus: 1.1 },
-        { name: 'Willow Rod', icon: '🌿', level: 100, snapChance: 0.13, xpBonus: 0.2, rareBonus: 1.2 },
-        { name: 'Maple Rod', icon: '🍁', level: 150, snapChance: 0.11, xpBonus: 0.3, rareBonus: 1.3 },
-        { name: 'Yew Rod', icon: '🌲', level: 200, snapChance: 0.09, xpBonus: 0.4, rareBonus: 1.4 },
-        { name: 'Steel Rod', icon: '⚙️', level: 250, snapChance: 0.075, xpBonus: 0.55, rareBonus: 1.5 },
-        { name: 'Mithril Rod', icon: '🔷', level: 300, snapChance: 0.06, xpBonus: 0.7, rareBonus: 1.65 },
-        { name: 'Adamant Rod', icon: '🟢', level: 350, snapChance: 0.045, xpBonus: 0.85, rareBonus: 1.8 },
-        { name: 'Runite Rod', icon: '🔹', level: 400, snapChance: 0.035, xpBonus: 1, rareBonus: 2 },
-        { name: "Poseidon's Rod", icon: '🔱', level: 450, snapChance: 0.02, xpBonus: 1.25, rareBonus: 2.5 },
+        { name: 'Basic Rod', icon: '🎣', level: 1, cost: 0, snapChance: 0.18, xpBonus: 0, rareBonus: 1 },
+        { name: 'Oak Rod', icon: '🌳', level: 50, cost: 2000, snapChance: 0.15, xpBonus: 0.1, rareBonus: 1.1 },
+        { name: 'Willow Rod', icon: '🌿', level: 100, cost: 10000, snapChance: 0.13, xpBonus: 0.2, rareBonus: 1.2 },
+        { name: 'Maple Rod', icon: '🍁', level: 150, cost: 30000, snapChance: 0.11, xpBonus: 0.3, rareBonus: 1.3 },
+        { name: 'Yew Rod', icon: '🌲', level: 200, cost: 75000, snapChance: 0.09, xpBonus: 0.4, rareBonus: 1.4 },
+        { name: 'Steel Rod', icon: '⚙️', level: 250, cost: 150000, snapChance: 0.075, xpBonus: 0.55, rareBonus: 1.5 },
+        { name: 'Mithril Rod', icon: '🔷', level: 300, cost: 300000, snapChance: 0.06, xpBonus: 0.7, rareBonus: 1.65 },
+        { name: 'Adamant Rod', icon: '🟢', level: 350, cost: 500000, snapChance: 0.045, xpBonus: 0.85, rareBonus: 1.8 },
+        { name: 'Runite Rod', icon: '🔹', level: 400, cost: 800000, snapChance: 0.035, xpBonus: 1, rareBonus: 2 },
+        { name: "Poseidon's Rod", icon: '🔱', level: 450, cost: 1250000, snapChance: 0.02, xpBonus: 1.25, rareBonus: 2.5 },
       ],
     },
     rares: [
@@ -204,19 +204,35 @@ const SKILLS = {
     verb: 'smelted',
     type: 'process',
     failMessages: ['the ore was impure and burned away'],
-    // Recipes are ordered from lowest to highest level.
+    // Recipes are ordered from lowest to highest level. Ingots are smelted from one kind of ore;
+    // alloys mix ores. The ores come out of the backpack, so you have to !mine them first.
     recipes: [
-      { item: 'bronze_bar', level: 1, xp: 14, inputs: { copper_ore: 1, tin_ore: 1 } },
-      { item: 'iron_bar', level: 15, xp: 30, inputs: { iron_ore: 1 } },
-      { item: 'silver_bar', level: 20, xp: 40, inputs: { silver_ore: 1 } },
-      { item: 'steel_bar', level: 30, xp: 60, inputs: { iron_ore: 1, coal: 2 } },
-      { item: 'gold_bar', level: 40, xp: 80, inputs: { gold_ore: 1 } },
-      { item: 'mithril_bar', level: 55, xp: 120, inputs: { mithril_ore: 1, coal: 3 } },
-      { item: 'adamantite_bar', level: 70, xp: 170, inputs: { adamantite_ore: 1, coal: 4 } },
-      { item: 'runite_bar', level: 85, xp: 240, inputs: { runite_ore: 1, coal: 5 } },
+      { item: 'bronze_bar', level: 1, xp: 14, kind: 'alloy', inputs: { copper_ore: 1, tin_ore: 1 } },
+      { item: 'iron_bar', level: 15, xp: 30, kind: 'ingot', inputs: { iron_ore: 1 } },
+      { item: 'silver_bar', level: 20, xp: 40, kind: 'ingot', inputs: { silver_ore: 1 } },
+      { item: 'steel_bar', level: 30, xp: 60, kind: 'alloy', inputs: { iron_ore: 1, coal: 2 } },
+      { item: 'gold_bar', level: 40, xp: 80, kind: 'ingot', inputs: { gold_ore: 1 } },
+      { item: 'mithril_bar', level: 55, xp: 120, kind: 'alloy', inputs: { mithril_ore: 1, coal: 3 } },
+      { item: 'adamantite_bar', level: 70, xp: 170, kind: 'alloy', inputs: { adamantite_ore: 1, coal: 4 } },
+      { item: 'runite_bar', level: 85, xp: 240, kind: 'alloy', inputs: { runite_ore: 1, coal: 5 } },
     ],
   },
 };
+
+// Backpack: how many items (total, across all stacks) a player can carry. Upgrade with
+// "!upgrade backpack". Numbers can be changed live on the admin page.
+const BACKPACK_TIERS = [
+  { name: 'Cloth Pouch', icon: '👝', capacity: 10, cost: 0 },
+  { name: 'Leather Satchel', icon: '👜', capacity: 20, cost: 100 },
+  { name: 'Travel Pack', icon: '🎒', capacity: 30, cost: 250 },
+  { name: "Adventurer's Pack", icon: '🎒', capacity: 40, cost: 500 },
+  { name: "Explorer's Pack", icon: '🎒', capacity: 50, cost: 1000 },
+  { name: 'Reinforced Pack', icon: '🎒', capacity: 60, cost: 2000 },
+  { name: "Merchant's Pack", icon: '💼', capacity: 70, cost: 4000 },
+  { name: "Hero's Pack", icon: '🛡️', capacity: 80, cost: 7500 },
+  { name: 'Dragonhide Pack', icon: '🐉', capacity: 90, cost: 12500 },
+  { name: 'Bag of Holding', icon: '✨', capacity: 100, cost: 20000 },
+];
 
 const SKILL_IDS = Object.keys(SKILLS);
 
@@ -243,4 +259,4 @@ function findItem(query, candidates) {
   );
 }
 
-module.exports = { ITEMS, SKILLS, SKILL_IDS, COMMAND_TO_SKILL, TOOL_TO_SKILL, maxLevel, findItem };
+module.exports = { ITEMS, SKILLS, SKILL_IDS, BACKPACK_TIERS, COMMAND_TO_SKILL, TOOL_TO_SKILL, maxLevel, findItem };
