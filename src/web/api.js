@@ -5,6 +5,7 @@ const { ITEMS, SKILLS, SKILL_IDS, maxLevel } = require('../game/skills');
 const { levelForXp, progress, CHARACTER_MAX_LEVEL, CHARACTER_SKILL_COUNT } = require('../game/xp');
 const { makeIsAdmin } = require('./auth');
 const { SettingsError } = require('../settings');
+const casino = require('../game/casino');
 
 function apiRouter({ engine, repo, kick, bot, config, settings, logger = console }) {
   const router = express.Router();
@@ -120,6 +121,37 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       engine.off('activity', send);
     });
   });
+
+  // ---- Casino (logged-in players; results are decided on the server) --------------------
+
+  router.get('/casino', (req, res) => {
+    const c = engine.cfg;
+    res.json({
+      open: c.casinoEnabled !== false,
+      minBet: c.casinoMinBet ?? 10,
+      maxBet: c.casinoMaxBet || 0,
+      cooldown: c.casinoCooldown ?? 5,
+      slots: casino.SLOT_SYMBOLS.map(({ id, icon, label, three, two }) => ({ id, icon, label, three, two })),
+      wheel: casino.WHEEL_ORDER.map((n) => ({ n, color: casino.colorOf(n) })),
+      plinko: { rows: casino.PLINKO_ROWS, risks: casino.PLINKO_RISKS },
+      balance: req.user ? repo.getUser(req.user.id).points : null,
+      blackjack: req.user ? engine.blackjackState(req.user) : null,
+    });
+  });
+  const play = (fn) => [
+    requireLogin,
+    (req, res) => {
+      const r = fn(req);
+      if (!r.ok && !r.error) r.error = 'Slow down a little!';
+      res.status(r.ok ? 200 : 400).json(r);
+    },
+  ];
+  const betOf = (req) => String(req.body?.bet ?? '');
+  router.post('/casino/slots', ...play((req) => engine.playSlots(req.user, betOf(req))));
+  router.post('/casino/roulette', ...play((req) => engine.playRoulette(req.user, String(req.body?.choice || ''), betOf(req))));
+  router.post('/casino/plinko', ...play((req) => engine.playPlinko(req.user, betOf(req), String(req.body?.risk || 'medium'))));
+  router.post('/casino/blackjack', ...play((req) => engine.blackjackStart(req.user, betOf(req))));
+  router.post('/casino/blackjack/:action', ...play((req) => engine.blackjackAction(req.user, req.params.action)));
 
   // ---- Admin -------------------------------------------------------------
 

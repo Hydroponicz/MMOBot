@@ -17,6 +17,7 @@ const {
   findItem,
 } = require('./skills');
 const { levelForXp, progress, characterProgress } = require('./xp');
+const casino = require('./casino');
 
 const fmt = (n) => Number(n).toLocaleString('en-US');
 const pct = (x) => `${Math.round(x * 1000) / 10}%`;
@@ -42,6 +43,13 @@ const INFO_COMMANDS = {
   plant: ['plant', 'plant'], sow: ['plant', 'plant'],
   harvest: ['harvest', 'harvest'], reap: ['harvest', 'harvest'],
   farm: ['farmInfo', 'farm'], plots: ['farmInfo', 'farm'], garden: ['farmInfo', 'farm'],
+  // Casino (points only). Has its own short cooldown.
+  slots: ['chatSlots', 'slots'], slot: ['chatSlots', 'slots'], spin: ['chatSlots', 'slots'],
+  roulette: ['chatRoulette', 'roulette'], rl: ['chatRoulette', 'roulette'],
+  plinko: ['chatPlinko', 'plinko'],
+  blackjack: ['chatBlackjack', 'blackjack'], bj: ['chatBlackjack', 'blackjack'],
+  hit: ['chatHit', 'blackjack'], stand: ['chatStand', 'blackjack'], double: ['chatDouble', 'blackjack'],
+  casino: ['casinoHelp', 'casino'], gamble: ['casinoHelp', 'casino'],
   commands: ['help', 'commands'], help: ['help', 'commands'], rpg: ['help', 'commands'], mmo: ['help', 'commands'],
 };
 
@@ -82,6 +90,8 @@ class GameEngine extends EventEmitter {
     this.now = now;
     this.cooldownWarned = new Map(); // userId -> last_action_at we already warned about
     this.farmWarned = new Map(); // same, for the farming cooldown
+    this.lastBet = new Map(); // userId -> time of last casino bet (casino cooldown)
+    this.betWarned = new Map();
   }
 
   get cfg() {
@@ -916,7 +926,7 @@ class GameEngine extends EventEmitter {
     const on = (list) => list.filter((c) => !off.includes(c)).map((c) => `${p}${c}`).join(' ');
     const skills = on(SKILL_IDS.flatMap((id) => (SKILLS[id].type === 'farm' ? ['plant', 'harvest'] : [SKILLS[id].command])));
     const tools = Object.keys(TOOL_TO_SKILL).join('/');
-    return `Skills: ${skills} (e.g. ${p}mine iron, ${p}smith bronze sword) | Gear: ${p}gear ${p}equip ${p}equipped ${p}shop ${p}buy, ${p}upgrade ${tools}/backpack | Info: ${on(['stats', 'inv', 'sell', 'points', 'top'])} | ${this.siteUrl}`;
+    return `Skills: ${skills} (e.g. ${p}mine iron, ${p}smith bronze sword) | Gear: ${p}gear ${p}equip ${p}equipped ${p}shop ${p}buy, ${p}upgrade ${tools}/backpack | Info: ${on(['stats', 'inv', 'sell', 'points', 'top'])}${this.cfg.casinoEnabled === false ? '' : ` | Casino: ${p}casino`} | ${this.siteUrl}`;
   }
 
   // ---- Tools & upgrades (!upgrade rod, !upgrade backpack) --------------------
@@ -1048,6 +1058,224 @@ class GameEngine extends EventEmitter {
     parts.push(`${bag.icon} ${bag.name} ${bag.used}/${bag.capacity}`);
     const anyReady = parts.some((p) => p.endsWith('⬆️'));
     return `${parts.join(' | ')}${anyReady ? ' — ⬆️ = ready to !upgrade' : ''}`;
+  }
+
+  // ---- Casino ------------------------------------------------------------------
+  // Every game returns a result object (used by the website) with ok/error; the chat* wrappers turn
+  // it into one line of chat.
+
+  // Validates a bet: casino open, cooldown, min/max, balance. Returns { bet } or { error }.
+  takeBet(user, betArg) {
+    const c = this.cfg;
+    if (c.casinoEnabled === false) return { error: 'the casino is closed right now.' };
+    const now = this.now();
+    const wait = (c.casinoCooldown ?? 5) * 1000 - (now - (this.lastBet.get(user.id) || 0));
+    if (wait > 0) {
+      // Say it once per cooldown so spamming doesn't flood chat.
+      const last = this.lastBet.get(user.id);
+      if (this.betWarned.get(user.id) === last) return { error: '', cooldown: true };
+      this.betWarned.set(user.id, last);
+      return { error: `🎲 easy! Next bet in ${Math.ceil(wait / 1000)}s.`, cooldown: true };
+    }
+    const balance = this.repo.getUser(user.id).points;
+    let bet = casino.parseBet(betArg, balance);
+    if (bet === null) return { error: 'how much? e.g. 500, 1k, half or all.' };
+    const max = c.casinoMaxBet || 0;
+    if (max > 0 && bet > max) bet = max;
+    const min = c.casinoMinBet ?? 10;
+    if (bet < min) return { error: `the minimum bet is ${fmt(min)} pts${balance < min ? ` (you have ${fmt(balance)})` : ''}.` };
+    if (bet > balance) return { error: `you only have ${fmt(balance)} pts.` };
+    return { bet };
+  }
+
+  // Pays out: net = bet * multiplier - bet. Announces big wins to the feed/overlay.
+  settleBet(user, game, bet, multiplier, what) {
+    const payout = Math.floor(bet * multiplier);
+    const net = payout - bet;
+    this.repo.transaction(() => this.repo.addPoints(user.id, net));
+    this.lastBet.set(user.id, this.now());
+    if (multiplier >= 10 || net >= 10000) {
+      this.emitActivity(user, { kind: 'jackpot', text: `won ${fmt(payout)} pts on ${game}${what ? ` (${what})` : ''}! 🎉` });
+    }
+    return { bet, multiplier, payout, net, balance: this.repo.getUser(user.id).points };
+  }
+
+  playSlots(user, betArg) {
+    const b = this.takeBet(user, betArg);
+    if (b.bet === undefined) return { ok: false, ...b };
+    const spin = casino.spinSlots(this.rng);
+    return { ok: true, game: 'slots', ...spin, ...this.settleBet(user, 'slots', b.bet, spin.multiplier, spin.line) };
+  }
+
+  playRoulette(user, choice, betArg) {
+    if (!casino.rouletteBet(choice)) return { ok: false, error: 'bet on red, black, green, odd, even, low, high, 1st/2nd/3rd (dozens) or a number 1-36.' };
+    const b = this.takeBet(user, betArg);
+    if (b.bet === undefined) return { ok: false, ...b };
+    const spin = casino.spinRoulette(this.rng, choice);
+    return { ok: true, game: 'roulette', ...spin, ...this.settleBet(user, 'roulette', b.bet, spin.multiplier, spin.win ? spin.betLabel : null) };
+  }
+
+  playPlinko(user, betArg, risk) {
+    const r = casino.riskOf(risk || 'medium');
+    if (!r) return { ok: false, error: 'risk must be low, medium or high.' };
+    const b = this.takeBet(user, betArg);
+    if (b.bet === undefined) return { ok: false, ...b };
+    const drop = casino.dropPlinko(this.rng, r);
+    return { ok: true, game: 'plinko', rows: casino.PLINKO_ROWS, ...drop, ...this.settleBet(user, 'plinko', b.bet, drop.multiplier, `${drop.multiplier}x`) };
+  }
+
+  // Blackjack keeps the hand in the database, so it survives restarts. The stake is taken up front.
+  bjKey(userId) {
+    return `bj:${userId}`;
+  }
+
+  bjView(game, balance) {
+    const done = Boolean(game.status);
+    return {
+      ok: true,
+      game: 'blackjack',
+      stake: game.stake,
+      player: game.player,
+      playerTotal: casino.handTotal(game.player),
+      dealer: done ? game.dealer : [game.dealer[0], null],
+      dealerTotal: done ? casino.handTotal(game.dealer) : casino.handTotal([game.dealer[0]]),
+      status: game.status || 'playing',
+      canDouble: !done && game.player.length === 2 && !game.doubled && balance >= game.stake,
+      payout: game.payout ?? null,
+      net: game.payout != null ? game.payout - game.stake : null,
+      balance,
+    };
+  }
+
+  blackjackState(user) {
+    const game = this.repo.getSetting(this.bjKey(user.id));
+    return game ? this.bjView(game, this.repo.getUser(user.id).points) : { ok: true, game: 'blackjack', status: 'none', balance: this.repo.getUser(user.id).points };
+  }
+
+  blackjackStart(user, betArg) {
+    if (this.repo.getSetting(this.bjKey(user.id))) return { ok: false, error: 'finish your current hand first: !hit, !stand or !double.', ...this.blackjackState(user) };
+    const b = this.takeBet(user, betArg);
+    if (b.bet === undefined) return { ok: false, ...b };
+    const game = { stake: b.bet, player: [casino.drawCard(this.rng), casino.drawCard(this.rng)], dealer: [casino.drawCard(this.rng), casino.drawCard(this.rng)], doubled: false };
+    this.repo.transaction(() => {
+      this.repo.addPoints(user.id, -b.bet);
+      this.repo.setSetting(this.bjKey(user.id), game);
+    });
+    this.lastBet.set(user.id, this.now());
+    if (casino.isBlackjack(game.player) || casino.isBlackjack(game.dealer)) return this.blackjackFinish(user, game);
+    return this.bjView(game, this.repo.getUser(user.id).points);
+  }
+
+  blackjackAction(user, action) {
+    let game = this.repo.getSetting(this.bjKey(user.id));
+    if (!game) return { ok: false, error: 'no hand in play. Start one with !bj <bet>.' };
+    if (action === 'double') {
+      if (game.player.length !== 2 || game.doubled) return { ok: false, error: 'you can only double on your first two cards.', ...this.bjView(game, this.repo.getUser(user.id).points) };
+      if (this.repo.getUser(user.id).points < game.stake) return { ok: false, error: `doubling needs another ${fmt(game.stake)} pts.`, ...this.bjView(game, this.repo.getUser(user.id).points) };
+      this.repo.addPoints(user.id, -game.stake);
+      game = { ...game, stake: game.stake * 2, doubled: true, player: [...game.player, casino.drawCard(this.rng)] };
+      return this.blackjackFinish(user, game);
+    }
+    if (action === 'hit') {
+      game = { ...game, player: [...game.player, casino.drawCard(this.rng)] };
+      if (casino.handTotal(game.player) >= 21) return this.blackjackFinish(user, game);
+      this.repo.setSetting(this.bjKey(user.id), game);
+      return this.bjView(game, this.repo.getUser(user.id).points);
+    }
+    if (action === 'stand') return this.blackjackFinish(user, game);
+    return { ok: false, error: 'use hit, stand or double.' };
+  }
+
+  blackjackFinish(user, game) {
+    const done = casino.settleBlackjack(game, this.rng);
+    const payout = Math.floor(done.stake * done.multiplier);
+    this.repo.transaction(() => {
+      if (payout) this.repo.addPoints(user.id, payout);
+      this.repo.deleteSetting(this.bjKey(user.id));
+    });
+    if (done.status === 'blackjack' || payout - done.stake >= 10000) {
+      this.emitActivity(user, { kind: 'jackpot', text: `won ${fmt(payout)} pts at blackjack${done.status === 'blackjack' ? ' with a BLACKJACK' : ''}! 🃏` });
+    }
+    return this.bjView({ ...done, payout }, this.repo.getUser(user.id).points);
+  }
+
+  // ---- Casino: chat ------------------------------------------------------------------
+  casinoReply(r, win) {
+    const bal = `Balance: ${fmt(r.balance)}`;
+    return r.net > 0 ? `${win} WON ${fmt(r.payout)} pts (${r.multiplier}x)! 💰 ${bal}` : r.net === 0 ? `${win} bet back. ${bal}` : `${win} lost ${fmt(-r.net)}. ${bal}`;
+  }
+
+  chatSlots(user, args) {
+    if (!args.length) return 'usage: !slots <bet> (e.g. !slots 500, !slots all). Pays up to 300x on 🟩🟩🟩!';
+    const r = this.playSlots(user, args[0]);
+    if (!r.ok) return r.error || null;
+    const icons = r.reels.map((id) => casino.SLOT_SYMBOLS.find((x) => x.id === id).icon).join(' | ');
+    return this.casinoReply(r, `🎰 [ ${icons} ]${r.line ? ` ${r.line}!` : ''}`);
+  }
+
+  chatRoulette(user, args) {
+    if (args.length < 2) return 'usage: !roulette <red|black|green|odd|even|low|high|1st|2nd|3rd|number> <bet>, e.g. !roulette red 500';
+    const [a, b] = args;
+    const bets = (x) => casino.parseBet(x, user.points) !== null;
+    // "!roulette red 500" or "!roulette 500 red". "!roulette 7 500" means 500 on number 7.
+    const [choice, bet] = casino.rouletteBet(a) && bets(b) ? [a, b] : casino.rouletteBet(b) && bets(a) ? [b, a] : [null, null];
+    if (!choice) return `bet on red, black, green, odd, even, low, high, 1st, 2nd, 3rd or a number 1-36, e.g. ${this.cfg.prefix}roulette red 500`;
+    const r = this.playRoulette(user, choice, bet);
+    if (!r.ok) return r.error || null;
+    const dot = { red: '🔴', black: '⚫', green: '🟢' }[r.color];
+    return this.casinoReply(r, `🎡 ${dot} ${r.number} — you bet ${r.betLabel}:`);
+  }
+
+  chatPlinko(user, args) {
+    if (!args.length) return 'usage: !plinko <bet> [low|medium|high], e.g. !plinko 500 high';
+    const [a, b] = args;
+    const [bet, risk] = casino.riskOf(a) ? [b, a] : [a, b];
+    const r = this.playPlinko(user, bet, risk);
+    if (!r.ok) return r.error || null;
+    return this.casinoReply(r, `🔻 Plinko (${r.risk}) landed on ${r.multiplier}x:`);
+  }
+
+  bjText(v) {
+    const hand = (cards) => cards.map((c) => (c ? casino.cardText(c) : '🂠')).join(' ');
+    const table = `🃏 You: ${hand(v.player)} (${v.playerTotal}) | Dealer: ${hand(v.dealer)} (${v.dealerTotal})`;
+    if (v.status === 'playing') return `${table} — !hit, !stand${v.canDouble ? ' or !double' : ''}`;
+    const outcome = {
+      blackjack: `BLACKJACK! Won ${fmt(v.payout)} pts`,
+      win: `you WIN ${fmt(v.payout)} pts`,
+      push: 'push — bet back',
+      lose: `dealer wins, lost ${fmt(v.stake)}`,
+      bust: `bust! Lost ${fmt(v.stake)}`,
+    }[v.status];
+    return `${table} — ${outcome}. Balance: ${fmt(v.balance)}`;
+  }
+
+  chatBlackjack(user, args) {
+    const current = this.repo.getSetting(this.bjKey(user.id));
+    if (current) return this.bjText(this.bjView(current, this.repo.getUser(user.id).points));
+    if (!args.length) return 'usage: !bj <bet> (e.g. !bj 500), then !hit, !stand or !double. Blackjack pays 3:2.';
+    const r = this.blackjackStart(user, args[0]);
+    return r.ok ? this.bjText(r) : r.error || null;
+  }
+
+  chatHit(user) {
+    const r = this.blackjackAction(user, 'hit');
+    return r.ok ? this.bjText(r) : r.error;
+  }
+
+  chatStand(user) {
+    const r = this.blackjackAction(user, 'stand');
+    return r.ok ? this.bjText(r) : r.error;
+  }
+
+  chatDouble(user) {
+    const r = this.blackjackAction(user, 'double');
+    return r.ok ? this.bjText(r) : r.error;
+  }
+
+  casinoHelp() {
+    const c = this.cfg;
+    if (c.casinoEnabled === false) return 'the casino is closed right now.';
+    return `🎰 Casino (points only): ${c.prefix}slots <bet> · ${c.prefix}roulette red <bet> · ${c.prefix}plinko <bet> [low|medium|high] · ${c.prefix}bj <bet> then ${c.prefix}hit/${c.prefix}stand/${c.prefix}double. Bets: 500, 1k, half, all. Or play at ${this.siteUrl}/#/casino`;
   }
 
   // ---- Data for the website ---------------------------------------------

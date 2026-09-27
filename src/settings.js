@@ -20,6 +20,11 @@ const COMMANDS = [
   'plant',
   'harvest',
   'farm',
+  'casino',
+  'slots',
+  'roulette',
+  'plinko',
+  'blackjack',
   ...TOOL_SKILLS.map((id) => SKILLS[id].tool.id),
   'stats',
   'inv',
@@ -44,6 +49,12 @@ const FIELDS = {
       help: 'emote=command pairs, comma separated. A chat message with that emote runs the command, e.g. hydroponiczcobble=mine makes the emote work like !mine.',
     },
     adminUsers: { type: 'list', label: 'Extra admins', help: 'Kick usernames (comma separated) allowed on this page. The channel owner is always admin.' },
+  },
+  casino: {
+    casinoEnabled: { type: 'bool', label: 'Casino open', help: 'Slots, roulette, plinko and blackjack (chat and website). Points only.' },
+    casinoMinBet: { type: 'int', label: 'Minimum bet', help: 'Smallest bet allowed.', min: 1, max: 1e12 },
+    casinoMaxBet: { type: 'int', label: 'Maximum bet (0 = no limit)', help: 'Bigger bets (including "all") are capped to this.', min: 0, max: 1e12 },
+    casinoCooldown: { type: 'int', label: 'Casino cooldown (seconds)', help: 'Time between bets per viewer.', min: 0, max: 3600 },
   },
   economy: {
     xpMultiplier: { type: 'number', label: 'XP multiplier', help: '2 = double XP event.', min: 0.1, max: 100 },
@@ -152,6 +163,12 @@ class Settings extends EventEmitter {
         emoteCommands: config.game.emoteCommands || [],
         adminUsers: config.adminUsers || [],
       },
+      casino: {
+        casinoEnabled: config.game.casinoEnabled ?? true,
+        casinoMinBet: config.game.casinoMinBet ?? 10,
+        casinoMaxBet: config.game.casinoMaxBet ?? 0,
+        casinoCooldown: config.game.casinoCooldown ?? 5,
+      },
       economy: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, growMultiplier: 1 },
       disabledCommands: [],
     };
@@ -174,6 +191,7 @@ class Settings extends EventEmitter {
     this.all = {
       general: { ...d.general, ...(o.general || {}) },
       economy: { ...d.economy, ...(o.economy || {}) },
+      casino: { ...d.casino, ...(o.casino || {}) },
       disabledCommands: Array.isArray(o.disabledCommands) ? o.disabledCommands : d.disabledCommands,
       ...Object.fromEntries(Object.keys(TABLES).map((k) => [k, table(k)])),
     };
@@ -182,7 +200,7 @@ class Settings extends EventEmitter {
 
   // Flat view the game engine reads on every command.
   get game() {
-    return { ...this.all.general, ...this.all.economy, disabledCommands: this.all.disabledCommands };
+    return { ...this.all.general, ...this.all.economy, ...this.all.casino, disabledCommands: this.all.disabledCommands };
   }
 
   // Validate and save one section. Returns the new settings; throws SettingsError on bad input.

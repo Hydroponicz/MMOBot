@@ -712,3 +712,139 @@ test('players who bought plots before the free plot existed get it on top', () =
   repo.setEquipment(u.id, 'plots', 4); // bought 4 under the old rules
   assert.equal(engine.plotCount(u.id), 5);
 });
+
+// ---- Casino --------------------------------------------------------------------
+
+test('bets: numbers, k/m, half, all, percent', () => {
+  const { parseBet } = require('../src/game/casino');
+  assert.equal(parseBet('500', 1000), 500);
+  assert.equal(parseBet('1.5k', 0), 1500);
+  assert.equal(parseBet('2m', 0), 2_000_000);
+  assert.equal(parseBet('all', 1234), 1234);
+  assert.equal(parseBet('half', 1235), 617);
+  assert.equal(parseBet('25%', 1000), 250);
+  assert.equal(parseBet('lots', 1000), null);
+});
+
+test('!slots pays 3-of-a-kind, pairs and single KICK; loses otherwise', () => {
+  // Reel strip weights: chat 30, follow 25, gift 18, mic 12, cam 9, live 5, kick 3 (total 102).
+  const at = (id) => {
+    const { SLOT_SYMBOLS } = require('../src/game/casino');
+    let start = 0;
+    for (const s of SLOT_SYMBOLS) {
+      if (s.id === id) return (start + 0.5) / 102;
+      start += s.weight;
+    }
+  };
+  const { repo, say, tick } = setup({ rolls: [at('gift'), at('gift'), at('gift'), at('chat'), at('follow'), at('mic'), at('kick'), at('chat'), at('mic')] });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addPoints(u.id, 995); // 1,000 total
+  assert.match(say('!slots 100'), /🎰 \[ 🎁 \| 🎁 \| 🎁 \] 3x Gift Sub! WON 1,500 pts \(15x\)! 💰 Balance: 2,400/);
+  tick();
+  assert.match(say('!slots 100'), /🎰 \[ 💬 \| 💚 \| 🎙️ \] lost 100\. Balance: 2,300/);
+  tick();
+  assert.match(say('!slots 100'), /🎰 \[ 🟩 \| 💬 \| 🎙️ \] lucky KICK! bet back\. Balance: 2,30\d/);
+  assert.match(say('!slots'), /usage: !slots <bet>/);
+});
+
+test('casino rules: cooldown (warned once), min bet, balance, max bet cap, closed', () => {
+  const { repo, settings, say, tick } = withLiveSettings();
+  const u = repo.getUserByName('alice') || repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addPoints(u.id, 1000);
+  assert.match(say('!slots 5'), /minimum bet is 10 pts/);
+  assert.match(say('!slots 999999'), /you only have 1,00\d pts/);
+  say('!slots 10');
+  assert.match(say('!slots 10'), /easy! Next bet in 5s/);
+  assert.equal(say('!slots 10'), null, 'cooldown warning only once');
+  tick();
+  settings.update('casino', { casinoMaxBet: 50 });
+  const before = repo.getUser(u.id).points;
+  say('!slots all');
+  const after = repo.getUser(u.id).points;
+  assert.ok(before - after <= 50, '"all" is capped to the max bet');
+  settings.update('casino', { casinoEnabled: false });
+  tick();
+  assert.match(say('!slots 10'), /casino is closed/);
+});
+
+test('!roulette: red/black, numbers, either argument order', () => {
+  // WHEEL_ORDER[1] = 32 (red); WHEEL_ORDER[0] = 0 (green)
+  const { repo, say, tick } = setup({ rolls: [1.5 / 37, 0.5 / 37, 1.5 / 37] });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addPoints(u.id, 995);
+  assert.match(say('!roulette red 100'), /🎡 🔴 32 — you bet red: WON 200 pts \(2x\)! 💰 Balance: 1,100/);
+  tick();
+  assert.match(say('!roulette 100 black'), /🎡 🟢 0 — you bet black: lost 100/);
+  tick();
+  assert.match(say('!roulette 32 100'), /you bet number 32: WON 3,600 pts \(36x\)/);
+  assert.match(say('!roulette purple 100'), /bet on red, black, green/);
+  assert.match(say('!roulette banana 10'), /bet on red, black, green/);
+});
+
+test('!plinko: 12 rows, risk levels, path decides the bucket', () => {
+  const { repo, say, tick } = setup({ rolls: [...Array(12).fill(0.1), ...Array(6).fill(0.1), ...Array(6).fill(0.9)] });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addPoints(u.id, 995);
+  assert.match(say('!plinko 100 high'), /🔻 Plinko \(high\) landed on 170x: WON 17,000 pts/);
+  tick();
+  assert.match(say('!plinko medium 100'), /landed on 0\.3x: lost 70/);
+});
+
+test('!bj: deal, hit, stand, double; hand survives between commands', () => {
+  // Cards use two rolls each (rank, suit). Ranks: A,2..10,J,Q,K -> index/13.
+  const r = (rank) => (['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'].indexOf(rank) + 0.5) / 13;
+  const suit = 0.1; // spades
+  // Player 10+6, dealer 9 + 7. Hit -> 4 (20). Stand: dealer 16 draws 5 -> 21? no: give dealer a K -> bust.
+  const { repo, engine, say, tick } = setup({ rolls: [r('10'), suit, r('6'), suit, r('9'), suit, r('7'), suit, r('4'), suit, r('K'), suit] });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addPoints(u.id, 995); // 1,000
+  assert.match(say('!bj 100'), /🃏 You: 10♠ 6♠ \(16\) \| Dealer: 9♠ 🂠 \(9\) — !hit, !stand or !double/);
+  assert.equal(repo.getUser(u.id).points, 900, 'stake taken up front');
+  assert.match(say('!bj 100'), /You: 10♠ 6♠/, 'shows the hand in play instead of dealing again');
+  assert.match(say('!hit'), /You: 10♠ 6♠ 4♠ \(20\).*— !hit, !stand$/);
+  assert.match(say('!stand'), /Dealer: 9♠ 7♠ K♠ \(26\) — you WIN 200 pts\. Balance: 1,100/);
+  assert.match(say('!stand'), /no hand in play/);
+  assert.equal(engine.blackjackState(u).status, 'none');
+});
+
+test('blackjack pays 3:2 and doubling doubles the stake', () => {
+  const r = (rank) => (['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'].indexOf(rank) + 0.5) / 13;
+  const s = 0.1;
+  const { repo, say, tick } = setup({
+    rolls: [r('A'), s, r('K'), s, r('9'), s, r('7'), s, /* hand 2 */ r('5'), s, r('6'), s, r('10'), s, r('7'), s, r('10'), s],
+  });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addPoints(u.id, 995);
+  assert.match(say('!bj 100'), /BLACKJACK! Won 250 pts\. Balance: 1,150/);
+  tick();
+  // 5+6 = 11, double -> draws 10 = 21. Dealer 10+7 = 17 stands. Win 2x on a 200 stake.
+  say('!bj 100');
+  // 1,150 - 100 stake - 100 more to double + 400 back = 1,350
+  assert.match(say('!double'), /You: 5♠ 6♠ 10♠ \(21\) \| Dealer: 10♠ 7♠ \(17\) — you WIN 400 pts\. Balance: 1,350/);
+});
+
+test('big wins go to the live feed', () => {
+  const { repo, engine, say } = setup({ rolls: Array(12).fill(0.1) });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addPoints(u.id, 995);
+  const seen = [];
+  engine.on('activity', (a) => seen.push(a));
+  say('!plinko 100 high');
+  assert.equal(seen.at(-1).kind, 'jackpot');
+  assert.match(seen.at(-1).text, /won 17,000 pts on plinko/);
+});
+
+test('return to player is close to a real casino', () => {
+  const casino = require('../src/game/casino');
+  let x = 42;
+  const rng = () => ((x = (x * 1103515245 + 12345) % 2147483648) / 2147483648);
+  let slots = 0;
+  let plinko = 0;
+  const N = 200_000;
+  for (let i = 0; i < N; i++) {
+    slots += casino.spinSlots(rng).multiplier;
+    plinko += casino.dropPlinko(rng, 'medium').multiplier;
+  }
+  assert.ok(slots / N > 0.9 && slots / N < 1, `slots RTP ${slots / N}`);
+  assert.ok(plinko / N > 0.95 && plinko / N < 1.02, `plinko RTP ${plinko / N}`);
+});

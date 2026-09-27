@@ -30,6 +30,8 @@
     .ev.rare b { color: #c084fc; }
     .ev.upgrade { border-left-color: #38bdf8; }
     .ev.upgrade b { color: #38bdf8; }
+    .ev.jackpot { border-left-color: #53fc18; }
+    .ev.jackpot b { color: #53fc18; }
     .ev.status { border-left-color: #8b98a8; font-size: 14px; }
     .ev.status.bad { border-left-color: #ff5c7a; }
     @keyframes in { from { transform: translateX(-110%); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -44,8 +46,8 @@
     const max = Math.min(Math.max(Number(params.get('max')) || 6, 1), 30);
     const quiet = params.has('quiet');
 
-    const BIG = ['levelup', 'charlevel', 'rare', 'upgrade'];
-    const icons = { levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', buy: '🛒', action: '✨', test: '🧪' };
+    const BIG = ['levelup', 'charlevel', 'rare', 'upgrade', 'jackpot'];
+    const icons = { levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', buy: '🛒', action: '✨', test: '🧪', jackpot: '🎰' };
     const skillIcons = { fishing: '🎣', mining: '⛏️', woodcutting: '🪓', digging: '🏺', smelting: '🔥', smithing: '⚒️', swords: '🗡️', skinning: '🔪', farming: '🌱' };
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 

@@ -39,7 +39,7 @@
   };
   const skillIcon = (id) => state.site?.skills.find((s) => s.id === id)?.icon || '✨';
   const feedIcon = (a) =>
-    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
+    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒', jackpot: '🎰' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
 
   // ---- live activity (SSE) ----------------------------------------------
   const listeners = new Set();
@@ -484,6 +484,8 @@
     });
   };
 
+  pages.casino = async () => window.MMOCasino($app, { api, toast, esc, fmt, state, route });
+
   pages.leaderboards = async (_, query) => {
     const kind = query.get('board') || 'overall';
     const tabs = [
@@ -643,6 +645,10 @@
             <dt><code>!sell trout 5</code></dt><dd>Sell a specific item</dd>
             <dt><code>!points</code></dt><dd>Show your points</dd>
             <dt><code>!top [skill]</code></dt><dd>Top 5 players</dd>
+            <dt><code>!slots 500</code></dt><dd>🎰 Spin the slots (<code>!slots all</code>, <code>!slots half</code>, <code>!slots 1k</code>)</dd>
+            <dt><code>!roulette red 500</code></dt><dd>🎡 Bet on red/black/green, odd/even, low/high, 1st/2nd/3rd or a number</dd>
+            <dt><code>!plinko 500 high</code></dt><dd>🔻 Drop a plinko ball (low, medium or high risk)</dd>
+            <dt><code>!bj 500</code></dt><dd>🃏 Blackjack, then <code>!hit</code>, <code>!stand</code> or <code>!double</code></dd>
             <dt><code>!commands</code></dt><dd>List commands</dd>
           </dl>
         </section>
@@ -966,6 +972,7 @@
         <div class="stack">
           ${fieldSection('general', 'General', 'Commands, cooldowns and chat behaviour.')}
           ${fieldSection('economy', 'Economy', 'Multipliers for XP, points and prices. Great for double-XP events.')}
+          ${fieldSection('casino', 'Casino', 'Slots, roulette, plinko and blackjack, on the site and in chat. Max bet 0 means no limit.')}
         </div>
         <div class="stack">
           <form class="panel settings-form" data-section="disabledCommands" data-kind="commands">

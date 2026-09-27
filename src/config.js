@@ -49,6 +49,11 @@ const config = {
     chatCooldown: int('CHAT_POINTS_COOLDOWN_SECONDS', 60),
     // Whether the bot replies in chat to every command.
     replyInChat: bool('REPLY_IN_CHAT', true),
+    // Casino (points only). Min/max bet (0 = no max) and seconds between bets per viewer.
+    casinoEnabled: bool('CASINO_ENABLED', true),
+    casinoMinBet: int('CASINO_MIN_BET', 10),
+    casinoMaxBet: int('CASINO_MAX_BET', 0),
+    casinoCooldown: int('CASINO_COOLDOWN_SECONDS', 5),
     // Emotes that work as commands, "emote=command" (comma separated). Editable on the admin page.
     emoteCommands: env('EMOTE_COMMANDS', 'hydroponiczcobble=mine')
       .split(',')
