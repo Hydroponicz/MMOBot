@@ -66,3 +66,49 @@ test('falls back to the published Kick public key', async (t) => {
   assert.equal(await kick.getPublicKey(), KICK_PUBLIC_KEY);
   assert.doesNotThrow(() => crypto.createPublicKey(KICK_PUBLIC_KEY));
 });
+
+function withTokens(repo, { broadcaster, bot }) {
+  const tok = (user_id, username) => ({ access_token: `tok-${username}`, refresh_token: 'r', expires_at: Date.now() + 3600e3, user_id, username });
+  if (broadcaster) repo.setSetting('token:broadcaster', tok(...broadcaster));
+  if (bot) repo.setSetting('token:bot', tok(...bot));
+}
+
+test('sendChat posts as the separate bot account into the channel', async (t) => {
+  const fake = fakeKick();
+  t.mock.method(globalThis, 'fetch', async (url, opts) => (url.endsWith('/public/v1/chat') ? new Response('{"data":{"is_sent":true}}') : fake.fetch(url, opts)));
+  const repo = openDb(':memory:');
+  withTokens(repo, { broadcaster: ['777', 'Streamer'], bot: ['888', 'mmobot'] });
+  const kick = new KickApi({ config, repo, logger: quiet });
+  assert.deepEqual(kick.replySender(), { mode: 'bot_account', username: 'mmobot' });
+  assert.equal(await kick.sendChat('hi'), true);
+  const call = globalThis.fetch.mock.calls.at(-1);
+  assert.equal(call.arguments[1].headers.Authorization, 'Bearer tok-mmobot');
+  assert.deepEqual(JSON.parse(call.arguments[1].body), { type: 'user', broadcaster_user_id: 777, content: 'hi' });
+});
+
+test('a channel account saved as the bot is ignored; replies use the app bot', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => new Response('{"data":{},"message":"Not found"}', { status: 404 }));
+  const repo = openDb(':memory:');
+  withTokens(repo, { broadcaster: ['777', 'Streamer'], bot: ['777', 'Streamer'] });
+  const kick = new KickApi({ config, repo, logger: quiet });
+  assert.equal(kick.botAccount(), null);
+  assert.deepEqual(kick.replySender(), { mode: 'app_bot', username: null });
+  await assert.rejects(kick.sendChat('hi'), /Connect your bot account/);
+  const call = globalThis.fetch.mock.calls.at(-1);
+  assert.equal(call.arguments[1].headers.Authorization, 'Bearer tok-Streamer');
+  assert.deepEqual(JSON.parse(call.arguments[1].body), { type: 'bot', content: 'hi' });
+});
+
+test('the bot ignores only its own bot account, never the streamer', () => {
+  const { ChatBot } = require('../src/bot/bot');
+  const repo = openDb(':memory:');
+  withTokens(repo, { broadcaster: ['777', 'Streamer'], bot: ['777', 'Streamer'] });
+  const kick = new KickApi({ config, repo, logger: quiet });
+  const seen = [];
+  const bot = new ChatBot({ engine: { handleChat: (m) => (seen.push(m.username), { reply: null }) }, kick, config: { game: { replyInChat: false } }, logger: quiet });
+  bot.handleMessage({ kickUserId: '777', username: 'Streamer', content: '!fish' });
+  withTokens(repo, { bot: ['888', 'mmobot'] });
+  bot.handleMessage({ kickUserId: '888', username: 'mmobot', content: '@x you caught' });
+  bot.handleMessage({ kickUserId: '777', username: 'Streamer', content: '!fish' });
+  assert.deepEqual(seen, ['Streamer', 'Streamer']);
+});

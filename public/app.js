@@ -371,23 +371,38 @@
             <button class="btn" id="resub" ${s.kickConfigured ? '' : 'disabled'}>Check / re-subscribe now</button>
           </section>
           <section class="panel">
-            <div class="panel-head"><h2>2. Let the bot reply</h2>${dot(s.broadcaster || s.bot)}</div>
-            <p class="muted">Authorize with the channel owner's Kick account so the bot can post replies in chat. Replies appear from Kick's bot identity for your app.</p>
+            <div class="panel-head"><h2>2. Bot account</h2>${dot(s.bot)}</div>
+            ${
+              s.botIsChannelAccount
+                ? `<div class="alert err">The account connected as the bot is your channel account, so it's being ignored. Connect your bot account (e.g. <i>mmobot</i>) with the link below.</div>`
+                : ''
+            }
+            <p class="muted">Replies are posted from a separate Kick account, e.g. <i>mmobot</i>. Kick signs in with whichever account is logged into kick.com in the browser, so connect it from a <b>private/incognito window</b>:</p>
+            <ol class="steps muted">
+              <li>Click <b>Get bot login link</b> and copy the link.</li>
+              <li>Open a private/incognito window and paste the link.</li>
+              <li>Log into Kick as your bot account and approve.</li>
+            </ol>
+            ${s.bot ? `<p>Replying as <b>${esc(s.bot.username)}</b>.</p>` : ''}
+            <div class="form-row" style="flex-wrap:wrap">
+              <button class="btn ${s.bot ? '' : 'btn-primary'}" id="bot-link">Get bot login link</button>
+              ${s.bot ? '<button class="btn btn-danger" data-disconnect="bot">Disconnect bot account</button>' : ''}
+            </div>
+            <div id="bot-link-box" hidden style="margin-top:12px">
+              <div class="form-row"><input type="text" id="bot-link-url" readonly style="max-width:none"><button class="btn" id="bot-link-copy">Copy</button></div>
+              <p class="muted" style="margin:6px 0 0;font-size:.85rem">Works once and expires in 30 minutes.</p>
+            </div>
+            <p class="muted" style="margin-bottom:0;font-size:.85rem">Tip: type <code>/mod ${esc(s.bot?.username || 'mmobot')}</code> in your chat so slow mode and follower-only mode don't block replies.</p>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>3. Channel connection</h2>${dot(s.broadcaster)}</div>
+            <p class="muted">Optional once a bot account is connected. Without one, replies are sent through your channel account as your Kick app's bot.</p>
             ${
               s.broadcaster
                 ? `<p>Connected as <b>${esc(s.broadcaster.username)}</b>.</p>
                    <a class="btn" href="/auth/connect/broadcaster">Reconnect</a>
                    <button class="btn btn-danger" data-disconnect="broadcaster">Disconnect</button>`
-                : `<a class="btn btn-primary" href="/auth/connect/broadcaster">Connect channel</a>`
-            }
-          </section>
-          <section class="panel">
-            <div class="panel-head"><h2>3. Separate bot account (optional)</h2>${dot(s.bot)}</div>
-            <p class="muted">To reply from a dedicated account (e.g. <i>MyChannelBot</i>), log into that account on kick.com in this browser, then connect it.</p>
-            ${
-              s.bot
-                ? `<p>Replying as <b>${esc(s.bot.username)}</b>.</p><button class="btn btn-danger" data-disconnect="bot">Disconnect bot account</button>`
-                : `<a class="btn" href="/auth/connect/bot">Connect bot account</a>`
+                : `<a class="btn" href="/auth/connect/broadcaster">Connect channel</a>`
             }
           </section>
           <section class="panel">
@@ -400,6 +415,13 @@
             <h2>Status</h2>
             <dl class="kv">
               <dt>Channel</dt><dd>${esc(s.channel || '— set KICK_CHANNEL')}${s.channelId ? ` <span class="muted">(id ${esc(s.channelId)})</span>` : ''}</dd>
+              <dt>Replies come from</dt><dd>${
+                s.replySender.mode === 'bot_account'
+                  ? `${dot(true)}${esc(s.replySender.username)}`
+                  : s.replySender.mode === 'app_bot'
+                    ? `${dot(true)}your Kick app's bot (via ${esc(s.broadcaster.username)})`
+                    : `${dot(false)}nobody yet: connect a bot account`
+              }</dd>
               <dt>Messages seen</dt><dd>${fmt(s.stats.received)}${s.stats.lastMessageAt ? ` (last ${ago(s.stats.lastMessageAt)})` : ''}</dd>
               <dt>Commands handled</dt><dd>${fmt(s.stats.commands)}</dd>
               <dt>Replies sent</dt><dd>${fmt(s.stats.sent)}${s.stats.sendErrors ? ` · <span style="color:var(--danger)">${fmt(s.stats.sendErrors)} errors</span>` : ''}</dd>
@@ -452,6 +474,27 @@
           toast(`Failed: ${e.message}`);
         }
       };
+    $app.querySelector('#bot-link').onclick = async () => {
+      try {
+        const r = await api('/admin/bot-link', { method: 'POST' });
+        $app.querySelector('#bot-link-box').hidden = false;
+        const input = $app.querySelector('#bot-link-url');
+        input.value = r.url;
+        input.select();
+      } catch (e) {
+        toast(`Failed: ${e.message}`);
+      }
+    };
+    $app.querySelector('#bot-link-copy').onclick = async () => {
+      const input = $app.querySelector('#bot-link-url');
+      try {
+        await navigator.clipboard.writeText(input.value);
+        toast('Copied. Paste it into a private/incognito window.');
+      } catch {
+        input.select();
+        toast('Press Ctrl+C / ⌘C to copy');
+      }
+    };
     $app.querySelector('#say-form').onsubmit = async (e) => {
       e.preventDefault();
       const input = e.target.text;

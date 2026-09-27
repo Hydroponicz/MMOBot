@@ -1,4 +1,5 @@
 // JSON API consumed by the website (public/app.js) and the OBS overlay.
+const crypto = require('node:crypto');
 const express = require('express');
 const { SKILLS, SKILL_IDS } = require('../game/skills');
 const { levelForXp, characterProgress } = require('../game/xp');
@@ -97,7 +98,9 @@ function apiRouter({ engine, repo, kick, bot, config }) {
       redirectUrl: `${config.baseUrl}/auth/callback`,
       persistentStorage: config.persistentStorage,
       broadcaster: strip(kick.getToken('broadcaster')),
-      bot: strip(kick.getToken('bot')),
+      bot: strip(kick.botAccount()),
+      botIsChannelAccount: Boolean(kick.getToken('bot') && !kick.botAccount()),
+      replySender: kick.replySender(),
       stats: bot.stats,
       subscriptions,
       subscriptionError,
@@ -113,6 +116,14 @@ function apiRouter({ engine, repo, kick, bot, config }) {
     } catch (err) {
       res.status(502).json({ error: err.message });
     }
+  });
+
+  // One-time link for connecting the bot account from a private window (valid 30 minutes).
+  router.post('/admin/bot-link', requireAdmin, (req, res) => {
+    const code = crypto.randomBytes(24).toString('base64url');
+    const exp = Date.now() + 30 * 60 * 1000;
+    repo.setSetting('bot_link', { code, exp });
+    res.json({ url: `${config.baseUrl}/auth/connect/bot?link=${code}`, expiresAt: exp });
   });
 
   router.post('/admin/disconnect/:kind', requireAdmin, (req, res) => {

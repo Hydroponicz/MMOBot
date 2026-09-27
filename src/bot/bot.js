@@ -17,9 +17,9 @@ class ChatBot {
   handleMessage(msg) {
     this.stats.received++;
     this.stats.lastMessageAt = Date.now();
-    // Ignore our own replies when the bot is a separate account.
-    const botTok = this.kick.getToken('bot');
-    if (botTok && String(msg.kickUserId) === String(botTok.user_id)) return null;
+    // Ignore the bot account's own messages (never the streamer's).
+    const botAccount = this.kick.botAccount();
+    if (botAccount && String(msg.kickUserId) === String(botAccount.user_id)) return null;
     let reply = null;
     try {
       reply = this.engine.handleChat(msg).reply;

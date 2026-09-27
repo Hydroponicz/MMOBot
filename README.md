@@ -81,8 +81,13 @@ Everything else is optional (see `.env.example`). `BASE_URL`, `DB_PATH` and `SES
 
 ### 4. Go live
 1. On startup, the app uses an **app access token** to look up your channel and **subscribe to its chat** (`chat.message.sent`). It re-checks every 30 minutes, because Kick drops subscriptions whose webhook fails for over a day. Chat commands start working straight away and progress is tracked.
-2. For the bot to **reply in chat**, open your site, click **Log in with Kick** with your streamer account (the `KICK_CHANNEL` account is admin automatically), then go to **Admin → Connect channel**.
-3. Optional: to reply from a dedicated account like `YourChannelBot`, log into that account on kick.com and click **Admin → Connect bot account**.
+2. Log into your site with **Log in with Kick** as your streamer account. The `KICK_CHANNEL` account is admin automatically.
+3. **Connect the bot account** that replies come from, e.g. a Kick account called `mmobot`. Kick's login page always uses whichever account is logged into kick.com in that browser, so:
+   1. On **Admin → Bot account**, click **Get bot login link** and copy it. The link works once and expires after 30 minutes.
+   2. Open a **private/incognito window**, paste the link, log into Kick as `mmobot` and approve.
+   3. In your chat, type `/mod mmobot` so slow mode and follower-only mode don't block its replies.
+
+   The site refuses your channel account as the bot account. Without a bot account, replies go out through **Admin → Channel connection** as your Kick app's bot (the API's `type: "bot"`).
 4. Type `!fish` in your chat. 🎣
 
 The admin page shows the chat subscription, message and reply counts, storage status and the last error.

@@ -115,3 +115,42 @@ test('login redirects to Kick with PKCE', async (t) => {
   // Admin connect flows require an admin session.
   assert.equal((await fetch(`${s.url}/auth/connect/broadcaster`, { redirect: 'manual' })).status, 403);
 });
+
+test('bot login link: works without a session, rejects the channel account, accepts the bot', async (t) => {
+  const s = await start();
+  t.after(s.close);
+  // Fake Kick's OAuth + users endpoints; let requests to our own server through.
+  const realFetch = globalThis.fetch;
+  let who = { user_id: 99, name: 'Streamer' };
+  t.mock.method(globalThis, 'fetch', async (url, opts) => {
+    const u = String(url);
+    if (u.startsWith('https://id.kick.com/oauth/token')) return new Response(JSON.stringify({ access_token: 'at', refresh_token: 'rt', expires_in: 3600 }));
+    if (u.startsWith('https://api.kick.com/public/v1/users')) return new Response(JSON.stringify({ data: [who] }));
+    return realFetch(url, opts);
+  });
+
+  assert.equal((await fetch(`${s.url}/auth/connect/bot?link=nope`, { redirect: 'manual' })).status, 403);
+
+  s.repo.setSetting('bot_link', { code: 'good', exp: Date.now() + 60_000 });
+  const flow = async () => {
+    const r = await fetch(`${s.url}/auth/connect/bot?link=good`, { redirect: 'manual' });
+    assert.equal(r.status, 302);
+    const cookie = r.headers.get('set-cookie').split(';')[0];
+    const state = new URL(r.headers.get('location')).searchParams.get('state');
+    return fetch(`${s.url}/auth/callback?code=c&state=${state}`, { headers: { cookie }, redirect: 'manual' });
+  };
+
+  const rejected = await flow();
+  assert.equal(rejected.status, 400);
+  assert.match(await rejected.text(), /That was your channel account \(Streamer\)/);
+  assert.equal(s.kick.getToken('bot'), null);
+
+  who = { user_id: 55, name: 'mmobot' };
+  const ok = await flow();
+  assert.equal(ok.status, 200);
+  assert.match(await ok.text(), /Bot account mmobot connected/);
+  assert.equal(s.kick.botAccount().username, 'mmobot');
+
+  // The link is single-use.
+  assert.equal((await fetch(`${s.url}/auth/connect/bot?link=good`, { redirect: 'manual' })).status, 403);
+});

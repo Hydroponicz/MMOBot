@@ -109,9 +109,8 @@ class KickApi {
   }
 
   // ---- Stored tokens -----------------------------------------------------
-  // "broadcaster": the streamer's account, connected once from the admin page. Used to subscribe to chat
-  //                events and (by default) to post the bot's replies.
-  // "bot":         optional separate Kick account the replies are posted from.
+  // "broadcaster": the streamer's account, connected once from the admin page.
+  // "bot":         a separate Kick account (e.g. "mmobot") that posts the replies.
 
   getToken(kind) {
     return this.repo.getSetting(`token:${kind}`);
@@ -133,9 +132,24 @@ class KickApi {
     return c && c.slug === this.cfg.channel ? { user_id: String(c.user_id), username: c.slug } : null;
   }
 
-  // The token replies are posted with: the bot account if connected, otherwise the broadcaster.
-  getBotToken() {
-    return this.getToken('bot') || this.getToken('broadcaster');
+  // The connected bot account, if it's really a separate account. A token for the channel's own
+  // account saved as "bot" (easy to do by accident: Kick's login page uses whoever is logged into
+  // kick.com in that browser) is ignored, since replies would come from the streamer.
+  botAccount() {
+    const t = this.getToken('bot');
+    if (!t) return null;
+    const b = this.broadcaster();
+    const isChannel =
+      (b && String(t.user_id) === String(b.user_id)) || String(t.username).toLowerCase() === this.cfg.channel;
+    return isChannel ? null : t;
+  }
+
+  // Who replies appear from, for the admin page.
+  replySender() {
+    const bot = this.botAccount();
+    if (bot) return { mode: 'bot_account', username: bot.username };
+    if (this.getToken('broadcaster')) return { mode: 'app_bot', username: null };
+    return { mode: 'none', username: null };
   }
 
   async accessToken(kind) {
@@ -161,22 +175,38 @@ class KickApi {
     return this._refreshing[kind];
   }
 
+  // Replies go out through POST /public/v1/chat:
+  //  - With a separate bot account connected: type "user" with that account's token, into the
+  //    broadcaster's channel. Messages show up from the bot account (e.g. "mmobot").
+  //  - Otherwise: type "bot" with the broadcaster's token. Kick posts as the bot account linked to the
+  //    Kick app, in the token owner's channel.
   async sendChat(content) {
-    const broadcaster = this.broadcaster() || (await this.resolveChannel().catch(() => null));
-    if (!broadcaster) return false;
-    const kind = this.getToken('bot') ? 'bot' : 'broadcaster';
-    const token = await this.accessToken(kind);
+    const text = content.slice(0, 500);
+    const bot = this.botAccount();
+    if (bot) {
+      const broadcaster = this.broadcaster() || (await this.resolveChannel().catch(() => null));
+      if (!broadcaster) return false;
+      const token = await this.accessToken('bot');
+      if (!token) return false;
+      await this.request('POST', '/public/v1/chat', {
+        token,
+        body: { type: 'user', broadcaster_user_id: Number(broadcaster.user_id), content: text },
+      });
+      return true;
+    }
+
+    const token = await this.accessToken('broadcaster');
     if (!token) return false;
-    // With the broadcaster's own token, "bot" posts as the app's bot identity in that channel;
-    // a separate bot account posts as itself into the broadcaster's chat.
-    await this.request('POST', '/public/v1/chat', {
-      token,
-      body: {
-        type: kind === 'bot' ? 'user' : 'bot',
-        broadcaster_user_id: Number(broadcaster.user_id),
-        content: content.slice(0, 500),
-      },
-    });
+    try {
+      await this.request('POST', '/public/v1/chat', { token, body: { type: 'bot', content: text } });
+    } catch (err) {
+      if (err.status === 404) {
+        err.message =
+          "Kick couldn't post as your app's bot (404). Connect your bot account (e.g. mmobot) on the Admin page. " +
+          err.message;
+      }
+      throw err;
+    }
     return true;
   }
 
