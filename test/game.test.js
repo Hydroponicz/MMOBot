@@ -128,7 +128,7 @@ test('!stats, !inv, !top, !points and !commands respond', () => {
   assert.match(say('!top'), /1\. Alice/);
   assert.match(say('!top fishing'), /Fishing: 1\. Alice Lv2/);
   assert.match(say('!points'), /points/);
-  assert.match(say('!commands'), /!fish !mine !chop !dig !smelt/);
+  assert.match(say('!commands'), /!fish !mine !chop !dig !skin !smelt !smith !fight/);
   assert.equal(say('!unknowncommand'), null);
 });
 
@@ -136,7 +136,7 @@ test('profile exposes everything the website needs', () => {
   const { repo, engine, say } = setup();
   say('!fish');
   const p = engine.profile(repo.getUserByName('alice').id);
-  assert.equal(p.skills.length, 7);
+  assert.equal(p.skills.length, 8);
   assert.equal(p.skills[0].id, 'fishing');
   assert.equal(p.skills[0].level, 2);
   assert.equal(p.skills[0].rank, 1);
@@ -421,7 +421,7 @@ test('the shop sells a smithing hammer (500) and a sword (1,000) via !buy', () =
 test('smithing needs a hammer and alloys, and makes gear', () => {
   const { repo, say, tick } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
-  assert.match(say('!smith bronze sword'), /need a 🔨 Smithing Hammer in your backpack to smith! Buy one with !buy hammer \(500 pts\)/);
+  assert.match(say('!smith bronze sword'), /need a 🔨 Smithing Hammer in your backpack to smith! !buy hammer \(500 pts\)/);
   repo.addItem(u.id, 'smithing_hammer', 1);
   assert.match(say('!smith'), /nothing to smith yet! a Bronze Helmet \(armor\) needs 1 Bronze Alloy.*try !smelt bronze/);
   repo.addItem(u.id, 'bronze_bar', 3);
@@ -466,7 +466,7 @@ test('!fight needs a weapon, auto-equips the best one, and fights levelled monst
   // rolls: monster pick, win roll (0.1 < chance), rare roll (no), loot pick (0.1 -> first loot)
   const { repo, say, tick } = setup({ rolls: [0.0, 0.1, 0.99, 0.1] });
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
-  assert.match(say('!fight'), /you need a sword to fight! 🛒 BUY: !buy sword \(1,000 pts, you have 5, need 995 more\)/);
+  assert.match(say('!fight'), /you need a sword! 🛒 !buy sword \(1,000 pts, you have 5\)/);
   repo.addItem(u.id, 'bronze_sword', 1);
   repo.addItem(u.id, 'steel_sword', 1); // too high level for now
   assert.match(say('!fight'), /you defeated a 🐔 Chicken \(equipped your Bronze Sword\) and looted 🪶 Feathers! \+10 XP/);
@@ -513,19 +513,75 @@ test('a bare !smith (listing options) ignores the cooldown', () => {
   assert.match(say('!smith'), /nothing to smith yet|you can smith/);
 });
 
-test('!fight without a sword explains how to buy or craft one, with progress', () => {
+test('!fight without a sword explains how to buy or craft one, briefly, with progress', () => {
   const { repo, say } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
   const first = say('!fight');
-  assert.ok(first.length <= 500, `fits in one Kick message (${first.length} chars)`);
-  assert.match(first, /🛒 BUY: !buy sword \(1,000 pts, you have 5, need 995 more\) or http:\/\/localhost:3000\/#\/shop\./);
-  assert.match(first, /⚒️ OR CRAFT: 1\) !buy hammer \(500 pts\) 2\) !mine copper \+ !mine tin, then !smelt bronze \(0\/2 Bronze Alloy\) 3\) !smith bronze sword\./);
-  assert.match(first, /Then !equip bronze sword and !fight/);
+  assert.equal(
+    first,
+    '@Alice ⚔️ you need a sword! 🛒 !buy sword (1,000 pts, you have 5) or ⚒️ !buy hammer → !smelt bronze (0/2) → !smith bronze sword. Then !equip bronze sword.'
+  );
+  assert.ok(first.length < 200, `short (${first.length} chars)`);
 
   repo.addPoints(u.id, 2000);
   repo.addItem(u.id, 'smithing_hammer', 1);
   repo.addItem(u.id, 'bronze_bar', 2);
-  const later = say('!fight');
-  assert.match(later, /1,000 pts, you have 2,005 ✅/);
-  assert.match(later, /1\) Smithing Hammer ✅ 2\) .*\(2\/2 Bronze Alloy ✅\)/);
+  assert.match(say('!fight'), /you have 2,005\) or ⚒️ hammer ✅ → !smelt bronze \(2\/2\)/);
+});
+
+// ---- Skinning, emote shortcuts --------------------------------------------------
+
+test('!skin needs a skinning knife (buy it or smith it at Smithing 20 from a Steel Alloy)', () => {
+  const { repo, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!skin'), /need a 🔪 Skinning Knife in your backpack to skin! !buy knife \(500 pts\) or !smith skinning knife \(Smithing 20: 1 Steel Alloy\)/);
+  assert.match(say('!shop'), /🔪 Skinning Knife 500 pts/);
+
+  // Smith one: needs a hammer, Smithing 20 and a steel alloy.
+  repo.addItem(u.id, 'smithing_hammer', 1);
+  repo.addItem(u.id, 'steel_bar', 1);
+  assert.match(say('!smith knife'), /need ⚒️ Smithing level 20 for Skinning Knife/);
+  repo.addXp(u.id, 'smithing', xpForLevel(20));
+  assert.match(say('!smith knife'), /smithed 🔪 Skinning Knife! \+70 XP/);
+  tick();
+  assert.match(say('!skin'), /🔪 you skinned 🐇 Rabbit Hide! \+10 XP/);
+  assert.equal(repo.getInventory(u.id).skinning_knife, 1, 'the knife is not used up');
+  assert.match(say('!sell all'), /kept your gear & tools/);
+});
+
+test('the buy route for the knife works too', () => {
+  const { repo, say } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addPoints(u.id, 500);
+  assert.match(say('!buy knife'), /bought 🔪 Skinning Knife for 500 pts/);
+  assert.match(say('!skin'), /skinned/);
+});
+
+test('emote shortcuts: the hydroponiczcobble emote works like !mine', () => {
+  const { repo, settings, say, tick } = withLiveSettings();
+  assert.deepEqual(settings.all.general.emoteCommands, []);
+  settings.update('general', { emoteCommands: 'hydroponiczcobble=mine' });
+  assert.match(say('[emote:4148074:hydroponiczcobble]'), /⛏️ you mined/, 'how Kick sends emotes');
+  tick();
+  assert.match(say('lets go :hydroponiczcobble: :hydroponiczcobble:'), /you mined/);
+  tick();
+  assert.match(say('hydroponiczcobble'), /you mined/);
+  tick();
+  assert.equal(say('hydroponiczcobblestone is cool'), null, 'only the exact emote name');
+  assert.equal(say('!points').includes('points'), true, 'normal commands still work');
+  assert.equal(repo.getUserByName('alice').actions_count, 3);
+
+  const { SettingsError } = require('../src/settings');
+  assert.throws(() => settings.update('general', { emoteCommands: 'cobble=dance' }), SettingsError);
+  assert.throws(() => settings.update('general', { emoteCommands: 'bad name=mine' }), /should look like/);
+  settings.update('general', { emoteCommands: ':Cobble:=!mine, fishy=fish' });
+  assert.deepEqual(settings.all.general.emoteCommands, ['cobble=mine', 'fishy=fish']);
+});
+
+test('saved shop prices survive new shop items being added', () => {
+  const { Settings } = require('../src/settings');
+  const repo = openDb(':memory:');
+  repo.setSetting('config_overrides', { shop: [{ cost: 111 }, { cost: 222 }] });
+  const settings = new Settings({ config: { ...baseConfig, adminUsers: [], kick: { channel: 's' } }, repo });
+  assert.deepEqual(settings.all.shop.map((r) => r.cost), [111, 222, 500]);
 });

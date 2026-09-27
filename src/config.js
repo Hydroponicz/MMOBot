@@ -47,6 +47,11 @@ const config = {
     chatCooldown: int('CHAT_POINTS_COOLDOWN_SECONDS', 60),
     // Whether the bot replies in chat to every command.
     replyInChat: bool('REPLY_IN_CHAT', true),
+    // Emotes that work as commands, "emote=command" (comma separated). Editable on the admin page.
+    emoteCommands: env('EMOTE_COMMANDS', 'hydroponiczcobble=mine')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
   },
 
   // Extra Kick usernames (comma separated) allowed on the admin page. The KICK_CHANNEL owner is always admin.

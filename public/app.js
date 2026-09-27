@@ -527,6 +527,7 @@
             <li>Every skill goes all the way to <b>level 500</b>. Every 50 levels you can buy a better tool with points: <code>!upgrade rod</code>, <code>pickaxe</code>, <code>axe</code>, <code>shovel</code> or <code>furnace</code>. Better tools fail less, give bonus XP and better rare odds (furnaces can smelt two at once). <code>!gear</code> shows all your tools.</li>
             ${g.xpMultiplier !== 1 ? `<li><b>🔥 ${g.xpMultiplier}× XP event is on right now!</b></li>` : ''}
             <li><b>Smithing</b>: buy a 🔨 Smithing Hammer in the <a href="#/shop">shop</a> (keep it in your backpack), then turn alloys into weapons and armor: <code>!smith bronze sword</code>. <code>!equip</code> gear for attack and defence, or <code>!sell</code> it.</li>
+            <li><b>Skinning</b>: with a 🔪 Skinning Knife in your backpack (buy it in the <a href="#/shop">shop</a> or smith it at Smithing 20 from a Steel Alloy), <code>!skin</code> animals for hides, from rabbits up to celestial fleece.</li>
             <li><b>Combat</b>: with a sword (shop or smithed), <code>!fight</code> monsters for Swords XP and loot. Start with chickens; stronger monsters unlock as you level. <code>!fight goblin</code> picks a target. Better weapons and armor raise your win chance.</li>
             <li>Your <b>character level</b> grows with the combined XP of all skills — train them all!</li>
           </ol>
@@ -539,6 +540,7 @@
             <dt><code>!&lt;tool&gt;</code></dt><dd>Show one tool: <code>!rod</code> <code>!pickaxe</code> <code>!axe</code> <code>!shovel</code> <code>!furnace</code></dd>
             <dt><code>!upgrade &lt;tool&gt;</code></dt><dd>Upgrade a tool (every 50 levels, costs points)</dd>
             <dt><code>!upgrade backpack</code></dt><dd>More backpack slots (costs points)</dd>
+            <dt><code>!skin</code></dt><dd>Skin animals (needs a knife)</dd>
             <dt><code>!smith &lt;item&gt;</code></dt><dd>Smith gear from alloys (needs a hammer)</dd>
             <dt><code>!fight [monster]</code></dt><dd>Fight for Swords XP and loot</dd>
             <dt><code>!equip &lt;item&gt;</code></dt><dd>Wear gear (<code>!unequip</code>, <code>!equipped</code>)</dd>
@@ -817,7 +819,7 @@
       let input;
       if (spec.type === 'bool') {
         input = `<label class="switch"><input type="checkbox" id="${id}" name="${key}" ${v ? 'checked' : ''}><span></span></label>`;
-      } else if (spec.type === 'list') {
+      } else if (spec.type === 'list' || spec.type === 'emotes') {
         input = `<input type="text" id="${id}" name="${key}" value="${esc(v.join(', '))}" placeholder="none">`;
       } else if (spec.type === 'string') {
         input = `<input type="text" id="${id}" name="${key}" value="${esc(v)}" maxlength="${spec.maxLength || 50}">`;

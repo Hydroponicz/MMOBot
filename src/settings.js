@@ -34,6 +34,11 @@ const FIELDS = {
     chatPoints: { type: 'int', label: 'Points for chatting', help: 'Points for talking in chat (any message).', min: 0, max: 100000 },
     chatCooldown: { type: 'int', label: 'Chat points cooldown (seconds)', help: 'How often chatting can earn points.', min: 0, max: 86400 },
     replyInChat: { type: 'bool', label: 'Reply in chat', help: 'Turn off to play silently (site and overlay still update).' },
+    emoteCommands: {
+      type: 'emotes',
+      label: 'Emote shortcuts',
+      help: 'emote=command pairs, comma separated. A chat message with that emote runs the command, e.g. hydroponiczcobble=mine makes the emote work like !mine.',
+    },
     adminUsers: { type: 'list', label: 'Extra admins', help: 'Kick usernames (comma separated) allowed on this page. The channel owner is always admin.' },
   },
   economy: {
@@ -102,6 +107,17 @@ function coerce(spec, value, label) {
       const arr = Array.isArray(value) ? value : String(value ?? '').split(',');
       return [...new Set(arr.map((x) => String(x).trim().toLowerCase().replace(/^@/, '')).filter(Boolean))];
     }
+    case 'emotes': {
+      const arr = Array.isArray(value) ? value : String(value ?? '').split(',');
+      const out = [];
+      for (const raw of arr.map((x) => String(x).trim()).filter(Boolean)) {
+        const [name, command] = raw.split('=').map((x) => (x || '').trim().replace(/^[:!]+|:+$/g, '').toLowerCase());
+        if (!/^[a-z0-9_]+$/.test(name || '') || !command) throw new SettingsError(`${label}: "${raw}" should look like emotename=mine`);
+        if (!COMMANDS.includes(command)) throw new SettingsError(`${label}: "${command}" isn't a command (try ${Object.keys(COMMAND_TO_SKILL).join(', ')})`);
+        out.push(`${name}=${command}`);
+      }
+      return out;
+    }
     case 'int':
     case 'number': {
       const n = Number(value);
@@ -127,6 +143,7 @@ class Settings extends EventEmitter {
         chatPoints: config.game.chatPoints,
         chatCooldown: config.game.chatCooldown,
         replyInChat: config.game.replyInChat,
+        emoteCommands: config.game.emoteCommands || [],
         adminUsers: config.adminUsers || [],
       },
       economy: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1 },
@@ -145,7 +162,9 @@ class Settings extends EventEmitter {
       o.rods = o.rods.map(({ snapChance, ...row }) => (snapChance !== undefined && row.failChance === undefined ? { ...row, failChance: snapChance } : row));
     }
     const d = this.defaults;
-    const table = (name) => (Array.isArray(o[name]) && o[name].length === d[name].length ? o[name] : d[name]);
+    // Saved tables are applied row by row, so adding rows later (e.g. a new shop item) keeps earlier edits.
+    const table = (name) =>
+      Array.isArray(o[name]) && o[name].length <= d[name].length ? d[name].map((row, i) => ({ ...row, ...(o[name][i] || {}) })) : d[name];
     this.all = {
       general: { ...d.general, ...(o.general || {}) },
       economy: { ...d.economy, ...(o.economy || {}) },

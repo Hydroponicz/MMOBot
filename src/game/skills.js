@@ -120,6 +120,30 @@ const ITEMS = {
 
   // Tools you carry. "keep" items are skipped by "!sell all" (sell them by name if you really want to).
   smithing_hammer: { name: 'Smithing Hammer', icon: '🔨', value: 250, keep: true },
+  skinning_knife: { name: 'Skinning Knife', icon: '🔪', value: 250, keep: true },
+
+  // Skinning
+  rabbit_hide: { name: 'Rabbit Hide', icon: '🐇', value: 2 },
+  squirrel_pelt: { name: 'Squirrel Pelt', icon: '🐿️', value: 5 },
+  fox_pelt: { name: 'Fox Pelt', icon: '🦊', value: 9 },
+  deer_hide: { name: 'Deer Hide', icon: '🦌', value: 16 },
+  boar_hide: { name: 'Boar Hide', icon: '🐗', value: 26 },
+  bear_pelt: { name: 'Bear Pelt', icon: '🐻', value: 40 },
+  bison_hide: { name: 'Bison Hide', icon: '🦬', value: 62 },
+  tiger_pelt: { name: 'Tiger Pelt', icon: '🐅', value: 90 },
+  crocodile_skin: { name: 'Crocodile Skin', icon: '🐊', value: 130 },
+  polar_bear_pelt: { name: 'Polar Bear Pelt', icon: '❄️', value: 200 },
+  snow_leopard_pelt: { name: 'Snow Leopard Pelt', icon: '🐆', value: 280 },
+  mammoth_hide: { name: 'Mammoth Hide', icon: '🐘', value: 360 },
+  wyvern_hide: { name: 'Wyvern Hide', icon: '🦎', value: 460 },
+  basilisk_skin: { name: 'Basilisk Skin', icon: '🐍', value: 600 },
+  chimera_hide: { name: 'Chimera Hide', icon: '🦁', value: 750 },
+  griffin_pelt: { name: 'Griffin Pelt', icon: '🦅', value: 900 },
+  behemoth_hide: { name: 'Behemoth Hide', icon: '🦏', value: 1100 },
+  kraken_skin: { name: 'Kraken Skin', icon: '🦑', value: 1300 },
+  celestial_fleece: { name: 'Celestial Fleece', icon: '🐑', value: 1600 },
+  perfect_pelt: { name: 'Perfect Pelt', icon: '🧥', value: 450, rare: true },
+  golden_fleece: { name: 'Golden Fleece', icon: '🌟', value: 1800, rare: true },
 
   // Monster loot (Swords / !fight)
   feathers: { name: 'Feathers', icon: '🪶', value: 2 },
@@ -413,6 +437,42 @@ const SKILLS = {
       { item: 'pirate_chest', chance: 1 / 1000, xp: 750 },
     ],
   },
+  skinning: {
+    name: 'Skinning',
+    icon: '🔪',
+    command: 'skin',
+    verb: 'skinned',
+    type: 'gather',
+    maxLevel: 500,
+    // Needs this item in the backpack (buy it, or smith it at Smithing 20 from a Steel Alloy). Not used up.
+    requires: 'skinning_knife',
+    failMessages: ['the animal ran off', 'you nicked the hide and ruined it', 'you only found tracks'],
+    resources: [
+      { item: 'rabbit_hide', level: 1, xp: 10 },
+      { item: 'squirrel_pelt', level: 8, xp: 18 },
+      { item: 'fox_pelt', level: 15, xp: 28 },
+      { item: 'deer_hide', level: 25, xp: 42 },
+      { item: 'boar_hide', level: 35, xp: 58 },
+      { item: 'bear_pelt', level: 45, xp: 75 },
+      { item: 'bison_hide', level: 60, xp: 110 },
+      { item: 'tiger_pelt', level: 75, xp: 145 },
+      { item: 'crocodile_skin', level: 90, xp: 190 },
+      { item: 'polar_bear_pelt', level: 100, xp: 280 },
+      { item: 'snow_leopard_pelt', level: 130, xp: 390 },
+      { item: 'mammoth_hide', level: 160, xp: 500 },
+      { item: 'wyvern_hide', level: 200, xp: 640 },
+      { item: 'basilisk_skin', level: 250, xp: 820 },
+      { item: 'chimera_hide', level: 300, xp: 1000 },
+      { item: 'griffin_pelt', level: 350, xp: 1200 },
+      { item: 'behemoth_hide', level: 400, xp: 1420 },
+      { item: 'kraken_skin', level: 450, xp: 1650 },
+      { item: 'celestial_fleece', level: 500, xp: 1900 },
+    ],
+    rares: [
+      { item: 'perfect_pelt', chance: 1 / 120, xp: 150 },
+      { item: 'golden_fleece', chance: 1 / 1000, xp: 750 },
+    ],
+  },
   smelting: {
     name: 'Smelting',
     icon: '🔥',
@@ -494,6 +554,9 @@ SKILLS.smithing.recipes = SMITHING_RECIPES.map(({ item, level, bars, alloy, kind
   xp: Math.round((SKILLS.smelting.recipes.find((r) => r.item === alloy).xp * bars * 1.2)),
   inputs: { [alloy]: bars },
 }));
+// Tools you can smith instead of buying.
+SKILLS.smithing.recipes.push({ item: 'skinning_knife', level: 20, kind: 'tool', xp: 70, inputs: { steel_bar: 1 } });
+SKILLS.smithing.recipes.sort((a, b) => a.level - b.level);
 
 // Monsters for !fight. Level = Swords level needed. Stats are tuned so that at the monster's level,
 // with gear for that level, you win about 3 fights in 4; better gear or more levels push it higher.
@@ -541,6 +604,7 @@ SKILLS.swords.monsters = MONSTER_LIST.map(([id, name, icon, level, xp, loot, rar
 const SHOP = [
   { item: 'smithing_hammer', cost: 500, description: 'Lets you !smith weapons and armor from alloys. Keep it in your backpack.' },
   { item: 'bronze_sword', cost: 1000, description: "A ready-made sword so you can start fighting with !fight right away. Or smith your own!" },
+  { item: 'skinning_knife', cost: 500, description: 'Lets you !skin animals for hides. Keep it in your backpack. Or smith one at Smithing 20 from a Steel Alloy.' },
 ];
 
 // Backpack: how many items (total, across all stacks) a player can carry. Upgrade with
@@ -586,6 +650,7 @@ function findItem(query, candidates) {
     list.find((id) => id === q) ||
     list.find((id) => ITEMS[id].name.toLowerCase().replace(/\s+/g, '_') === q) ||
     list.find((id) => id.startsWith(q + '_') || id.startsWith(q)) ||
+    list.find((id) => id.endsWith('_' + q)) || // "knife" -> skinning_knife
     null
   );
 }

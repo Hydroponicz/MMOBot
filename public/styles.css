@@ -20,6 +20,7 @@
   --digging: #d6a35c;
   --smelting: #fb923c;
   --smithing: #94a3b8;
+  --skinning: #c08457;
   --swords: #f87171;
 }
 
@@ -164,6 +165,7 @@ td.wrap { white-space: normal; }
 .bag-warn { color: var(--danger); font-size: 0.85rem; margin: 0 0 12px; }
 .kind { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 999px; }
 .kind-ingot { background: rgba(56, 189, 248, 0.15); color: var(--fishing); }
+.kind-tool { background: rgba(192, 132, 87, 0.18); color: var(--skinning); }
 .kind-alloy { background: rgba(251, 146, 60, 0.15); color: var(--smelting); }
 .skill-next { margin-top: 10px; font-size: 0.82rem; color: var(--muted); border-top: 1px dashed var(--border); padding-top: 10px; }
 

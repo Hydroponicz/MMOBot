@@ -46,7 +46,7 @@ test('dev chat -> player profile -> leaderboard', async (t) => {
 
   const player = await fetch(`${s.url}/api/player/viewer1`).then((r) => r.json());
   assert.equal(player.profile.username, 'Viewer1');
-  assert.equal(player.profile.skills.length, 7);
+  assert.equal(player.profile.skills.length, 8);
 
   const lb = await fetch(`${s.url}/api/leaderboard/points`).then((r) => r.json());
   assert.equal(lb.rows[0].username, 'Viewer1');

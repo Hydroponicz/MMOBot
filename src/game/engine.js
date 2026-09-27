@@ -85,8 +85,9 @@ class GameEngine extends EventEmitter {
     this.awardChatPoints(user);
 
     const { prefix, disabledCommands = [] } = this.cfg;
-    const text = content.trim();
-    if (!text.startsWith(prefix)) return { reply: null };
+    // Emote shortcuts (admin setting): a message with e.g. the hydroponiczcobble emote counts as !mine.
+    const text = content.trim().startsWith(prefix) ? content.trim() : this.emoteCommand(content);
+    if (!text) return { reply: null };
     const [rawCmd, ...args] = text.slice(prefix.length).split(/\s+/);
     const cmd = (rawCmd || '').toLowerCase();
 
@@ -98,6 +99,18 @@ class GameEngine extends EventEmitter {
       if (!disabledCommands.includes(name)) reply = this[handler](user, args, cmd);
     }
     return { reply: reply ? `@${user.username} ${reply}` : null };
+  }
+
+  // Kick sends emotes as "[emote:12345:name]"; people may also type ":name:" or just the name.
+  emoteCommand(content) {
+    for (const pair of this.cfg.emoteCommands || []) {
+      const [name, command] = pair.split('=');
+      if (!name || !command) continue;
+      const n = name.replace(/[^a-z0-9_]/gi, '');
+      const re = new RegExp(`\\[emote:\\d+:${n}\\]|:${n}:|(^|[^a-z0-9_])${n}([^a-z0-9_]|$)`, 'i');
+      if (re.test(content)) return `${this.cfg.prefix}${command}`;
+    }
+    return null;
   }
 
   awardChatPoints(user) {
@@ -142,6 +155,7 @@ class GameEngine extends EventEmitter {
     const level = skillLevel(skillId, xp);
     const unlocked = skill.resources.filter((r) => r.level <= level);
     const tool = this.currentTool(user.id, skillId);
+    if (skill.requires && !this.repo.getInventory(user.id)[skill.requires]) return { consumed: false, reply: this.missingToolMessage(skill) };
 
     // Gathering needs a free backpack slot.
     const bag = this.backpack(user.id);
@@ -190,6 +204,21 @@ class GameEngine extends EventEmitter {
     return this.reward(user, skillId, drop.item, drop.xp, { rare });
   }
 
+  // "you need a 🔪 Skinning Knife in your backpack to skin! !buy knife (500 pts) or !smith skinning knife (Smithing 20: 1 Steel Alloy)"
+  missingToolMessage(skill) {
+    const need = ITEMS[skill.requires];
+    const shortName = need.name.split(' ').pop().toLowerCase();
+    const ways = [];
+    const price = this.shopItems().find((x) => x.item === skill.requires)?.cost;
+    if (price !== undefined) ways.push(`!buy ${shortName} (${fmt(price)} pts)`);
+    const recipe = SKILLS.smithing?.recipes.find((r) => r.item === skill.requires);
+    if (recipe) {
+      const inputs = Object.entries(recipe.inputs).map(([i, q]) => `${q} ${ITEMS[i].name}`).join(' + ');
+      ways.push(`!smith ${need.name.toLowerCase()} (Smithing ${recipe.level}: ${inputs})`);
+    }
+    return `you need a ${need.icon} ${need.name} in your backpack to ${skill.command}!${ways.length ? ` ${ways.join(' or ')}` : ''}`;
+  }
+
   // Weighted toward your best unlocked tiers: best tier 50%, next 30%, next 20%.
   // Resources sharing a level requirement (copper/tin) share a tier.
   pickResource(unlocked) {
@@ -213,12 +242,7 @@ class GameEngine extends EventEmitter {
     const skill = SKILLS[skillId];
     const level = skillLevel(skillId, this.repo.getSkills(user.id)[skillId]);
     const inv = this.repo.getInventory(user.id);
-    if (skill.requires && !inv[skill.requires]) {
-      const need = ITEMS[skill.requires];
-      const price = this.shopItems().find((x) => x.item === skill.requires)?.cost;
-      const buy = price !== undefined ? ` Buy one with !buy ${need.name.split(' ').pop().toLowerCase()} (${fmt(price)} pts) or at ${this.siteUrl}/#/shop` : '';
-      return { consumed: false, reply: `you need a ${need.icon} ${need.name} in your backpack to ${skill.command}!${buy}` };
-    }
+    if (skill.requires && !inv[skill.requires]) return { consumed: false, reply: this.missingToolMessage(skill) };
     const hasInputs = (r) => Object.entries(r.inputs).every(([item, qty]) => (inv[item] || 0) >= qty);
     const needs = (r) => Object.entries(r.inputs).map(([i, q]) => `${q} ${ITEMS[i].name}`).join(' + ');
     const missing = (r) => {
@@ -233,7 +257,7 @@ class GameEngine extends EventEmitter {
       const id = findItem(args.join(' '), skill.recipes.map((r) => r.item));
       if (!id) {
         if (skill.pickBest === false) {
-          return { consumed: false, reply: `unknown item. Try e.g. !${skill.command} bronze sword (sword, helmet, shield, platelegs, platebody)` };
+          return { consumed: false, reply: `unknown item. Try e.g. !${skill.command} bronze sword (sword, helmet, shield, platelegs, platebody) or !${skill.command} skinning knife` };
         }
         const opts = skill.recipes.filter((r) => r.level <= level).map((r) => ITEMS[r.item].name.split(' ')[0].toLowerCase());
         return { consumed: false, reply: `unknown recipe. You can ${skill.command}: ${opts.join(', ')} (e.g. !${skill.command} ${opts[opts.length - 1]})` };
@@ -440,28 +464,18 @@ class GameEngine extends EventEmitter {
     };
   }
 
-  // What the bot says when someone tries to !fight without a weapon: both ways to get a sword,
-  // with checkmarks for what they already have. Stays well under Kick's 500-character limit.
+  // What the bot says when someone tries to !fight without a weapon: the two ways to get a sword,
+  // with their progress. Kept short so it doesn't flood chat.
   howToGetSword(user) {
     const points = this.repo.getUser(user.id).points;
     const inv = this.repo.getInventory(user.id);
-    const shop = this.shopItems();
-    const sword = shop.find((x) => x.weaponType);
-    const hammer = shop.find((x) => x.item === 'smithing_hammer');
-    const recipe = SKILLS.smithing.recipes.find((r) => r.item === 'bronze_sword');
-    const [alloy, need] = Object.entries(recipe.inputs)[0];
-    const have = inv[alloy] || 0;
-
-    const parts = ['⚔️ you need a sword to fight!'];
-    if (sword) {
-      const afford = points >= sword.cost ? `you have ${fmt(points)} ✅` : `you have ${fmt(points)}, need ${fmt(sword.cost - points)} more`;
-      parts.push(`🛒 BUY: !buy sword (${fmt(sword.cost)} pts, ${afford}) or ${this.siteUrl}/#/shop.`);
-    }
-    const step1 = inv.smithing_hammer ? '1) Smithing Hammer ✅' : `1) !buy hammer${hammer ? ` (${fmt(hammer.cost)} pts)` : ''}`;
-    const step2 = `2) !mine copper + !mine tin, then !smelt bronze (${Math.min(have, need)}/${need} ${ITEMS[alloy].name}${have >= need ? ' ✅' : ''})`;
-    parts.push(`⚒️ OR CRAFT: ${step1} ${step2} 3) !smith bronze sword.`);
-    parts.push('Then !equip bronze sword and !fight (your best sword is equipped automatically).');
-    return parts.join(' ');
+    const sword = this.shopItems().find((x) => x.weaponType);
+    const [alloy, need] = Object.entries(SKILLS.smithing.recipes.find((r) => r.item === 'bronze_sword').inputs)[0];
+    const have = Math.min(inv[alloy] || 0, need);
+    const buy = sword ? `🛒 !buy sword (${fmt(sword.cost)} pts, you have ${fmt(points)})` : '';
+    const hammer = inv.smithing_hammer ? 'hammer ✅' : '!buy hammer';
+    const craft = `⚒️ ${hammer} → !smelt bronze (${have}/${need}) → !smith bronze sword`;
+    return `⚔️ you need a sword! ${buy}${buy ? ' or ' : ''}${craft}. Then !equip bronze sword.`;
   }
 
   // Your attack (level + weapon) against the monster's power, your defence against its damage.
