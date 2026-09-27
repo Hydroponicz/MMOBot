@@ -136,7 +136,7 @@ test('profile exposes everything the website needs', () => {
   const { repo, engine, say } = setup();
   say('!fish');
   const p = engine.profile(repo.getUserByName('alice').id);
-  assert.equal(p.skills.length, 5);
+  assert.equal(p.skills.length, 7);
   assert.equal(p.skills[0].id, 'fishing');
   assert.equal(p.skills[0].level, 2);
   assert.equal(p.skills[0].rank, 1);
@@ -340,7 +340,7 @@ test('every skill has a tool with 10 tiers; !upgrade works for each', () => {
   assert.match(say('!upgrade spade'), /upgraded to 🔩 Iron Shovel/);
   assert.match(say('!upgrade forge'), /upgraded to 🪨 Stone Furnace: \+10% XP, 3% chance to smelt two for 2,000 pts!/);
   assert.match(say('!upgrade pick'), /can be upgraded to ⚙️ Steel Pickaxe at Mining level 100 \(you are 60\) for 10,000 pts/);
-  const tools = engine.profile(u.id).skills.map((s) => s.tool.name);
+  const tools = engine.profile(u.id).skills.filter((s) => s.tool).map((s) => s.tool.name);
   assert.deepEqual(tools, ['Basic Rod', 'Iron Pickaxe', 'Iron Axe', 'Iron Shovel', 'Stone Furnace']);
 });
 
@@ -401,4 +401,114 @@ test('rod prices saved before the tool rework still apply', () => {
   assert.equal(settings.all.rods[1].cost, 7);
   assert.equal(settings.all.rods[1].failChance, 0.2);
   assert.deepEqual(Object.keys(settings.all).filter((k) => k.endsWith('s') && Array.isArray(settings.all[k])).sort(), ['axes', 'disabledCommands', 'furnaces', 'pickaxes', 'rods', 'shovels']);
+});
+
+// ---- Smithing, shop, gear and combat ------------------------------------------
+
+test('the shop sells a smithing hammer (500) and a sword (1,000) via !buy', () => {
+  const { repo, say } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!shop'), /🔨 Smithing Hammer 500 pts, 🗡️ Bronze Sword 1,000 pts/);
+  assert.match(say('!buy hammer'), /Smithing Hammer costs 500 pts, you have 5/);
+  repo.addPoints(u.id, 2000);
+  assert.match(say('!buy hammer'), /bought 🔨 Smithing Hammer for 500 pts! Now try !smith bronze sword/);
+  assert.match(say('!buy hammer'), /already have a 🔨 Smithing Hammer/);
+  assert.match(say('!buy sword'), /bought 🗡️ Bronze Sword for 1,000 pts! Now try !fight/);
+  assert.equal(repo.getUser(u.id).points, 505);
+  assert.match(say('!buy dragon'), /usage: !buy <item>/);
+});
+
+test('smithing needs a hammer and alloys, and makes gear', () => {
+  const { repo, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!smith bronze sword'), /need a 🔨 Smithing Hammer in your backpack to smith! Buy one with !buy hammer \(500 pts\)/);
+  repo.addItem(u.id, 'smithing_hammer', 1);
+  assert.match(say('!smith'), /nothing to smith yet! a Bronze Helmet \(armor\) needs 1 Bronze Alloy.*try !smelt bronze/);
+  repo.addItem(u.id, 'bronze_bar', 3);
+  assert.match(say('!smith'), /you can smith: bronze platelegs, bronze shield, bronze helmet, bronze sword/);
+  assert.match(say('!smith steel sword'), /need ⚒️ Smithing level 30/);
+  assert.match(say('!smith bronze sword'), /smithed 🗡️ Bronze Sword! \+34 XP/);
+  tick();
+  assert.match(say('!smith bronze platebody'), /missing 3 Bronze Alloy — try !smelt bronze/);
+  assert.deepEqual(repo.getInventory(u.id), { bronze_bar: 1, bronze_sword: 1, smithing_hammer: 1 }, 'hammer is not used up');
+});
+
+test('!equip / !unequip / !equipped, with level requirements', () => {
+  const { repo, engine, say } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addItem(u.id, 'bronze_sword', 1);
+  repo.addItem(u.id, 'bronze_platebody', 1);
+  repo.addItem(u.id, 'steel_sword', 1);
+  assert.match(say('!equip steel sword'), /need 🗡️ Swords level 20 to wield a Steel Sword \(you are 1\)/);
+  assert.match(say('!equip bronze sword'), /equipped 🗡️ Bronze Sword \(\+4 attack\)\. ⚔️ Attack \+4 · 🛡️ Defence \+0/);
+  assert.match(say('!wear bronze platebody'), /Defence \+6/);
+  assert.match(say('!equipped'), /🗡️ Bronze Sword \| ⛑️ — \| 👕 Bronze Platebody \| 👖 — \| 🛡️ — \| ⚔️ Attack \+4 · 🛡️ Defence \+6 · Combat level 1/);
+  assert.equal(repo.getInventory(u.id).bronze_sword, undefined, 'equipped items leave the backpack');
+  assert.match(say('!unequip body'), /took off your 👕 Bronze Platebody/);
+  assert.equal(repo.getInventory(u.id).bronze_platebody, 1);
+  const c = engine.profile(u.id).combat;
+  assert.equal(c.attack, 4);
+  assert.equal(c.worn.find((w) => w.slot === 'weapon').item.name, 'Bronze Sword');
+});
+
+test('!sell all keeps gear and tools', () => {
+  const { repo, say } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addItem(u.id, 'smithing_hammer', 1);
+  repo.addItem(u.id, 'bronze_sword', 1);
+  repo.addItem(u.id, 'logs', 3);
+  assert.match(say('!sell all'), /sold 🪵 3x Logs for 6 pts.*\(kept your gear & tools\)/);
+  assert.match(say('!sell all'), /nothing to sell — your gear and tools are kept/);
+  assert.match(say('!sell bronze sword'), /sold 🗡️ Bronze Sword for 26 pts/);
+});
+
+test('!fight needs a weapon, auto-equips the best one, and fights levelled monsters', () => {
+  // rolls: monster pick, win roll (0.1 < chance), rare roll (no), loot pick (0.1 -> first loot)
+  const { repo, say, tick } = setup({ rolls: [0.0, 0.1, 0.99, 0.1] });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!fight'), /need a weapon to fight! Get a sword from !buy sword \(1,000 pts/);
+  repo.addItem(u.id, 'bronze_sword', 1);
+  repo.addItem(u.id, 'steel_sword', 1); // too high level for now
+  assert.match(say('!fight'), /you defeated a 🐔 Chicken \(equipped your Bronze Sword\) and looted 🪶 Feathers! \+10 XP/);
+  assert.equal(repo.getWorn(u.id).weapon, 'bronze_sword');
+  tick();
+  assert.match(say('!fight wolf'), /need 🗡️ Swords level 20 to fight a Wolf \(you are 2\)/);
+  assert.match(say('!fight dragon'), /need 🗡️ Swords level 400/);
+  assert.match(say('!fight unicorn'), /unknown monster. You can fight: Chicken \(1\), Giant Rat \(5\)/);
+
+  repo.addXp(u.id, 'swords', xpForLevel(25));
+  tick();
+  say('!fight chicken');
+  assert.equal(repo.getWorn(u.id).weapon, 'steel_sword', 'switches to the best usable weapon');
+  assert.equal(repo.getInventory(u.id).bronze_sword, 1, 'old weapon goes back in the backpack');
+});
+
+test('losing a fight gives a little XP and no loot; gear raises the win chance', () => {
+  const { repo, engine, say } = setup({ rolls: [0.99] });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addXp(u.id, 'swords', xpForLevel(10));
+  repo.addItem(u.id, 'bronze_sword', 1);
+  assert.match(say('!fight goblin'), /the Goblin was too strong and you retreated! \(equipped your Bronze Sword\) \+7 XP, \+1 pts.*win chance \d+%/);
+  const goblin = require('../src/game/skills').SKILLS.swords.monsters.find((m) => m.id === 'goblin');
+  const bare = engine.winChance(10, { attack: 4, defence: 0 }, goblin);
+  const armored = engine.winChance(10, { attack: 4, defence: 15 }, goblin);
+  assert.ok(bare > 0.5 && bare < 0.65, `bronze sword, no armor: ${bare}`);
+  assert.ok(armored > 0.7, `full bronze: ${armored}`);
+  assert.ok(engine.winChance(1, { attack: 4, defence: 0 }, require('../src/game/skills').SKILLS.swords.monsters[0]) > 0.9, 'chickens are easy');
+});
+
+test('new skills never lower anyone\'s character level', () => {
+  const { repo, engine } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  for (const s of ['fishing', 'mining', 'woodcutting', 'digging', 'smelting']) repo.addXp(u.id, s, xpForLevel(50));
+  assert.equal(engine.profile(u.id).character.level, 50);
+});
+
+test('a bare !smith (listing options) ignores the cooldown', () => {
+  const { repo, say } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addItem(u.id, 'smithing_hammer', 1);
+  repo.addItem(u.id, 'bronze_bar', 2);
+  assert.match(say('!smith bronze sword'), /smithed/);
+  assert.match(say('!smith'), /nothing to smith yet|you can smith/);
 });

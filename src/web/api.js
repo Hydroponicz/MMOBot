@@ -2,7 +2,7 @@
 const crypto = require('node:crypto');
 const express = require('express');
 const { SKILLS, SKILL_IDS, maxLevel } = require('../game/skills');
-const { levelForXp, progress, CHARACTER_MAX_LEVEL } = require('../game/xp');
+const { levelForXp, progress, CHARACTER_MAX_LEVEL, CHARACTER_SKILL_COUNT } = require('../game/xp');
 const { makeIsAdmin } = require('./auth');
 const { SettingsError } = require('../settings');
 
@@ -32,6 +32,28 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
 
   router.get('/guide', (req, res) => res.json(engine.guide()));
 
+  // ---- Shop & your own gear (logged-in players) ------------------------------
+
+  const requireLogin = (req, res, next) => (req.user ? next() : res.status(401).json({ error: 'log in with Kick first' }));
+
+  router.get('/shop', (req, res) => {
+    res.json({ items: engine.shopItems(), points: req.user ? repo.getUser(req.user.id).points : null });
+  });
+
+  // Same rules as the chat commands; the reply text is shown to the player.
+  const act = (fn) => (req, res) => {
+    const message = fn(req);
+    logger.info(`[site] ${req.user.username}: ${req.path} ${JSON.stringify(req.body || {}).slice(0, 200)} → ${message}`);
+    res.json({ message, profile: engine.profile(req.user.id) });
+  };
+  router.post('/shop/buy', requireLogin, act((req) => engine.buy(req.user, [String(req.body?.item || '')])));
+  router.post('/me/equip', requireLogin, act((req) => engine.equip(req.user, [String(req.body?.item || '')])));
+  router.post('/me/unequip', requireLogin, act((req) => engine.unequip(req.user, [String(req.body?.slot || '')])));
+  router.post('/me/sell', requireLogin, act((req) => {
+    const qty = req.body?.qty === 'all' ? 'all' : String(Math.max(1, Number.parseInt(req.body?.qty, 10) || 1));
+    return engine.sell(req.user, [String(req.body?.item || ''), qty]);
+  }));
+
   router.get('/player/:name', (req, res) => {
     const user = repo.getUserByName(req.params.name);
     if (!user) return res.status(404).json({ error: 'player not found' });
@@ -52,7 +74,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       xp: r.xp ?? null,
       points: r.points ?? null,
       level:
-        kind === 'points' ? null : kind === 'overall' ? progress(r.char_xp / SKILL_IDS.length, CHARACTER_MAX_LEVEL).level : levelForXp(r.xp, maxLevel(kind)),
+        kind === 'points' ? null : kind === 'overall' ? progress(r.char_xp / CHARACTER_SKILL_COUNT, CHARACTER_MAX_LEVEL).level : levelForXp(r.xp, maxLevel(kind)),
     }));
     res.json({ kind, rows });
   });

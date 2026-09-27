@@ -44,8 +44,12 @@ function characterXp(xpValues) {
   return xpValues.reduce((sum, xp) => sum + Math.min(xp, CHARACTER_XP_CAP_PER_SKILL), 0);
 }
 
+// Always divide by the original five skills, so adding new skills (Smithing, Swords...) never lowers
+// anyone's character level; training them only adds to it.
+const CHARACTER_SKILL_COUNT = 5;
+
 function characterProgress(xpValues) {
-  const avg = xpValues.length ? characterXp(xpValues) / xpValues.length : 0;
+  const avg = characterXp(xpValues) / CHARACTER_SKILL_COUNT;
   return progress(avg, CHARACTER_MAX_LEVEL);
 }
 
@@ -53,6 +57,7 @@ module.exports = {
   MAX_LEVEL,
   CHARACTER_MAX_LEVEL,
   CHARACTER_XP_CAP_PER_SKILL,
+  CHARACTER_SKILL_COUNT,
   xpForLevel,
   levelForXp,
   progress,

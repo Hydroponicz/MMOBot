@@ -4,7 +4,7 @@
 // admin changes is stored in the database as an override and wins over the defaults, so changes apply
 // immediately and survive redeploys. Kick credentials, URLs and paths stay environment-only.
 const { EventEmitter } = require('node:events');
-const { SKILLS, SKILL_IDS, BACKPACK_TIERS, COMMAND_TO_SKILL } = require('./game/skills');
+const { ITEMS, SKILLS, SKILL_IDS, BACKPACK_TIERS, SHOP, COMMAND_TO_SKILL } = require('./game/skills');
 
 // Every command a viewer can type (without the prefix), for enabling/disabling from the admin page.
 const TOOL_SKILLS = SKILL_IDS.filter((id) => SKILLS[id].tool);
@@ -12,6 +12,11 @@ const COMMANDS = [
   ...Object.keys(COMMAND_TO_SKILL),
   'upgrade',
   'gear',
+  'equip',
+  'unequip',
+  'equipped',
+  'shop',
+  'buy',
   ...TOOL_SKILLS.map((id) => SKILLS[id].tool.id),
   'stats',
   'inv',
@@ -54,6 +59,7 @@ for (const id of TOOL_SKILLS) {
   TABLES[`${tool.id}s`] = {
     label: `${skill.name} ${tool.name.toLowerCase()}s`,
     tool: true,
+    ascending: 'level',
     columns: {
       level: { type: 'int', label: `${skill.name} level`, min: 1, max: skill.maxLevel || 99 },
       cost: { type: 'int', label: 'Cost (points)', min: 0, max: 1e12 },
@@ -64,11 +70,17 @@ for (const id of TOOL_SKILLS) {
 }
 TABLES.backpack = {
   label: 'Backpack',
+  ascending: 'capacity',
   columns: {
     capacity: { type: 'int', label: 'Slots', min: 1, max: 100000 },
     cost: { type: 'int', label: 'Cost (points)', min: 0, max: 1e12 },
   },
   rows: () => BACKPACK_TIERS,
+};
+TABLES.shop = {
+  label: 'Shop prices',
+  columns: { cost: { type: 'int', label: 'Price (points)', min: 0, max: 1e12 } },
+  rows: () => SHOP.map((x) => ({ ...x, name: ITEMS[x.item].name, icon: ITEMS[x.item].icon })),
 };
 
 class SettingsError extends Error {}
@@ -181,8 +193,8 @@ class Settings extends EventEmitter {
       )
     );
     // Tiers must get strictly better/pricier as they go up.
-    const ascending = t.tool ? 'level' : 'capacity';
-    for (let i = 1; i < out.length; i++) {
+    const ascending = t.ascending;
+    for (let i = 1; ascending && i < out.length; i++) {
       if (out[i][ascending] <= out[i - 1][ascending]) {
         throw new SettingsError(`${t.label}: tier ${i + 1} ${t.columns[ascending].label.toLowerCase()} must be higher than tier ${i}`);
       }

@@ -39,7 +39,7 @@
   };
   const skillIcon = (id) => state.site?.skills.find((s) => s.id === id)?.icon || '✨';
   const feedIcon = (a) =>
-    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
+    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
 
   // ---- live activity (SSE) ----------------------------------------------
   const listeners = new Set();
@@ -164,15 +164,21 @@
     const inv = p.inventory.length
       ? `<div class="inv-grid">${p.inventory
           .map(
-            (i) => `<div class="inv-item${i.rare ? ' rare' : ''}" title="${esc(i.name)} — ${fmt(i.value)} pts each">
+            (i) => `<div class="inv-item${i.rare ? ' rare' : ''}${i.gear ? ' gear' : ''}" title="${esc(itemTitle(i))}">
               <span class="qty">${fmt(i.qty)}</span><div class="ic">${i.icon}</div>
-              <div class="nm">${esc(i.name)}</div><div class="val">${fmt(i.value * i.qty)} pts</div></div>`
+              <div class="nm">${esc(i.name)}</div><div class="val">${fmt(i.value * i.qty)} pts</div>
+              ${
+                isMe
+                  ? `<div class="inv-actions">${i.gear ? `<button class="mini" data-act="equip" data-item="${esc(i.id)}">Equip</button>` : ''}<button class="mini" data-act="sell" data-item="${esc(i.id)}" data-name="${esc(i.name)}" data-value="${i.value}">Sell</button></div>`
+                  : ''
+              }</div>`
           )
           .join('')}</div>`
       : `<div class="empty"><span class="ic">🎒</span>Empty bag. Type <code>!fish</code>, <code>!mine</code>, <code>!chop</code> or <code>!dig</code> in chat.</div>`;
     const charNext = c.nextLevelXp == null ? 'Max character level' : `${c.percent}% to level ${c.level + 1}`;
 
     return `
+     <div id="sheet">
       <section class="panel">
         <div class="char-header">
           ${avatar(p.avatarUrl, p.username)}
@@ -196,12 +202,14 @@
       <h2 style="margin:28px 0 12px">Skills</h2>
       <div class="grid grid-skills">${p.skills.map(skillCard).join('')}</div>
 
-      <div class="grid grid-2" style="margin-top:28px">
+      ${equipmentPanel(p.combat, isMe)}
+
+      <div class="grid grid-2" style="margin-top:16px">
         <section class="panel">
           <div class="panel-head"><h2>Backpack</h2><span class="badge gold">Worth ${fmt(p.inventoryValue)} pts</span></div>
           ${backpackBar(p.backpack)}
           ${inv}
-          ${p.inventory.length ? `<p class="muted" style="margin-bottom:0">Sell in chat with <code>!sell all</code> or <code>!sell trout 5</code>.</p>` : ''}
+          ${p.inventory.length ? `<p class="muted" style="margin-bottom:0">${isMe ? 'Use the buttons, or in chat:' : 'Sell in chat with'} <code>!sell all</code> or <code>!sell trout 5</code>${isMe ? ', <code>!equip bronze sword</code>' : ''}.</p>` : ''}
         </section>
         <section class="panel">
           <div class="panel-head"><h2>Recent activity</h2></div>
@@ -209,7 +217,69 @@
             activity.length ? activity.map((a) => feedItem(a)).join('') : '<li class="empty">No activity yet.</li>'
           }</ul>
         </section>
-      </div>`;
+      </div>
+     </div>`;
+  }
+
+  const SLOT_LABEL = { weapon: 'Weapon', head: 'Head', body: 'Body', legs: 'Legs', shield: 'Shield' };
+  const SLOT_EMPTY = { weapon: '🗡️', head: '⛑️', body: '👕', legs: '👖', shield: '🛡️' };
+
+  function itemTitle(i) {
+    const bits = [`${i.name} — sells for ${fmt(i.value)} pts`];
+    if (i.attack) bits.push(`+${i.attack} attack, needs Swords ${i.level}`);
+    if (i.defence) bits.push(`+${i.defence} defence, needs Combat ${i.level}`);
+    return bits.join(' · ');
+  }
+
+  function equipmentPanel(c, isMe) {
+    return `
+      <section class="panel" style="margin-top:28px">
+        <div class="panel-head">
+          <h2>Equipment</h2>
+          <div class="char-badges">
+            <span class="badge">⚔️ Attack +${fmt(c.attack)}</span>
+            <span class="badge">🛡️ Defence +${fmt(c.defence)}</span>
+            <span class="badge">🎖️ Combat level ${fmt(c.level)}</span>
+          </div>
+        </div>
+        <div class="gear-grid">${c.worn
+          .map(
+            (w) => `<div class="gear-slot${w.item ? ' filled' : ''}" title="${w.item ? esc(itemTitle(w.item)) : ''}">
+              <div class="gear-label">${SLOT_LABEL[w.slot]}</div>
+              <div class="ic">${w.item ? w.item.icon : `<span class="ghost">${SLOT_EMPTY[w.slot]}</span>`}</div>
+              <div class="nm">${w.item ? esc(w.item.name) : 'Empty'}</div>
+              <div class="gear-stat">${w.item ? (w.item.attack ? `+${w.item.attack} attack` : `+${w.item.defence} defence`) : '&nbsp;'}</div>
+              ${isMe && w.item ? `<button class="mini" data-act="unequip" data-slot="${w.slot}">Unequip</button>` : ''}
+            </div>`
+          )
+          .join('')}</div>
+        <p class="muted" style="margin-bottom:0;font-size:.85rem">Buy a sword in the <a href="#/shop">shop</a> or <code>!smith</code> your own, then <code>!fight</code>. Your best weapon is equipped automatically when you fight.</p>
+      </section>`;
+  }
+
+  // Equip / unequip / sell buttons on your own character page.
+  function bindSheetActions() {
+    const sheet = document.getElementById('sheet');
+    if (!sheet) return;
+    sheet.onclick = async (e) => {
+      const b = e.target.closest('button[data-act]');
+      if (!b) return;
+      const { act, item, slot, name, value } = b.dataset;
+      let body;
+      if (act === 'sell') {
+        if (!confirm(`Sell 1 ${name} for ${fmt(value)} points?`)) return;
+        body = { item, qty: 1 };
+      } else body = act === 'unequip' ? { slot } : { item };
+      b.disabled = true;
+      try {
+        const r = await api(`/me/${act}`, { method: 'POST', body });
+        toast(r.message);
+        route();
+      } catch (err) {
+        toast(err.message);
+        b.disabled = false;
+      }
+    };
   }
 
   function cooldownText(p) {
@@ -292,6 +362,51 @@
         .join('')}</tbody></table></div>`;
   }
 
+  pages.shop = async () => {
+    const { items, points } = await api('/shop');
+    $app.innerHTML = `
+      <div class="panel-head" style="margin-bottom:6px"><h1 style="margin:0">🛒 Shop</h1>${
+        points !== null
+          ? `<span class="badge gold" style="font-size:1rem">💰 ${fmt(points)} points</span>`
+          : state.loginEnabled
+            ? `<a class="btn btn-primary" href="/auth/login">Log in with Kick to buy</a>`
+            : ''
+      }</div>
+      <p class="muted">Spend the points you earn in chat. Items go into your backpack. You can also buy in chat with <code>!buy &lt;item&gt;</code>.</p>
+      <div class="shop-grid">${items
+        .map(
+          (i) => `<section class="panel shop-item">
+            <div class="shop-icon">${i.icon}</div>
+            <h2>${esc(i.name)}</h2>
+            <p class="muted">${esc(i.description || '')}</p>
+            ${i.attack ? `<p class="shop-stat">⚔️ +${i.attack} attack · needs Swords ${i.level}</p>` : ''}
+            <div class="shop-buy">
+              <span class="shop-price">${fmt(i.cost)} pts</span>
+              ${
+                points !== null
+                  ? `<button class="btn btn-primary" data-buy="${esc(i.item)}" ${points < i.cost ? 'disabled title="Not enough points"' : ''}>Buy</button>`
+                  : ''
+              }
+            </div>
+            <p class="muted" style="font-size:.8rem;margin:8px 0 0">In chat: <code>!buy ${esc(i.name.split(' ').pop().toLowerCase())}</code></p>
+          </section>`
+        )
+        .join('')}</div>`;
+    $app.querySelectorAll('[data-buy]').forEach((b) => {
+      b.onclick = async () => {
+        b.disabled = true;
+        try {
+          const r = await api('/shop/buy', { method: 'POST', body: { item: b.dataset.buy } });
+          toast(r.message);
+          route();
+        } catch (err) {
+          toast(err.message);
+          b.disabled = false;
+        }
+      };
+    });
+  };
+
   pages.leaderboards = async (_, query) => {
     const kind = query.get('board') || 'overall';
     const tabs = [
@@ -316,6 +431,7 @@
     }
     const isMe = state.me && state.me.id === data.profile.id;
     $app.innerHTML = characterSheet(data.profile, data.activity, isMe);
+    if (isMe) bindSheetActions();
     return liveFeed(document.getElementById('player-feed'), {
       filter: (a) => a.username === data.profile.username,
       max: 25,
@@ -338,23 +454,41 @@
 
   pages.guide = async () => {
     const g = await api('/guide');
-    const tierTable = (s) => `
+    const rareRows = (s, cols) =>
+      s.rares
+        .map(
+          (r) => `<tr style="color:var(--rare)"><td>Rare · ${esc(r.odds)}</td><td>${r.icon} ${esc(r.item)}${r.from ? ` <span class="muted">(${esc(r.from)})</span>` : ''}</td>${'<td></td>'.repeat(cols)}<td class="num">${r.xp ? fmt(r.xp) : ''}</td><td class="num">${fmt(r.value)} pts</td></tr>`
+        )
+        .join('');
+    const gearStat = (st) => (st.attack ? `+${st.attack} atk · Swords ${st.wear}` : `+${st.defence} def · Combat ${st.wear}`);
+    const tierTable = (s) => {
+      if (s.type === 'combat') {
+        return `
       <div class="table-wrap"><table>
-        <thead><tr><th>Level</th><th>${s.type === 'process' ? 'Makes' : 'Resource'}</th>${s.type === 'process' ? '<th>Type</th><th>Needs (from your backpack)</th>' : ''}<th class="num">XP</th><th class="num">Sells for</th></tr></thead>
+        <thead><tr><th>Level</th><th>Monster</th><th>Loot</th><th class="num">XP</th><th class="num">Loot sells for</th></tr></thead>
+        <tbody>${s.tiers
+          .map(
+            (t) => `<tr><td><b>${t.level}</b></td><td>${t.icon} ${esc(t.item)}</td>
+            <td class="wrap">${t.loot.map((l) => `${l.icon} ${esc(l.item)}`).join(', ')}</td>
+            <td class="num">${t.xp}</td><td class="num">${t.loot.map((l) => fmt(l.value)).join(' / ')} pts</td></tr>`
+          )
+          .join('')}${rareRows(s, 1)}</tbody></table></div>`;
+      }
+      const isProcess = s.type === 'process';
+      const hasStats = s.tiers.some((t) => t.stats);
+      return `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Level</th><th>${isProcess ? 'Makes' : 'Resource'}</th>${isProcess ? '<th>Type</th><th>Needs (from your backpack)</th>' : ''}${hasStats ? '<th>Stats</th>' : ''}<th class="num">XP</th><th class="num">Sells for</th></tr></thead>
         <tbody>${s.tiers
           .map(
             (t) => `<tr><td><b>${t.level}</b></td><td>${t.icon} ${esc(t.item)}</td>
             ${t.kind ? `<td><span class="kind kind-${esc(t.kind)}">${esc(t.kind)}</span></td>` : ''}
             ${t.inputs ? `<td class="wrap">${t.inputs.map((i) => `${i.qty}× ${i.icon} ${esc(i.item)}`).join(' + ')}</td>` : ''}
+            ${hasStats ? `<td class="wrap">${t.stats ? gearStat(t.stats) : ''}</td>` : ''}
             <td class="num">${t.xp}</td><td class="num">${fmt(t.value)} pts</td></tr>`
           )
-          .join('')}
-          ${s.rares
-            .map(
-              (r) => `<tr style="color:var(--rare)"><td>Rare · ${esc(r.odds)}</td><td>${r.icon} ${esc(r.item)}</td><td class="num">${fmt(r.xp)}</td><td class="num">${fmt(r.value)} pts</td></tr>`
-            )
-            .join('')}
-        </tbody></table></div>`;
+          .join('')}${rareRows(s, 0)}</tbody></table></div>`;
+    };
     const STAT_HEAD = {
       failChance: (t) => `<th class="num" title="Chance an action fails">${t.failWord === 'snap' ? 'Snap' : 'Miss'}</th>`,
       xpBonus: () => '<th class="num" title="Bonus XP">XP</th>',
@@ -392,6 +526,8 @@
             <li>Just chatting earns <b>${g.chatPoints} points</b> (once every ${g.chatCooldown}s). <code>!sell</code> loot for even more.</li>
             <li>Every skill goes all the way to <b>level 500</b>. Every 50 levels you can buy a better tool with points: <code>!upgrade rod</code>, <code>pickaxe</code>, <code>axe</code>, <code>shovel</code> or <code>furnace</code>. Better tools fail less, give bonus XP and better rare odds (furnaces can smelt two at once). <code>!gear</code> shows all your tools.</li>
             ${g.xpMultiplier !== 1 ? `<li><b>🔥 ${g.xpMultiplier}× XP event is on right now!</b></li>` : ''}
+            <li><b>Smithing</b>: buy a 🔨 Smithing Hammer in the <a href="#/shop">shop</a> (keep it in your backpack), then turn alloys into weapons and armor: <code>!smith bronze sword</code>. <code>!equip</code> gear for attack and defence, or <code>!sell</code> it.</li>
+            <li><b>Combat</b>: with a sword (shop or smithed), <code>!fight</code> monsters for Swords XP and loot. Start with chickens; stronger monsters unlock as you level. <code>!fight goblin</code> picks a target. Better weapons and armor raise your win chance.</li>
             <li>Your <b>character level</b> grows with the combined XP of all skills — train them all!</li>
           </ol>
         </section>
@@ -403,6 +539,10 @@
             <dt><code>!&lt;tool&gt;</code></dt><dd>Show one tool: <code>!rod</code> <code>!pickaxe</code> <code>!axe</code> <code>!shovel</code> <code>!furnace</code></dd>
             <dt><code>!upgrade &lt;tool&gt;</code></dt><dd>Upgrade a tool (every 50 levels, costs points)</dd>
             <dt><code>!upgrade backpack</code></dt><dd>More backpack slots (costs points)</dd>
+            <dt><code>!smith &lt;item&gt;</code></dt><dd>Smith gear from alloys (needs a hammer)</dd>
+            <dt><code>!fight [monster]</code></dt><dd>Fight for Swords XP and loot</dd>
+            <dt><code>!equip &lt;item&gt;</code></dt><dd>Wear gear (<code>!unequip</code>, <code>!equipped</code>)</dd>
+            <dt><code>!buy &lt;item&gt;</code></dt><dd>Buy a hammer or sword (<code>!shop</code> lists them)</dd>
             <dt><code>!stats [name]</code></dt><dd>Show levels and points</dd>
             <dt><code>!inv</code></dt><dd>Show your backpack</dd>
             <dt><code>!sell all</code></dt><dd>Sell everything for points</dd>
@@ -425,7 +565,7 @@
       <div class="grid grid-guide">
         ${g.skills
           .map(
-            (s) => `<section class="panel"><h2>${s.icon} ${esc(s.name)} <code>${esc(s.command)}</code> <span class="muted" style="font-size:.8rem;font-weight:600">max level ${s.maxLevel}</span></h2>${tierTable(s)}${s.tool ? toolTable(s.tool, s) : ''}</section>`
+            (s) => `<section class="panel${s.type === 'combat' || s.tiers.some((t) => t.stats) ? ' span-all' : ''}"><h2>${s.icon} ${esc(s.name)} <code>${esc(s.command)}</code> <span class="muted" style="font-size:.8rem;font-weight:600">max level ${s.maxLevel}</span></h2>${tierTable(s)}${s.tool ? toolTable(s.tool, s) : ''}</section>`
           )
           .join('')}
       </div>`;

@@ -1,5 +1,19 @@
 const { EventEmitter } = require('node:events');
-const { ITEMS, SKILLS, SKILL_IDS, BACKPACK_TIERS, COMMAND_TO_SKILL, TOOL_TO_SKILL, TOOL_ALIASES, maxLevel, findItem } = require('./skills');
+const {
+  ITEMS,
+  SKILLS,
+  SKILL_IDS,
+  BACKPACK_TIERS,
+  SHOP,
+  GEAR_SLOTS,
+  COMMAND_TO_SKILL,
+  COMBAT_SKILLS,
+  WEAPON_SKILL,
+  TOOL_TO_SKILL,
+  TOOL_ALIASES,
+  maxLevel,
+  findItem,
+} = require('./skills');
 const { levelForXp, progress, characterProgress } = require('./xp');
 
 const fmt = (n) => Number(n).toLocaleString('en-US');
@@ -18,16 +32,34 @@ const INFO_COMMANDS = {
   gear: ['gear', 'gear'], tools: ['gear', 'gear'], equipment: ['gear', 'gear'],
   // !rod, !pickaxe, !axe, !shovel, !furnace (and aliases like !pick) show that tool.
   ...Object.fromEntries(Object.entries(TOOL_ALIASES).map(([word, toolId]) => [word, ['toolInfo', toolId]])),
+  equip: ['equip', 'equip'], wear: ['equip', 'equip'], wield: ['equip', 'equip'],
+  unequip: ['unequip', 'unequip'], remove: ['unequip', 'unequip'],
+  equipped: ['equippedInfo', 'equipped'], worn: ['equippedInfo', 'equipped'], armor: ['equippedInfo', 'equipped'], armour: ['equippedInfo', 'equipped'],
+  buy: ['buy', 'buy'], shop: ['shopList', 'shop'], store: ['shopList', 'shop'],
   commands: ['help', 'commands'], help: ['help', 'commands'], rpg: ['help', 'commands'], mmo: ['help', 'commands'],
 };
 
-// Where each ore comes from, for "missing ore" hints: copper_ore -> "!mine copper".
+// Words players use for gear slots: "!unequip helmet".
+const SLOT_ALIASES = {
+  weapon: 'weapon', sword: 'weapon',
+  head: 'head', helmet: 'head', helm: 'head',
+  body: 'body', platebody: 'body', chest: 'body',
+  legs: 'legs', platelegs: 'legs',
+  shield: 'shield',
+};
+const SLOT_ICONS = { weapon: '🗡️', head: '⛑️', body: '👕', legs: '👖', shield: '🛡️' };
+const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+
+// Where each material comes from, for "you're missing..." hints:
+// copper_ore -> "!mine copper", bronze_bar -> "!smelt bronze".
 const GATHER_HINT = {};
 for (const id of SKILL_IDS) {
-  for (const r of SKILLS[id].resources || []) {
+  for (const r of [...(SKILLS[id].resources || []), ...(SKILLS[id].type === 'process' ? SKILLS[id].recipes : [])]) {
     GATHER_HINT[r.item] ??= `!${SKILLS[id].command} ${ITEMS[r.item].name.split(' ')[0].toLowerCase()}`;
   }
 }
+// Name of anything in a skill's unlock list (items, recipes or monsters).
+const unlockName = (r) => (r.item ? ITEMS[r.item].name : r.name);
 
 class GameEngine extends EventEmitter {
   // settings: a Settings instance (live, admin-editable). Tests may pass a plain { game, all } object.
@@ -78,6 +110,8 @@ class GameEngine extends EventEmitter {
   // ---- Skilling ----------------------------------------------------------
 
   runAction(user, skillId, args) {
+    // A bare "!smith" just lists what you can make, so it doesn't need (or use) the cooldown.
+    if (SKILLS[skillId].pickBest === false && !args.length) return this.process(user, skillId, args).reply;
     const now = this.now();
     const fresh = this.repo.getUser(user.id);
     const readyAt = fresh.last_action_at + this.cfg.actionCooldown * 1000;
@@ -90,7 +124,12 @@ class GameEngine extends EventEmitter {
 
     const skill = SKILLS[skillId];
     const result = this.repo.transaction(() => {
-      const r = skill.type === 'process' ? this.process(user, skillId, args) : this.gather(user, skillId, args);
+      const r =
+        skill.type === 'combat'
+          ? this.fight(user, args)
+          : skill.type === 'process'
+            ? this.process(user, skillId, args)
+            : this.gather(user, skillId, args);
       if (r.consumed) this.repo.setActionAt(user.id, now);
       return r;
     });
@@ -174,6 +213,12 @@ class GameEngine extends EventEmitter {
     const skill = SKILLS[skillId];
     const level = skillLevel(skillId, this.repo.getSkills(user.id)[skillId]);
     const inv = this.repo.getInventory(user.id);
+    if (skill.requires && !inv[skill.requires]) {
+      const need = ITEMS[skill.requires];
+      const price = this.shopItems().find((x) => x.item === skill.requires)?.cost;
+      const buy = price !== undefined ? ` Buy one with !buy ${need.name.split(' ').pop().toLowerCase()} (${fmt(price)} pts) or at ${this.siteUrl}/#/shop` : '';
+      return { consumed: false, reply: `you need a ${need.icon} ${need.name} in your backpack to ${skill.command}!${buy}` };
+    }
     const hasInputs = (r) => Object.entries(r.inputs).every(([item, qty]) => (inv[item] || 0) >= qty);
     const needs = (r) => Object.entries(r.inputs).map(([i, q]) => `${q} ${ITEMS[i].name}`).join(' + ');
     const missing = (r) => {
@@ -187,14 +232,25 @@ class GameEngine extends EventEmitter {
     if (args.length) {
       const id = findItem(args.join(' '), skill.recipes.map((r) => r.item));
       if (!id) {
+        if (skill.pickBest === false) {
+          return { consumed: false, reply: `unknown item. Try e.g. !${skill.command} bronze sword (sword, helmet, shield, platelegs, platebody)` };
+        }
         const opts = skill.recipes.filter((r) => r.level <= level).map((r) => ITEMS[r.item].name.split(' ')[0].toLowerCase());
-        return { consumed: false, reply: `unknown recipe. You can smelt: ${opts.join(', ')} (e.g. !smelt ${opts[opts.length - 1]})` };
+        return { consumed: false, reply: `unknown recipe. You can ${skill.command}: ${opts.join(', ')} (e.g. !${skill.command} ${opts[opts.length - 1]})` };
       }
       recipe = skill.recipes.find((r) => r.item === id);
       if (recipe.level > level) {
         return { consumed: false, reply: `you need ${skill.icon} ${skill.name} level ${recipe.level} for ${ITEMS[id].name}.` };
       }
       if (!hasInputs(recipe)) return { consumed: false, reply: missing(recipe) };
+    } else if (skill.pickBest === false) {
+      // Smithing: say what they can make right now instead of guessing.
+      const ready = skill.recipes.filter((r) => r.level <= level && hasInputs(r));
+      if (ready.length) {
+        const list = ready.slice(-6).reverse().map((r) => ITEMS[r.item].name.toLowerCase()).join(', ');
+        return { consumed: false, reply: `you can ${skill.command}: ${list}. e.g. !${skill.command} ${ITEMS[ready[ready.length - 1].item].name.toLowerCase()}` };
+      }
+      return { consumed: false, reply: `nothing to ${skill.command} yet! ${missing(skill.recipes[1] || skill.recipes[0])}` };
     } else {
       recipe = [...skill.recipes].reverse().find((r) => r.level <= level && hasInputs(r));
       if (!recipe) {
@@ -202,7 +258,7 @@ class GameEngine extends EventEmitter {
         const unlocked = skill.recipes.filter((r) => r.level <= level);
         const gap = (r) => Object.entries(r.inputs).reduce((s, [i, q]) => s + Math.max(0, q - (inv[i] || 0)), 0);
         const closest = unlocked.reduce((best, r) => (gap(r) < gap(best) ? r : best), unlocked[0]);
-        return { consumed: false, reply: `nothing to smelt! ${missing(closest)}` };
+        return { consumed: false, reply: `nothing to ${skill.command}! ${missing(closest)}` };
       }
     }
 
@@ -213,49 +269,267 @@ class GameEngine extends EventEmitter {
   reward(user, skillId, item, baseXp, { rare }) {
     const skill = SKILLS[skillId];
     const tool = this.currentTool(user.id, skillId);
-    const xpGain = Math.max(1, Math.round(baseXp * (1 + (tool?.xpBonus || 0)) * this.cfg.xpMultiplier));
-    const before = this.repo.getSkills(user.id);
-    const levelBefore = skillLevel(skillId, before[skillId]);
-    const charBefore = characterProgress(SKILL_IDS.map((id) => before[id])).level;
-
-    const points = Math.round(Math.max(1, xpGain / 10) * this.cfg.pointsMultiplier);
+    const xpGain = this.xpFor(baseXp, tool);
     // Better furnaces sometimes make two (only if there's room in the backpack for the extra one).
     let qty = 1;
     if (tool?.doubleChance > 0 && this.rng() < tool.doubleChance) {
       const bagNow = this.backpack(user.id);
       if (bagNow.used + 1 < bagNow.capacity) qty = 2;
     }
-    this.repo.addXp(user.id, skillId, xpGain);
     this.repo.addItem(user.id, item, qty);
+    const text = `${skill.verb} ${rare ? 'a RARE ' : ''}${ITEMS[item].name}`;
+    this.emitActivity(user, { kind: rare ? 'rare' : 'action', skill: skillId, item, xp: xpGain, text });
+    const gained = this.grantXp(user, skillId, xpGain);
+    const reply = `${skill.icon} you ${skill.verb} ${rare ? 'a RARE ' : ''}${itemLabel(item, qty)}!${qty > 1 ? ' (double!)' : ''} ${gained.text}`;
+    return { consumed: true, reply: reply + this.fullBagNote(user.id) };
+  }
+
+  xpFor(baseXp, tool) {
+    return Math.max(1, Math.round(baseXp * (1 + (tool?.xpBonus || 0)) * this.cfg.xpMultiplier));
+  }
+
+  // Adds XP and action points; returns "+X XP, +Y pts" plus level-up / progress text for the reply.
+  grantXp(user, skillId, xpGain) {
+    const skill = SKILLS[skillId];
+    const before = this.repo.getSkills(user.id);
+    const levelBefore = skillLevel(skillId, before[skillId]);
+    const charBefore = characterProgress(SKILL_IDS.map((id) => before[id])).level;
+    const points = Math.round(Math.max(1, xpGain / 10) * this.cfg.pointsMultiplier);
+    this.repo.addXp(user.id, skillId, xpGain);
     if (points > 0) this.repo.addPoints(user.id, points);
 
     const xpAfter = before[skillId] + xpGain;
     const levelAfter = skillLevel(skillId, xpAfter);
     const charAfter = characterProgress(SKILL_IDS.map((id) => before[id] + (id === skillId ? xpGain : 0))).level;
 
-    const bag = this.backpack(user.id);
-    let reply = `${skill.icon} you ${skill.verb} ${rare ? 'a RARE ' : ''}${itemLabel(item, qty)}!${qty > 1 ? ' (double!)' : ''} +${xpGain} XP, +${points} pts`;
-    const text = `${skill.verb} ${rare ? 'a RARE ' : ''}${ITEMS[item].name}`;
-    this.emitActivity(user, { kind: rare ? 'rare' : 'action', skill: skillId, item, xp: xpGain, text });
-
+    let text = `+${xpGain} XP, +${points} pts`;
     if (levelAfter > levelBefore) {
-      reply += ` 🎉 ${skill.name} level ${levelAfter}!`;
-      const unlocks = (skill.resources || skill.recipes).filter((r) => r.level > levelBefore && r.level <= levelAfter);
-      if (unlocks.length) reply += ` Unlocked: ${unlocks.map((r) => ITEMS[r.item].name).join(', ')}.`;
+      text += ` 🎉 ${skill.name} level ${levelAfter}!`;
+      const unlocks = (skill.resources || skill.recipes || skill.monsters).filter((r) => r.level > levelBefore && r.level <= levelAfter);
+      if (unlocks.length) text += ` Unlocked: ${unlocks.slice(0, 5).map(unlockName).join(', ')}${unlocks.length > 5 ? '…' : ''}.`;
       if (skill.tool && this.canUpgrade(user.id, skillId, levelAfter) && !this.canUpgrade(user.id, skillId, levelBefore)) {
-        reply += ` 🔧 You can now !upgrade ${skill.tool.id}!`;
+        text += ` 🔧 You can now !upgrade ${skill.tool.id}!`;
       }
       this.emitActivity(user, { kind: 'levelup', skill: skillId, text: `reached ${skill.name} level ${levelAfter}` });
     } else {
-      const p = progress(xpAfter, maxLevel(skillId));
-      reply += ` (${skill.name} ${levelAfter}, ${p.percent}%)`;
+      text += ` (${skill.name} ${levelAfter}, ${progress(xpAfter, maxLevel(skillId)).percent}%)`;
     }
     if (charAfter > charBefore) {
-      reply += ` ⭐ Character level ${charAfter}!`;
+      text += ` ⭐ Character level ${charAfter}!`;
       this.emitActivity(user, { kind: 'charlevel', text: `reached character level ${charAfter}` });
     }
-    if (bag.used >= bag.capacity) reply += ` 🎒 Backpack full (${bag.used}/${bag.capacity})!`;
-    return { consumed: true, reply };
+    return { points, text };
+  }
+
+  fullBagNote(userId) {
+    const bag = this.backpack(userId);
+    return bag.used >= bag.capacity ? ` 🎒 Backpack full (${bag.used}/${bag.capacity})!` : '';
+  }
+
+  // ---- Combat (!fight) ----------------------------------------------------
+
+  combatLevel(userId) {
+    const xp = this.repo.getSkills(userId);
+    return Math.max(1, ...COMBAT_SKILLS.map((id) => skillLevel(id, xp[id])));
+  }
+
+  combatStats(userId) {
+    const worn = this.repo.getWorn(userId);
+    const weapon = worn.weapon && ITEMS[worn.weapon] ? worn.weapon : null;
+    const defence = GEAR_SLOTS.filter((sl) => sl !== 'weapon').reduce((sum, sl) => sum + (ITEMS[worn[sl]]?.defence || 0), 0);
+    return { worn, weapon, attack: weapon ? ITEMS[weapon].attack : 0, defence, level: this.combatLevel(userId) };
+  }
+
+  // Look at every weapon the player owns (worn or in the backpack), take the combat skill they're
+  // best at, and pick their strongest weapon for it that they're allowed to use.
+  chooseWeapon(userId) {
+    const xp = this.repo.getSkills(userId);
+    const worn = this.repo.getWorn(userId);
+    const owned = [...new Set([worn.weapon, ...Object.keys(this.repo.getInventory(userId))])].filter((id) => ITEMS[id]?.weaponType);
+    if (!owned.length) return { weapon: null, reason: 'none' };
+    const bySkill = {};
+    for (const id of owned) {
+      const skillId = WEAPON_SKILL[ITEMS[id].weaponType];
+      if (skillId) (bySkill[skillId] ||= []).push(id);
+    }
+    const skills = Object.keys(bySkill).sort((a, b) => skillLevel(b, xp[b]) - skillLevel(a, xp[a]));
+    for (const skillId of skills) {
+      const level = skillLevel(skillId, xp[skillId]);
+      const usable = bySkill[skillId].filter((id) => ITEMS[id].level <= level).sort((a, b) => ITEMS[b].attack - ITEMS[a].attack);
+      if (usable.length) return { weapon: usable[0], skillId, level, wasWorn: usable[0] === worn.weapon };
+    }
+    const easiest = owned.sort((a, b) => ITEMS[a].level - ITEMS[b].level)[0];
+    return { weapon: null, reason: 'level', item: easiest };
+  }
+
+  fight(user, args) {
+    const pick = this.chooseWeapon(user.id);
+    if (!pick.weapon) {
+      if (pick.reason === 'level') {
+        const it = ITEMS[pick.item];
+        const sk = SKILLS[WEAPON_SKILL[it.weaponType]];
+        return { consumed: false, reply: `your ${it.icon} ${it.name} needs ${sk.name} level ${it.level}. Get a weaker weapon to train up first.` };
+      }
+      const sword = this.shopItems().find((x) => ITEMS[x.item].weaponType);
+      const buy = sword ? `!buy sword (${fmt(sword.cost)} pts, or ${this.siteUrl}/#/shop)` : 'the shop';
+      return { consumed: false, reply: `you need a weapon to fight! Get a sword from ${buy} or smith one: !smith bronze sword` };
+    }
+    const bag = this.backpack(user.id);
+    if (bag.used >= bag.capacity) {
+      return { consumed: false, reply: `🎒 your backpack is full (${bag.used}/${bag.capacity}) — no room for loot! !sell or !upgrade backpack first.` };
+    }
+
+    const skill = SKILLS[pick.skillId];
+    const unlocked = skill.monsters.filter((m) => m.level <= pick.level);
+    let monster;
+    if (args.length) {
+      const q = args.join(' ').toLowerCase().replace(/^an? /, '');
+      monster = skill.monsters.find((m) => m.id === q.replace(/\s+/g, '_') || m.name.toLowerCase() === q) || skill.monsters.find((m) => m.name.toLowerCase().startsWith(q));
+      if (!monster) {
+        const next = skill.monsters.find((m) => m.level > pick.level);
+        const opts = [...unlocked, ...(next ? [next] : [])].map((m) => `${m.name} (${m.level})`).join(', ');
+        return { consumed: false, reply: `unknown monster. You can fight: ${opts}` };
+      }
+      if (monster.level > pick.level) {
+        return { consumed: false, reply: `you need ${skill.icon} ${skill.name} level ${monster.level} to fight a ${monster.name} (you are ${pick.level}).` };
+      }
+    } else {
+      monster = this.pickResource(unlocked);
+    }
+
+    // Wield the chosen weapon if it isn't already in hand.
+    let swapped = '';
+    if (!pick.wasWorn) {
+      const worn = this.repo.getWorn(user.id);
+      this.repo.removeItem(user.id, pick.weapon, 1);
+      if (worn.weapon) this.repo.addItem(user.id, worn.weapon, 1);
+      this.repo.wear(user.id, 'weapon', pick.weapon);
+      swapped = ` (equipped your ${ITEMS[pick.weapon].name})`;
+    }
+
+    const stats = this.combatStats(user.id);
+    const chance = this.winChance(pick.level, stats, monster);
+    const weapon = ITEMS[pick.weapon];
+    if (this.rng() >= chance) {
+      const gained = this.grantXp(user, pick.skillId, this.xpFor(monster.xp * 0.25));
+      return {
+        consumed: true,
+        reply: `${monster.icon} the ${monster.name} was too strong and you retreated!${swapped} ${gained.text} (win chance ${Math.round(chance * 100)}% — better gear helps)`,
+      };
+    }
+
+    let loot;
+    let rare = false;
+    if (monster.rare && this.rng() < monster.rare.chance) {
+      loot = monster.rare.item;
+      rare = true;
+    } else {
+      loot = monster.loot[this.rng() < 0.6 ? 0 : 1];
+    }
+    this.repo.addItem(user.id, loot, 1);
+    const xpGain = this.xpFor(monster.xp);
+    this.emitActivity(user, {
+      kind: rare ? 'rare' : 'action',
+      skill: pick.skillId,
+      item: loot,
+      xp: xpGain,
+      text: `defeated a ${monster.name}${rare ? ` and found a RARE ${ITEMS[loot].name}` : ''}`,
+    });
+    const gained = this.grantXp(user, pick.skillId, xpGain);
+    return {
+      consumed: true,
+      reply: `${weapon.icon} you defeated a ${monster.icon} ${monster.name}${swapped} and looted ${rare ? 'a RARE ' : ''}${itemLabel(loot)}! ${gained.text}${this.fullBagNote(user.id)}`,
+    };
+  }
+
+  // Your attack (level + weapon) against the monster's power, your defence against its damage.
+  // Evenly matched with the right gear: ~75%. Always between 5% and 95%.
+  winChance(level, stats, monster) {
+    const offence = Math.min(1.5, (level + stats.attack) / monster.power);
+    const defence = Math.min(1.5, (stats.defence + 1) / (monster.damage + 1));
+    return clamp(0.25 + 0.5 * (0.65 * offence + 0.35 * defence), 0.05, 0.95);
+  }
+
+  // !equip <item>: wear gear from the backpack (whatever was in that slot goes back in the backpack).
+  equip(user, args) {
+    if (!args.length) return 'usage: !equip <item>, e.g. !equip bronze sword. !equipped shows what you wear.';
+    const inv = this.repo.getInventory(user.id);
+    const id = findItem(args.join(' '), Object.keys(inv).filter((i) => ITEMS[i]?.gear));
+    if (!id) return `you don't have "${args.join(' ')}" in your backpack. Smith gear with !smith or buy it with !buy.`;
+    const item = ITEMS[id];
+    if (item.weaponType) {
+      const sk = WEAPON_SKILL[item.weaponType];
+      const lvl = skillLevel(sk, this.repo.getSkills(user.id)[sk]);
+      if (lvl < item.level) return `you need ${SKILLS[sk].icon} ${SKILLS[sk].name} level ${item.level} to wield a ${item.name} (you are ${lvl}).`;
+    } else {
+      const lvl = this.combatLevel(user.id);
+      if (lvl < item.level) return `you need Combat level ${item.level} to wear ${item.name} (you are ${lvl}).`;
+    }
+    this.repo.transaction(() => {
+      const worn = this.repo.getWorn(user.id);
+      this.repo.removeItem(user.id, id, 1);
+      if (worn[item.slot]) this.repo.addItem(user.id, worn[item.slot], 1);
+      this.repo.wear(user.id, item.slot, id);
+    });
+    const st = this.combatStats(user.id);
+    const bonus = item.attack ? `+${item.attack} attack` : `+${item.defence} defence`;
+    return `equipped ${itemLabel(id)} (${bonus}). ⚔️ Attack +${st.attack} · 🛡️ Defence +${st.defence}`;
+  }
+
+  // !unequip <slot or item>: put it back in the backpack.
+  unequip(user, args) {
+    const worn = this.repo.getWorn(user.id);
+    const q = args.join(' ').toLowerCase();
+    let slot = SLOT_ALIASES[q];
+    if (!slot) slot = Object.keys(worn).find((sl) => findItem(q, [worn[sl]]));
+    if (!q || !slot) return 'usage: !unequip <weapon|helmet|body|legs|shield>';
+    if (!worn[slot]) return `you aren't wearing anything there.`;
+    const bag = this.backpack(user.id);
+    if (bag.used >= bag.capacity) return `🎒 no room in your backpack (${bag.used}/${bag.capacity}).`;
+    this.repo.transaction(() => {
+      this.repo.takeOff(user.id, slot);
+      this.repo.addItem(user.id, worn[slot], 1);
+    });
+    return `took off your ${itemLabel(worn[slot])} and put it in your backpack.`;
+  }
+
+  // !equipped: what you're wearing and your combat stats.
+  equippedInfo(user) {
+    const st = this.combatStats(user.id);
+    const parts = GEAR_SLOTS.map((sl) => (st.worn[sl] ? itemLabel(st.worn[sl]) : `${SLOT_ICONS[sl]} —`));
+    return `${parts.join(' | ')} | ⚔️ Attack +${st.attack} · 🛡️ Defence +${st.defence} · Combat level ${st.level}`;
+  }
+
+  // ---- Shop (!buy, website) -------------------------------------------------
+
+  shopItems() {
+    const live = this.settings.all.shop;
+    return SHOP.map((x, i) => ({ ...x, ...(live?.[i] || {}), ...ITEMS[x.item], item: x.item }));
+  }
+
+  shopList() {
+    const list = this.shopItems().map((x) => `${x.icon} ${x.name} ${fmt(x.cost)} pts`).join(', ');
+    return `🛒 Shop: ${list} — !buy <item> or ${this.siteUrl}/#/shop`;
+  }
+
+  // Shared by "!buy" and the website shop. Returns the reply text.
+  buy(user, args) {
+    const q = args.join(' ').toLowerCase().trim();
+    const items = this.shopItems();
+    const found = q && items.find((x) => x.item === q.replace(/\s+/g, '_') || x.name.toLowerCase() === q || x.name.toLowerCase().includes(q));
+    if (!found) return `usage: !buy <item>. ${this.shopList()}`;
+    const inv = this.repo.getInventory(user.id);
+    if (found.keep && !found.gear && inv[found.item]) return `you already have a ${found.icon} ${found.name}.`;
+    const bag = this.backpack(user.id);
+    if (bag.used >= bag.capacity) return `🎒 no room in your backpack (${bag.used}/${bag.capacity}). !sell something first.`;
+    return this.repo.transaction(() => {
+      const refused = this.pay(user, found.cost, found.name);
+      if (refused) return refused;
+      this.repo.addItem(user.id, found.item, 1);
+      this.emitActivity(user, { kind: 'buy', item: found.item, text: `bought a ${found.name}` });
+      const tip = found.item === 'smithing_hammer' ? ' Now try !smith bronze sword.' : found.weaponType ? ' Now try !fight.' : '';
+      return `🛒 bought ${itemLabel(found.item)} for ${fmt(found.cost)} pts!${tip} Balance: ${fmt(this.repo.getUser(user.id).points)}`;
+    });
   }
 
   emitActivity(user, entry) {
@@ -327,8 +601,12 @@ class GameEngine extends EventEmitter {
     if (!args.length) return 'usage: !sell <item> [amount] or !sell all';
 
     let entries;
+    let kept = 0;
     if (args[0].toLowerCase() === 'all' && args.length === 1) {
-      entries = Object.entries(inv).filter(([id]) => ITEMS[id]);
+      // Gear and tools are kept; sell those by name.
+      entries = Object.entries(inv).filter(([id]) => ITEMS[id] && !ITEMS[id].keep);
+      kept = Object.entries(inv).filter(([id]) => ITEMS[id]?.keep).length;
+      if (!entries.length && kept) return 'nothing to sell — your gear and tools are kept by !sell all (sell them by name, e.g. !sell bronze sword).';
     } else {
       let qtyArg = args[args.length - 1].toLowerCase();
       let nameArgs = args;
@@ -356,7 +634,8 @@ class GameEngine extends EventEmitter {
     const what = single ? itemLabel(entries[0][0], entries[0][1]) : `${fmt(count)} items`;
     const plain = single ? `${fmt(entries[0][1])}x ${ITEMS[entries[0][0]].name}` : what;
     this.emitActivity(user, { kind: 'sell', text: `sold ${plain} for ${fmt(total)} pts` });
-    return `sold ${what} for ${fmt(total)} pts 💰 Balance: ${fmt(this.repo.getUser(user.id).points)}`;
+    const keptNote = kept ? ' (kept your gear & tools)' : '';
+    return `sold ${what} for ${fmt(total)} pts 💰 Balance: ${fmt(this.repo.getUser(user.id).points)}${keptNote}`;
   }
 
   top(user, args) {
@@ -382,7 +661,7 @@ class GameEngine extends EventEmitter {
     const on = (list) => list.filter((c) => !off.includes(c)).map((c) => `${p}${c}`).join(' ');
     const skills = on(SKILL_IDS.map((id) => SKILLS[id].command));
     const tools = Object.keys(TOOL_TO_SKILL).join('/');
-    return `Skills: ${skills} (add a target, e.g. ${p}mine iron) | Gear: ${p}gear, ${p}upgrade ${tools}/backpack | Info: ${on(['stats', 'inv', 'sell', 'points', 'top'])} | Login & track progress: ${this.siteUrl}`;
+    return `Skills: ${skills} (e.g. ${p}mine iron, ${p}smith bronze sword) | Gear: ${p}gear ${p}equip ${p}equipped ${p}shop ${p}buy, ${p}upgrade ${tools}/backpack | Info: ${on(['stats', 'inv', 'sell', 'points', 'top'])} | ${this.siteUrl}`;
   }
 
   // ---- Tools & upgrades (!upgrade rod, !upgrade backpack) --------------------
@@ -525,7 +804,7 @@ class GameEngine extends EventEmitter {
     const skills = SKILL_IDS.map((id) => {
       const s = SKILLS[id];
       const p = progress(xp[id], maxLevel(id));
-      const tiers = s.resources || s.recipes;
+      const tiers = s.resources || s.recipes || s.monsters;
       const next = tiers.find((r) => r.level > p.level);
       let tool = null;
       if (s.tool) {
@@ -553,7 +832,8 @@ class GameEngine extends EventEmitter {
         maxLevel: maxLevel(id),
         tool,
         rank: xp[id] > 0 ? this.repo.rank(userId, id) : null,
-        nextUnlock: next ? { level: next.level, item: ITEMS[next.item].name, icon: ITEMS[next.item].icon } : null,
+        type: s.type,
+        nextUnlock: next ? { level: next.level, item: unlockName(next), icon: next.item ? ITEMS[next.item].icon : next.icon } : null,
       };
     });
     const totalXp = SKILL_IDS.reduce((s, id) => s + xp[id], 0);
@@ -579,6 +859,15 @@ class GameEngine extends EventEmitter {
       inventory,
       inventoryValue: inventory.reduce((s, i) => s + i.value * i.qty, 0),
       backpack: this.backpack(userId),
+      combat: (() => {
+        const st = this.combatStats(userId);
+        return {
+          attack: st.attack,
+          defence: st.defence,
+          level: st.level,
+          worn: GEAR_SLOTS.map((slot) => ({ slot, item: st.worn[slot] ? { id: st.worn[slot], ...ITEMS[st.worn[slot]] } : null })),
+        };
+      })(),
       cooldownEndsAt: user.last_action_at + this.cfg.actionCooldown * 1000,
     };
   }
@@ -593,6 +882,7 @@ class GameEngine extends EventEmitter {
       xpMultiplier: this.cfg.xpMultiplier,
       disabledCommands: this.cfg.disabledCommands || [],
       backpack: this.backpackTiers().map((t, i) => ({ level: i + 1, ...t })),
+      shop: this.shopItems(),
       skills: SKILL_IDS.map((id) => {
         const s = SKILLS[id];
         return {
@@ -601,13 +891,15 @@ class GameEngine extends EventEmitter {
           icon: s.icon,
           command: `${this.cfg.prefix}${s.command}`,
           type: s.type,
-          tiers: (s.resources || s.recipes).map((r) => ({
+          tiers: (s.resources || s.recipes || s.monsters).map((r) => ({
             level: r.level,
             xp: r.xp,
-            item: ITEMS[r.item].name,
-            icon: ITEMS[r.item].icon,
-            value: this.sellValue(r.item),
+            item: unlockName(r),
+            icon: r.item ? ITEMS[r.item].icon : r.icon,
+            value: r.item ? this.sellValue(r.item) : undefined,
             kind: r.kind,
+            loot: r.loot ? r.loot.map((i) => ({ item: ITEMS[i].name, icon: ITEMS[i].icon, value: this.sellValue(i) })) : undefined,
+            stats: r.item && ITEMS[r.item].gear ? { slot: ITEMS[r.item].slot, attack: ITEMS[r.item].attack, defence: ITEMS[r.item].defence, wear: ITEMS[r.item].level } : undefined,
             inputs: r.inputs
               ? Object.entries(r.inputs).map(([i, q]) => ({ qty: q, item: ITEMS[i].name, icon: ITEMS[i].icon }))
               : undefined,
@@ -623,12 +915,13 @@ class GameEngine extends EventEmitter {
                 tiers: this.toolTiers(id),
               }
             : null,
-          rares: (s.rares || []).map((r) => ({
+          rares: (s.rares || (s.monsters || []).filter((m) => m.rare).map((m) => ({ ...m.rare, from: m.name }))).map((r) => ({
             item: ITEMS[r.item].name,
             icon: ITEMS[r.item].icon,
             value: this.sellValue(r.item),
             odds: `1 in ${Math.round(1 / r.chance)}`,
-            xp: r.xp,
+            xp: r.xp ?? null,
+            from: r.from,
           })),
         };
       }),

@@ -46,6 +46,14 @@ CREATE TABLE IF NOT EXISTS equipment (
   PRIMARY KEY (user_id, slot)
 );
 
+-- Weapons and armor a player is wearing (moved out of the backpack while equipped).
+CREATE TABLE IF NOT EXISTS worn_gear (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  slot TEXT NOT NULL,
+  item TEXT NOT NULL,
+  PRIMARY KEY (user_id, slot)
+);
+
 CREATE TABLE IF NOT EXISTS activity (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -114,6 +122,12 @@ function createRepo(db) {
       `INSERT INTO equipment (user_id, slot, tier) VALUES (?, ?, ?)
        ON CONFLICT(user_id, slot) DO UPDATE SET tier = excluded.tier`
     ),
+    worn: db.prepare('SELECT slot, item FROM worn_gear WHERE user_id = ?'),
+    wear: db.prepare(
+      `INSERT INTO worn_gear (user_id, slot, item) VALUES (?, ?, ?)
+       ON CONFLICT(user_id, slot) DO UPDATE SET item = excluded.item`
+    ),
+    takeOff: db.prepare('DELETE FROM worn_gear WHERE user_id = ? AND slot = ?'),
     addPoints: db.prepare(
       'UPDATE users SET points = points + ?, lifetime_points = lifetime_points + MAX(?, 0) WHERE id = ?'
     ),
@@ -235,6 +249,12 @@ function createRepo(db) {
       return Object.fromEntries(stmt.equipment.all(userId).map((r) => [r.slot, r.tier]));
     },
     setEquipment: (userId, slot, tier) => stmt.setEquipment.run(userId, slot, tier),
+
+    getWorn(userId) {
+      return Object.fromEntries(stmt.worn.all(userId).map((r) => [r.slot, r.item]));
+    },
+    wear: (userId, slot, item) => stmt.wear.run(userId, slot, item),
+    takeOff: (userId, slot) => stmt.takeOff.run(userId, slot),
 
     addPoints: (userId, amount) => stmt.addPoints.run(amount, amount, userId),
     chatTick: (userId) => stmt.chatTick.run(userId),

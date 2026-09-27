@@ -42,11 +42,11 @@ test('dev chat -> player profile -> leaderboard', async (t) => {
     fetch(`${s.url}/api/dev/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
 
   const r = await post({ username: 'Viewer1', content: '!chop' });
-  assert.match(r.reply, /@Viewer1 .*Logs|better luck/);
+  assert.match(r.reply, /@Viewer1 .*(Logs|RARE|better luck)/);
 
   const player = await fetch(`${s.url}/api/player/viewer1`).then((r) => r.json());
   assert.equal(player.profile.username, 'Viewer1');
-  assert.equal(player.profile.skills.length, 5);
+  assert.equal(player.profile.skills.length, 7);
 
   const lb = await fetch(`${s.url}/api/leaderboard/points`).then((r) => r.json());
   assert.equal(lb.rows[0].username, 'Viewer1');

@@ -45,8 +45,8 @@
     const quiet = params.has('quiet');
 
     const BIG = ['levelup', 'charlevel', 'rare', 'upgrade'];
-    const icons = { levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', action: '✨', test: '🧪' };
-    const skillIcons = { fishing: '🎣', mining: '⛏️', woodcutting: '🪓', digging: '🏺', smelting: '🔥' };
+    const icons = { levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', buy: '🛒', action: '✨', test: '🧪' };
+    const skillIcons = { fishing: '🎣', mining: '⛏️', woodcutting: '🪓', digging: '🏺', smelting: '🔥', smithing: '⚒️', swords: '🗡️' };
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
     function show(html, cls, stay = seconds) {

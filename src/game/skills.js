@@ -117,7 +117,101 @@ const ITEMS = {
   void_bar: { name: 'Void Alloy', icon: '🌑', value: 1555 },
   starmetal_bar: { name: 'Starmetal Ingot', icon: '⭐', value: 1690 },
   celestium_bar: { name: 'Celestium Alloy', icon: '✴️', value: 3925 },
+
+  // Tools you carry. "keep" items are skipped by "!sell all" (sell them by name if you really want to).
+  smithing_hammer: { name: 'Smithing Hammer', icon: '🔨', value: 250, keep: true },
+
+  // Monster loot (Swords / !fight)
+  feathers: { name: 'Feathers', icon: '🪶', value: 2 },
+  raw_chicken: { name: 'Raw Chicken', icon: '🍗', value: 4 },
+  rat_tail: { name: 'Rat Tail', icon: '🐀', value: 6 },
+  cheese: { name: 'Cheese', icon: '🧀', value: 9 },
+  goblin_ear: { name: 'Goblin Ear', icon: '👂', value: 12 },
+  goblin_pouch: { name: 'Goblin Pouch', icon: '👛', value: 16 },
+  wolf_pelt: { name: 'Wolf Pelt', icon: '🐺', value: 20 },
+  wolf_fang: { name: 'Wolf Fang', icon: '🦷', value: 24 },
+  bandit_mask: { name: 'Bandit Mask', icon: '🎭', value: 30 },
+  stolen_goods: { name: 'Stolen Goods', icon: '📦', value: 36 },
+  bone_dust: { name: 'Bone Dust', icon: '🦴', value: 40 },
+  cursed_skull: { name: 'Cursed Skull', icon: '☠️', value: 48 },
+  orc_tusk: { name: 'Orc Tusk', icon: '🐗', value: 55 },
+  war_paint: { name: 'Orc War Paint', icon: '🎨', value: 62 },
+  troll_hide: { name: 'Troll Hide', icon: '🧌', value: 80 },
+  troll_club: { name: 'Troll Club', icon: '🏏', value: 90 },
+  ogre_tooth: { name: 'Ogre Tooth', icon: '🦷', value: 110 },
+  ogre_belt: { name: 'Ogre Belt', icon: '🥋', value: 125 },
+  spider_silk: { name: 'Spider Silk', icon: '🕸️', value: 200 },
+  venom_sac: { name: 'Venom Sac', icon: '🧪', value: 225 },
+  ectoplasm: { name: 'Ectoplasm', icon: '👻', value: 280 },
+  wraith_shroud: { name: 'Wraith Shroud', icon: '🌫️', value: 310 },
+  minotaur_horn: { name: 'Minotaur Horn', icon: '🐂', value: 360 },
+  labyrinth_key: { name: 'Labyrinth Key', icon: '🗝️', value: 390 },
+  wyvern_scale: { name: 'Wyvern Scale', icon: '🦎', value: 460 },
+  wyvern_claw: { name: 'Wyvern Claw', icon: '🪝', value: 490 },
+  hydra_head: { name: 'Hydra Head', icon: '🐍', value: 600 },
+  hydra_blood: { name: 'Hydra Blood', icon: '🩸', value: 640 },
+  demon_horn: { name: 'Demon Horn', icon: '😈', value: 750 },
+  infernal_ash: { name: 'Infernal Ash', icon: '🌋', value: 790 },
+  frost_core: { name: 'Frost Core', icon: '❄️', value: 900 },
+  giant_toe: { name: "Giant's Toenail", icon: '🦶', value: 940 },
+  dragon_scale: { name: 'Dragon Scale', icon: '🐉', value: 1100 },
+  dragon_bone: { name: 'Dragon Bone', icon: '🦴', value: 1150 },
+  phylactery: { name: 'Phylactery', icon: '⚱️', value: 1300 },
+  soul_gem: { name: 'Soul Gem', icon: '💜', value: 1360 },
+  elder_heart: { name: 'Elder Dragon Heart', icon: '❤️‍🔥', value: 1600 },
+  ancient_scale: { name: 'Ancient Scale', icon: '🐲', value: 1680 },
+  golden_egg: { name: 'Golden Egg', icon: '🥚', value: 400, rare: true },
+  goblin_crown: { name: 'Goblin Crown', icon: '👑', value: 900, rare: true },
+  dragon_egg: { name: 'Dragon Egg', icon: '🥚', value: 5000, rare: true },
 };
+
+// ---- Smithable gear ---------------------------------------------------------
+// One set per alloy: a sword and four armor pieces. Smith with "!smith steel sword" (needs a Smithing
+// Hammer in your backpack), then "!equip steel sword". Weapons need that level in their combat skill
+// (Swords for swords); armor needs that Combat level (your best combat skill).
+const METALS = [
+  // id, name, alloy used, Smithing level to make, level to wear, sword attack, armor base defence
+  ['bronze', 'Bronze', 'bronze_bar', 1, 1, 4, 2],
+  ['steel', 'Steel', 'steel_bar', 30, 20, 10, 4],
+  ['mithril', 'Mithril', 'mithril_bar', 55, 40, 18, 7],
+  ['adamant', 'Adamant', 'adamantite_bar', 70, 60, 28, 11],
+  ['rune', 'Rune', 'runite_bar', 85, 80, 40, 16],
+  ['obsidian', 'Obsidian', 'obsidian_steel_bar', 130, 100, 55, 22],
+  ['orichalcum', 'Orichalcum', 'orichalcum_bar', 200, 150, 75, 30],
+  ['dragonite', 'Dragonite', 'dragonite_bar', 300, 250, 110, 44],
+  ['void', 'Void', 'void_bar', 400, 350, 150, 60],
+  ['celestial', 'Celestial', 'celestium_bar', 500, 450, 200, 80],
+];
+const PIECES = [
+  // piece, name, icon, slot, alloys needed, defence multiplier (armor)
+  ['sword', 'Sword', '🗡️', 'weapon', 2, 0],
+  ['helmet', 'Helmet', '⛑️', 'head', 1, 1],
+  ['shield', 'Shield', '🛡️', 'shield', 2, 1.5],
+  ['platelegs', 'Platelegs', '👖', 'legs', 3, 2],
+  ['platebody', 'Platebody', '👕', 'body', 4, 3],
+];
+// Where equipped gear goes, in display order.
+const GEAR_SLOTS = ['weapon', 'head', 'body', 'legs', 'shield'];
+
+const SMITHING_RECIPES = [];
+for (const [metal, metalName, alloy, smithLevel, wearLevel, attack, baseDef] of METALS) {
+  for (const [piece, pieceName, icon, slot, bars, defMul] of PIECES) {
+    const id = `${metal}_${piece}`;
+    const isWeapon = slot === 'weapon';
+    ITEMS[id] = {
+      name: `${metalName} ${pieceName}`,
+      icon,
+      value: Math.round(ITEMS[alloy].value * bars * 1.3),
+      keep: true,
+      gear: true,
+      slot,
+      level: wearLevel,
+      ...(isWeapon ? { weaponType: 'sword', attack } : { defence: Math.round(baseDef * defMul) }),
+    };
+    SMITHING_RECIPES.push({ item: id, level: smithLevel, bars, alloy, kind: isWeapon ? 'weapon' : 'armor' });
+  }
+}
+
 
 // Every skill has an upgradable tool (!upgrade rod / pickaxe / axe / shovel / furnace). They all follow
 // the same ladder: everyone starts with tier 1, a new tier unlocks every 50 levels of that skill and costs
@@ -363,7 +457,91 @@ const SKILLS = {
       ),
     },
   },
+  smithing: {
+    name: 'Smithing',
+    icon: '⚒️',
+    command: 'smith',
+    verb: 'smithed',
+    type: 'process',
+    maxLevel: 500,
+    // Needs this item in the backpack (buy it in the shop). Not used up.
+    requires: 'smithing_hammer',
+    // Players must say what to make ("!smith bronze sword"); a bare "!smith" lists what they can make.
+    pickBest: false,
+    failMessages: ['the metal cracked'],
+    recipes: [], // filled in below from SMITHING_RECIPES
+  },
+  swords: {
+    name: 'Swords',
+    icon: '🗡️',
+    command: 'fight',
+    verb: 'defeated',
+    type: 'combat',
+    maxLevel: 500,
+    // !fight uses the best weapon you own for the combat skill you're highest in. Swords use swords;
+    // future combat skills (bows, battleaxes...) plug in with their own weaponType.
+    weaponType: 'sword',
+    // power = how hard it is to hit, damage = how hard it hits back. loot: one of these per win.
+    monsters: [], // filled in below
+  },
 };
+
+// Smithing XP: what smelting the alloys gave, plus 20%.
+SKILLS.smithing.recipes = SMITHING_RECIPES.map(({ item, level, bars, alloy, kind }) => ({
+  item,
+  level,
+  kind,
+  xp: Math.round((SKILLS.smelting.recipes.find((r) => r.item === alloy).xp * bars * 1.2)),
+  inputs: { [alloy]: bars },
+}));
+
+// Monsters for !fight. Level = Swords level needed. Stats are tuned so that at the monster's level,
+// with gear for that level, you win about 3 fights in 4; better gear or more levels push it higher.
+const MONSTER_LIST = [
+  // id, name, icon, level, xp, [loot, loot], rare?
+  ['chicken', 'Chicken', '🐔', 1, 10, ['feathers', 'raw_chicken'], { item: 'golden_egg', chance: 1 / 150 }],
+  ['giant_rat', 'Giant Rat', '🐀', 5, 18, ['rat_tail', 'cheese']],
+  ['goblin', 'Goblin', '👺', 10, 26, ['goblin_ear', 'goblin_pouch'], { item: 'goblin_crown', chance: 1 / 200 }],
+  ['wolf', 'Wolf', '🐺', 20, 40, ['wolf_pelt', 'wolf_fang']],
+  ['bandit', 'Bandit', '🥷', 30, 55, ['bandit_mask', 'stolen_goods']],
+  ['skeleton', 'Skeleton', '💀', 40, 75, ['bone_dust', 'cursed_skull']],
+  ['orc', 'Orc', '👹', 55, 105, ['orc_tusk', 'war_paint']],
+  ['troll', 'Troll', '🧌', 70, 140, ['troll_hide', 'troll_club']],
+  ['ogre', 'Ogre', '👾', 85, 185, ['ogre_tooth', 'ogre_belt']],
+  ['giant_spider', 'Giant Spider', '🕷️', 100, 280, ['spider_silk', 'venom_sac']],
+  ['wraith', 'Wraith', '👻', 130, 390, ['ectoplasm', 'wraith_shroud']],
+  ['minotaur', 'Minotaur', '🐂', 160, 500, ['minotaur_horn', 'labyrinth_key']],
+  ['wyvern', 'Wyvern', '🦎', 200, 640, ['wyvern_scale', 'wyvern_claw']],
+  ['hydra', 'Hydra', '🐍', 250, 820, ['hydra_head', 'hydra_blood']],
+  ['demon', 'Demon', '😈', 300, 1000, ['demon_horn', 'infernal_ash']],
+  ['frost_giant', 'Frost Giant', '🥶', 350, 1200, ['frost_core', 'giant_toe']],
+  ['dragon', 'Dragon', '🐉', 400, 1420, ['dragon_scale', 'dragon_bone'], { item: 'dragon_egg', chance: 1 / 500 }],
+  ['lich_king', 'Lich King', '🧙', 450, 1650, ['phylactery', 'soul_gem']],
+  ['elder_dragon', 'Elder Dragon', '🐲', 500, 1900, ['elder_heart', 'ancient_scale'], { item: 'dragon_egg', chance: 1 / 200 }],
+];
+// Gear someone at level L would usually have: the best metal they can wear.
+const metalFor = (level) => [...METALS].reverse().find((m) => m[4] <= level);
+SKILLS.swords.monsters = MONSTER_LIST.map(([id, name, icon, level, xp, loot, rare]) => {
+  const m = metalFor(level);
+  const fullSetDefence = PIECES.reduce((sum, p) => sum + Math.round(m[6] * p[5]), 0);
+  return {
+    id,
+    name,
+    icon,
+    level,
+    xp,
+    power: level === 1 ? 3 : Math.round(level + m[5]), // matches your attack (level + sword) at par; chickens are easy
+    damage: level <= 5 ? level - 1 : Math.round(fullSetDefence * 0.9), // chickens and rats barely hit back
+    loot,
+    rare: rare || null,
+  };
+});
+
+// Shop (website + "!buy"). Prices can be changed on the admin page.
+const SHOP = [
+  { item: 'smithing_hammer', cost: 500, description: 'Lets you !smith weapons and armor from alloys. Keep it in your backpack.' },
+  { item: 'bronze_sword', cost: 1000, description: "A ready-made sword so you can start fighting with !fight right away. Or smith your own!" },
+];
 
 // Backpack: how many items (total, across all stacks) a player can carry. Upgrade with
 // "!upgrade backpack". Numbers can be changed live on the admin page.
@@ -391,8 +569,13 @@ const TOOL_TO_SKILL = Object.fromEntries(SKILL_IDS.filter((id) => SKILLS[id].too
 // Other words players might type for a tool: "!upgrade pick", "!upgrade forge"...
 const TOOL_ALIASES = { rod: 'rod', pole: 'rod', pickaxe: 'pickaxe', pick: 'pickaxe', axe: 'axe', hatchet: 'axe', shovel: 'shovel', spade: 'shovel', furnace: 'furnace', forge: 'furnace' };
 
-// "!fish" -> "fishing"
-const COMMAND_TO_SKILL = Object.fromEntries(SKILL_IDS.map((id) => [SKILLS[id].command, id]));
+// "!fish" -> "fishing". Combat skills share one command (!fight), so it maps to the first one;
+// the engine then picks the combat skill from your weapons.
+const COMMAND_TO_SKILL = {};
+for (const id of SKILL_IDS) COMMAND_TO_SKILL[SKILLS[id].command] ??= id;
+const COMBAT_SKILLS = SKILL_IDS.filter((id) => SKILLS[id].type === 'combat');
+// "sword" -> "swords"
+const WEAPON_SKILL = Object.fromEntries(COMBAT_SKILLS.map((id) => [SKILLS[id].weaponType, id]));
 
 // Look up an item by a loose name the player typed: "iron", "iron ore", "oak", "steel bar"...
 function findItem(query, candidates) {
@@ -407,4 +590,18 @@ function findItem(query, candidates) {
   );
 }
 
-module.exports = { ITEMS, SKILLS, SKILL_IDS, BACKPACK_TIERS, COMMAND_TO_SKILL, TOOL_TO_SKILL, TOOL_ALIASES, maxLevel, findItem };
+module.exports = {
+  ITEMS,
+  SKILLS,
+  SKILL_IDS,
+  BACKPACK_TIERS,
+  SHOP,
+  GEAR_SLOTS,
+  COMMAND_TO_SKILL,
+  COMBAT_SKILLS,
+  WEAPON_SKILL,
+  TOOL_TO_SKILL,
+  TOOL_ALIASES,
+  maxLevel,
+  findItem,
+};

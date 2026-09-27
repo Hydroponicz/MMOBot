@@ -19,6 +19,8 @@
   --woodcutting: #4ade80;
   --digging: #d6a35c;
   --smelting: #fb923c;
+  --smithing: #94a3b8;
+  --swords: #f87171;
 }
 
 * { box-sizing: border-box; }
@@ -85,7 +87,7 @@ main.container { flex: 1; padding-top: 28px; padding-bottom: 48px; }
 /* ---- Panels & layout ---- */
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
 .panel + .panel { margin-top: 16px; }
-.grid > .panel { margin-top: 0; }
+.grid > .panel, .shop-grid > .panel { margin-top: 0; }
 .grid-guide { grid-template-columns: repeat(auto-fill, minmax(min(460px, 100%), 1fr)); }
 td.wrap { white-space: normal; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
@@ -280,3 +282,28 @@ details[open] > summary.panel-head h2::before { content: '▾ '; }
 .overlay-form { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; font-size: 0.9rem; }
 .overlay-form label { display: flex; align-items: center; gap: 6px; }
 .overlay-form input[type=number] { padding: 6px 8px; }
+
+/* ---- Equipment & shop ---- */
+.gear-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.gear-slot { background: var(--panel-2); border: 1px dashed var(--border); border-radius: 12px; padding: 10px; text-align: center; }
+.gear-slot.filled { border-style: solid; border-color: color-mix(in srgb, var(--swords) 45%, var(--border)); }
+.gear-slot .ic { font-size: 1.8rem; }
+.gear-slot .ghost { opacity: 0.25; filter: grayscale(1); }
+.gear-slot .nm { font-size: 0.8rem; font-weight: 600; }
+.gear-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.gear-stat { font-size: 0.75rem; color: var(--gold); }
+.inv-item.gear { border-color: color-mix(in srgb, var(--swords) 45%, var(--border)); }
+.inv-actions { display: flex; gap: 4px; justify-content: center; margin-top: 6px; }
+.mini { font: 600 0.7rem/1 inherit; padding: 4px 7px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; }
+.mini:hover { background: #242d38; }
+.mini[disabled] { opacity: 0.5; cursor: default; }
+.gear-slot .mini { margin-top: 6px; }
+.shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.shop-item { display: flex; flex-direction: column; }
+.shop-item h2 { margin: 6px 0 4px; }
+.shop-item p { margin: 0 0 8px; }
+.shop-icon { font-size: 2.6rem; }
+.shop-stat { font-size: 0.85rem; color: var(--gold); }
+.shop-buy { display: flex; align-items: center; justify-content: space-between; margin-top: auto; padding-top: 10px; }
+.shop-price { font-size: 1.3rem; font-weight: 800; color: var(--gold); }
+.span-all { grid-column: 1 / -1; }
