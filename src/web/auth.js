@@ -11,7 +11,7 @@ const OAUTH_MS = 10 * 60 * 1000;
 // What each flow asks Kick for.
 const FLOWS = {
   login: { scopes: ['user:read'], redirect: '/auth/callback' },
-  broadcaster: { scopes: ['user:read', 'channel:read', 'chat:write', 'events:subscribe'], redirect: '/auth/callback' },
+  broadcaster: { scopes: ['user:read', 'chat:write', 'events:subscribe'], redirect: '/auth/callback' },
   bot: { scopes: ['user:read', 'chat:write'], redirect: '/auth/callback' },
 };
 
@@ -70,15 +70,13 @@ function authRouter({ kick, repo, sessions, config, logger = console }) {
           );
         }
         kick.saveToken('broadcaster', stored);
-        let note = 'Channel connected.';
-        if (config.kick.chatSource === 'webhook') {
-          try {
-            await kick.subscribeChat(token.access_token, who.userId);
-            note += ' Subscribed to chat events.';
-          } catch (err) {
-            logger.error('[auth] chat subscription failed:', err.message);
-            return res.redirect(`/#/admin?error=${encodeURIComponent('Connected, but subscribing to chat failed: ' + err.message)}`);
-          }
+        let note = 'Channel connected — the bot can now reply in chat.';
+        try {
+          const sub = await kick.ensureChatSubscription();
+          if (sub.ok) note += ' Chat subscription is active.';
+        } catch (err) {
+          logger.error('[auth] chat subscription failed:', err.message);
+          return res.redirect(`/#/admin?error=${encodeURIComponent('Connected, but subscribing to chat failed: ' + err.message)}`);
         }
         return res.redirect(`/#/admin?ok=${encodeURIComponent(note)}`);
       }

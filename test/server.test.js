@@ -13,7 +13,6 @@ function makeConfig(overrides = {}) {
       clientId: 'cid',
       clientSecret: 'csecret',
       channel: 'streamer',
-      chatSource: 'webhook',
       verifyWebhooks: true,
       oauthBase: 'https://id.kick.com',
       apiBase: 'https://api.kick.com',
@@ -21,6 +20,7 @@ function makeConfig(overrides = {}) {
     game: { prefix: '!', actionCooldown: 30, chatPoints: 5, chatCooldown: 60, replyInChat: false },
     adminUsers: [],
     devMode: true,
+    persistentStorage: true,
     ...overrides,
   };
 }

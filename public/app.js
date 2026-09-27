@@ -357,23 +357,33 @@
     $app.innerHTML = `
       <h1>Admin</h1>
       ${ok ? `<div class="alert ok">${esc(ok)}</div>` : ''}${err ? `<div class="alert err">${esc(err)}</div>` : ''}
+      ${
+        s.persistentStorage
+          ? ''
+          : `<div class="alert err"><b>No volume attached.</b> Player progress is stored on a temporary disk and will be lost on the next redeploy. In Railway, right-click this service → Attach volume (any mount path), then redeploy.</div>`
+      }
+      ${!s.kickConfigured ? `<div class="alert err">Set <code>KICK_CLIENT_ID</code> and <code>KICK_CLIENT_SECRET</code> to connect to Kick.</div>` : ''}
       <div class="grid grid-2">
         <div class="stack">
           <section class="panel">
-            <div class="panel-head"><h2>1. Connect your channel</h2>${dot(s.broadcaster)}</div>
-            <p class="muted">Authorize the bot to read chat events and post replies in <b>${esc(s.channel || 'your channel')}</b>. Must be done with the channel owner's Kick account.</p>
+            <div class="panel-head"><h2>1. Chat subscription</h2>${dot(subs && subs.length)}</div>
+            <p class="muted">MMOBot subscribes to <b>${esc(s.channel || 'your channel')}</b>'s chat through Kick's official webhooks automatically, and re-checks every 30 minutes.</p>
+            <button class="btn" id="resub" ${s.kickConfigured ? '' : 'disabled'}>Check / re-subscribe now</button>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>2. Let the bot reply</h2>${dot(s.broadcaster || s.bot)}</div>
+            <p class="muted">Authorize with the channel owner's Kick account so the bot can post replies in chat. Replies appear from Kick's bot identity for your app.</p>
             ${
               s.broadcaster
                 ? `<p>Connected as <b>${esc(s.broadcaster.username)}</b>.</p>
                    <a class="btn" href="/auth/connect/broadcaster">Reconnect</a>
-                   ${s.chatSource === 'webhook' ? '<button class="btn" id="resub">Re-subscribe to chat</button>' : ''}
                    <button class="btn btn-danger" data-disconnect="broadcaster">Disconnect</button>`
                 : `<a class="btn btn-primary" href="/auth/connect/broadcaster">Connect channel</a>`
             }
           </section>
           <section class="panel">
-            <div class="panel-head"><h2>2. Bot account (optional)</h2>${dot(s.bot)}</div>
-            <p class="muted">By default replies are posted by Kick's bot identity for your app. To reply from a dedicated account (e.g. <i>MyChannelBot</i>), log into that account on kick.com in this browser, then connect it.</p>
+            <div class="panel-head"><h2>3. Separate bot account (optional)</h2>${dot(s.bot)}</div>
+            <p class="muted">To reply from a dedicated account (e.g. <i>MyChannelBot</i>), log into that account on kick.com in this browser, then connect it.</p>
             ${
               s.bot
                 ? `<p>Replying as <b>${esc(s.bot.username)}</b>.</p><button class="btn btn-danger" data-disconnect="bot">Disconnect bot account</button>`
@@ -389,24 +399,21 @@
           <section class="panel">
             <h2>Status</h2>
             <dl class="kv">
-              <dt>Chat source</dt><dd>${esc(s.chatSource)}</dd>
+              <dt>Channel</dt><dd>${esc(s.channel || '— set KICK_CHANNEL')}${s.channelId ? ` <span class="muted">(id ${esc(s.channelId)})</span>` : ''}</dd>
               <dt>Messages seen</dt><dd>${fmt(s.stats.received)}${s.stats.lastMessageAt ? ` (last ${ago(s.stats.lastMessageAt)})` : ''}</dd>
               <dt>Commands handled</dt><dd>${fmt(s.stats.commands)}</dd>
               <dt>Replies sent</dt><dd>${fmt(s.stats.sent)}${s.stats.sendErrors ? ` · <span style="color:var(--danger)">${fmt(s.stats.sendErrors)} errors</span>` : ''}</dd>
               ${s.stats.lastError ? `<dt>Last error</dt><dd style="color:var(--danger)">${esc(s.stats.lastError)}</dd>` : ''}
-              ${
-                s.chatSource === 'webhook'
-                  ? `<dt>Chat subscription</dt><dd>${
-                      s.subscriptionError
-                        ? `<span style="color:var(--danger)">${esc(s.subscriptionError)}</span>`
-                        : subs
-                          ? subs.length
-                            ? subs.map((x) => `${dot(true)}${esc(x.event)} v${esc(x.version)}`).join('<br>')
-                            : `${dot(false)}none — click “Re-subscribe”`
-                          : '—'
-                    }</dd>`
-                  : ''
-              }
+              <dt>Chat subscription</dt><dd>${
+                s.subscriptionError
+                  ? `<span style="color:var(--danger)">${esc(s.subscriptionError)}</span>`
+                  : subs
+                    ? subs.length
+                      ? subs.map((x) => `${dot(true)}${esc(x.event)} v${esc(x.version)}`).join('<br>')
+                      : `${dot(false)}none — click “Check / re-subscribe now”`
+                    : '—'
+              }</dd>
+              <dt>Storage</dt><dd>${s.persistentStorage ? `${dot(true)}persistent` : `${dot(false)}temporary — attach a volume`}</dd>
               <dt>Action cooldown</dt><dd>${s.settings.actionCooldown}s</dd>
               <dt>Chat points</dt><dd>${s.settings.chatPoints} per ${s.settings.chatCooldown}s</dd>
             </dl>
@@ -439,7 +446,7 @@
       resub.onclick = async () => {
         try {
           await api('/admin/resubscribe', { method: 'POST' });
-          toast('Subscribed to chat events');
+          toast('Chat subscription is active');
           route();
         } catch (e) {
           toast(`Failed: ${e.message}`);

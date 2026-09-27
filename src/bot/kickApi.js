@@ -1,6 +1,20 @@
 // Thin client for Kick's official public API (https://docs.kick.com).
 const crypto = require('node:crypto');
 
+// Kick's webhook signing key, as published at https://docs.kick.com/events/webhook-security.
+// Used if https://api.kick.com/public/v1/public-key can't be reached.
+const KICK_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAq/+l1WnlRrGSolDMA+A8
+6rAhMbQGmQ2SapVcGM3zq8ANXjnhDWocMqfWcTd95btDydITa10kDvHzw9WQOqp2
+MZI7ZyrfzJuz5nhTPCiJwTwnEtWft7nV14BYRDHvlfqPUaZ+1KR4OCaO/wWIk/rQ
+L/TjY0M70gse8rlBkbo2a8rKhu69RQTRsoaf4DVhDPEeSeI5jVrRDGAMGL3cGuyY
+6CLKGdjVEM78g3JfYOvDU/RvfqD7L89TZ3iN94jrmWdGz34JNlEI5hqK8dd7C5EF
+BEbZ5jgB8s8ReQV8H+MkuffjdAj3ajDDX3DOJMIut1lBrUVD1AaSrGCKHooWoL2e
+twIDAQAB
+-----END PUBLIC KEY-----`;
+
+const CHAT_EVENT = 'chat.message.sent';
+
 class KickApi {
   constructor({ config, repo, logger = console }) {
     this.cfg = config.kick;
@@ -111,9 +125,12 @@ class KickApi {
     this.repo.deleteSetting(`token:${kind}`);
   }
 
+  // The channel the game runs in: from the connected broadcaster account, or looked up by KICK_CHANNEL.
   broadcaster() {
     const t = this.getToken('broadcaster');
-    return t ? { user_id: t.user_id, username: t.username } : null;
+    if (t) return { user_id: String(t.user_id), username: t.username };
+    const c = this.repo.getSetting('channel');
+    return c && c.slug === this.cfg.channel ? { user_id: String(c.user_id), username: c.slug } : null;
   }
 
   // The token replies are posted with: the bot account if connected, otherwise the broadcaster.
@@ -145,7 +162,7 @@ class KickApi {
   }
 
   async sendChat(content) {
-    const broadcaster = this.broadcaster();
+    const broadcaster = this.broadcaster() || (await this.resolveChannel().catch(() => null));
     if (!broadcaster) return false;
     const kind = this.getToken('bot') ? 'bot' : 'broadcaster';
     const token = await this.accessToken(kind);
@@ -163,29 +180,75 @@ class KickApi {
     return true;
   }
 
-  // Subscribe to chat messages for the broadcaster's channel. Kick delivers them to the
-  // Webhook URL configured in your Kick developer app settings.
-  async subscribeChat(broadcasterToken, broadcasterUserId) {
+  // ---- App access token (client credentials) -----------------------------
+  // Server-to-server token; per Kick's docs it can subscribe to events for any channel by user ID.
+
+  async appAccessToken() {
+    if (this._app && this._app.expires_at - Date.now() > 60_000) return this._app.access_token;
+    this._app = await this.tokenRequest({ grant_type: 'client_credentials' });
+    return this._app.access_token;
+  }
+
+  // Look up KICK_CHANNEL's broadcaster user ID (cached in the database).
+  async resolveChannel() {
+    const known = this.broadcaster();
+    if (known) return known;
+    if (!this.cfg.channel) return null;
+    const token = await this.appAccessToken();
+    const json = await this.request('GET', `/public/v1/channels?slug=${encodeURIComponent(this.cfg.channel)}`, { token });
+    const ch = json?.data?.[0];
+    if (!ch?.broadcaster_user_id) throw new Error(`Kick channel "${this.cfg.channel}" not found`);
+    this.repo.setSetting('channel', { user_id: String(ch.broadcaster_user_id), slug: this.cfg.channel });
+    return this.broadcaster();
+  }
+
+  // ---- Chat event subscription ----------------------------------------------
+  // Kick POSTs chat messages to the Webhook URL set in your Kick app settings.
+
+  async listSubscriptions() {
+    const token = await this.appAccessToken();
+    return (await this.request('GET', '/public/v1/events/subscriptions', { token }))?.data || [];
+  }
+
+  async subscribeChat(broadcasterUserId) {
+    const token = await this.appAccessToken();
     return this.request('POST', '/public/v1/events/subscriptions', {
-      token: broadcasterToken,
+      token,
       body: {
         broadcaster_user_id: Number(broadcasterUserId),
-        events: [{ name: 'chat.message.sent', version: 1 }],
+        events: [{ name: CHAT_EVENT, version: 1 }],
         method: 'webhook',
       },
     });
   }
 
-  async listSubscriptions(token) {
-    return this.request('GET', '/public/v1/events/subscriptions', { token });
+  // Makes sure we're subscribed to the channel's chat. Safe to call repeatedly: Kick drops
+  // subscriptions whose webhook keeps failing for a day, so the server re-checks periodically.
+  async ensureChatSubscription() {
+    if (!this.configured) return { ok: false, reason: 'KICK_CLIENT_ID / KICK_CLIENT_SECRET not set' };
+    const channel = await this.resolveChannel();
+    if (!channel) return { ok: false, reason: 'KICK_CHANNEL not set' };
+    const subs = await this.listSubscriptions();
+    const existing = subs.find(
+      (x) => x.event === CHAT_EVENT && String(x.broadcaster_user_id) === String(channel.user_id)
+    );
+    if (existing) return { ok: true, created: false, subscription: existing };
+    const created = await this.subscribeChat(channel.user_id);
+    this.log.log(`[kick] subscribed to chat for ${channel.username}`);
+    return { ok: true, created: true, subscription: created?.data?.[0] || null };
   }
 
   // ---- Webhook verification ---------------------------------------------
 
   async getPublicKey() {
     if (this.publicKey) return this.publicKey;
-    const json = await this.request('GET', '/public/v1/public-key');
-    this.publicKey = json?.data?.public_key;
+    try {
+      const json = await this.request('GET', '/public/v1/public-key');
+      this.publicKey = json?.data?.public_key || KICK_PUBLIC_KEY;
+    } catch (err) {
+      this.log.warn('[kick] could not fetch public key, using the published one:', err.message);
+      this.publicKey = KICK_PUBLIC_KEY;
+    }
     return this.publicKey;
   }
 
@@ -203,4 +266,4 @@ class KickApi {
   }
 }
 
-module.exports = { KickApi };
+module.exports = { KickApi, KICK_PUBLIC_KEY };

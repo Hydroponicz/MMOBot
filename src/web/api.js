@@ -79,21 +79,24 @@ function apiRouter({ engine, repo, kick, bot, config }) {
     const strip = (t) => (t ? { username: t.username, userId: t.user_id, scope: t.scope, expiresAt: t.expires_at } : null);
     let subscriptions = null;
     let subscriptionError = null;
-    const b = kick.getToken('broadcaster');
-    if (b && config.kick.chatSource === 'webhook') {
+    if (kick.configured) {
       try {
-        const token = await kick.accessToken('broadcaster');
-        subscriptions = (await kick.listSubscriptions(token))?.data || [];
+        const channel = await kick.resolveChannel();
+        subscriptions = (await kick.listSubscriptions()).filter(
+          (x) => !channel || String(x.broadcaster_user_id) === String(channel.user_id)
+        );
       } catch (err) {
         subscriptionError = err.message;
       }
     }
     res.json({
       channel: config.kick.channel,
-      chatSource: config.kick.chatSource,
+      channelId: kick.broadcaster()?.user_id || null,
+      kickConfigured: kick.configured,
       webhookUrl: `${config.baseUrl}/webhooks/kick`,
       redirectUrl: `${config.baseUrl}/auth/callback`,
-      broadcaster: strip(b),
+      persistentStorage: config.persistentStorage,
+      broadcaster: strip(kick.getToken('broadcaster')),
       bot: strip(kick.getToken('bot')),
       stats: bot.stats,
       subscriptions,
@@ -103,11 +106,10 @@ function apiRouter({ engine, repo, kick, bot, config }) {
   });
 
   router.post('/admin/resubscribe', requireAdmin, async (req, res) => {
-    const b = kick.broadcaster();
-    if (!b) return res.status(400).json({ error: 'connect your channel first' });
     try {
-      const token = await kick.accessToken('broadcaster');
-      res.json({ ok: true, result: await kick.subscribeChat(token, b.user_id) });
+      const result = await kick.ensureChatSubscription();
+      if (!result.ok) return res.status(400).json({ error: result.reason });
+      res.json(result);
     } catch (err) {
       res.status(502).json({ error: err.message });
     }

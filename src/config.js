@@ -12,22 +12,27 @@ const env = (name, fallback) => {
 const int = (name, fallback) => Number.parseInt(env(name, String(fallback)), 10);
 const bool = (name, fallback) => ['1', 'true', 'yes', 'on'].includes(String(env(name, fallback)).toLowerCase());
 
+// Railway injects these automatically: RAILWAY_PUBLIC_DOMAIN once you generate a domain,
+// RAILWAY_VOLUME_MOUNT_PATH once you attach a volume.
+const railwayDomain = env('RAILWAY_PUBLIC_DOMAIN', '');
+const volumePath = env('RAILWAY_VOLUME_MOUNT_PATH', '');
+const onRailway = Boolean(env('RAILWAY_ENVIRONMENT', '') || env('RAILWAY_PROJECT_ID', ''));
+
 const config = {
   port: int('PORT', 3000),
-  // Public URL of the site, no trailing slash. Used to build OAuth redirect URLs.
-  baseUrl: env('BASE_URL', 'http://localhost:3000').replace(/\/+$/, ''),
+  // Public URL of the site, no trailing slash. Used to build OAuth redirect and webhook URLs.
+  baseUrl: env('BASE_URL', railwayDomain ? `https://${railwayDomain}` : 'http://localhost:3000').replace(/\/+$/, ''),
+  // Optional: when empty a random secret is generated once and stored in the database.
   sessionSecret: env('SESSION_SECRET', ''),
-  dbPath: env('DB_PATH', path.join(__dirname, '..', 'data', 'mmobot.db')),
+  dbPath: env('DB_PATH', path.join(volumePath || path.join(__dirname, '..', 'data'), 'mmobot.db')),
+  onRailway,
+  persistentStorage: Boolean(env('DB_PATH', '') || volumePath || !onRailway),
 
   kick: {
     clientId: env('KICK_CLIENT_ID', ''),
     clientSecret: env('KICK_CLIENT_SECRET', ''),
     // The channel the bot plays in (your Kick username / channel slug).
     channel: env('KICK_CHANNEL', '').toLowerCase(),
-    // How chat is read: "webhook" (official, needs a public HTTPS BASE_URL) or "pusher" (unofficial websocket, works locally).
-    chatSource: env('CHAT_SOURCE', 'webhook'),
-    // Needed only for CHAT_SOURCE=pusher. Find it via https://kick.com/api/v2/channels/<channel> -> chatroom.id
-    chatroomId: env('KICK_CHATROOM_ID', ''),
     verifyWebhooks: bool('VERIFY_WEBHOOKS', true),
     oauthBase: 'https://id.kick.com',
     apiBase: 'https://api.kick.com',
@@ -53,12 +58,5 @@ const config = {
   // Enables POST /api/dev/chat so you can test commands without Kick. Never enable in production.
   devMode: bool('DEV_MODE', false),
 };
-
-if (!config.sessionSecret) {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('SESSION_SECRET must be set in production');
-  }
-  config.sessionSecret = 'dev-insecure-secret-change-me';
-}
 
 module.exports = config;

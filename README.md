@@ -1,6 +1,6 @@
 # MMOBot: an RPG skilling chatbot for Kick
 
-Viewers type commands in your Kick chat to train skills, collect loot and level up their character. A companion website lets them **log in with Kick** to see their character sheet, inventory, leaderboards and a live activity feed. Progress made in chat syncs automatically, because chat and the website both identify players by their Kick user ID.
+Viewers type commands in your Kick chat to train skills, collect loot and level up their character. Everything runs on **Kick's official public API** (OAuth 2.1 login, `chat.message.sent` webhooks, and the Chat API for replies) as **one Railway service**. A companion website lets them **log in with Kick** to see their character sheet, inventory, leaderboards and a live activity feed. Progress made in chat syncs automatically, because chat and the website both identify players by their Kick user ID.
 
 ## Features
 
@@ -33,9 +33,10 @@ src/
   game/skills.js   ← all game content: skills, items, XP, unlock levels, prices
   game/xp.js       level curve
   game/engine.js   command handling and game rules
-  bot/             Kick API client, webhook receiver, websocket reader, reply queue
+  bot/             Kick API client, webhook receiver, reply queue
   web/             Kick login (OAuth), sessions, JSON API
 public/            website + OBS overlay
+railway.json       Railway build/deploy settings
 ```
 
 ## Quick start (local, no Kick needed)
@@ -48,48 +49,51 @@ npm start
 
 Open http://localhost:3000 and use **Test chat** to try `!fish`, `!mine copper`, `!mine tin`, `!smelt`, `!stats`, `!sell all`. Run `npm test` to run the test suite.
 
-## Going live on Kick
+## Deploying on Railway (one service)
 
-### 1. Host it somewhere with HTTPS
-Kick has to reach your server to deliver chat messages, so it needs a public `https://` URL. Any Node host works (Railway, Render, Fly.io, a VPS behind Caddy/nginx). Two requirements:
-- Node **22.13 or newer**.
-- A **persistent disk** for `DB_PATH` (the SQLite file). On Railway/Render/Fly, attach a volume and point `DB_PATH` to it (e.g. `/data/mmobot.db`). Without one, progress is wiped on every deploy.
+The website, API, webhook receiver and bot all run in a single Node process, and the database is a SQLite file on a Railway volume. You don't need a separate database service. `railway.json` sets the start command, the health check (`/healthz`) and the restart policy.
 
-Start command: `npm start`.
+### 1. Create the service
+1. Push this repo to GitHub, then in Railway choose **New Project → Deploy from GitHub repo** and pick it.
+2. Open the service → **Settings → Networking → Generate Domain**. You'll get something like `mmobot-production.up.railway.app`. The app picks the domain up automatically from `RAILWAY_PUBLIC_DOMAIN`.
+3. **Attach a volume**: right-click the service (or use the command palette) → **Attach volume**. Any mount path works, e.g. `/data`. The database is stored there automatically via `RAILWAY_VOLUME_MOUNT_PATH`. Without a volume, all player progress is lost on every redeploy, and the logs and admin page warn about it.
+
+Keep the service at **1 replica**. SQLite lives on the volume, and Railway volumes attach to a single instance.
 
 ### 2. Create a Kick app
-Go to **kick.com → Settings → Developer** and create an app:
-- **Redirect URL**: `https://YOUR-SITE/auth/callback`
-- **Enable webhooks**, with **Webhook URL**: `https://YOUR-SITE/webhooks/kick`
-- **Scopes**: `user:read`, `channel:read`, `chat:write`, `events:subscribe`
+On **kick.com → Settings → Developer**, create an app:
+- **Redirect URL**: `https://<your-domain>/auth/callback`
+- **Enable webhooks**: on, with **Webhook URL** `https://<your-domain>/webhooks/kick`
+- **Scopes**: `user:read`, `chat:write`, `events:subscribe`
 
-Copy the Client ID and Client Secret.
+Copy the **Client ID** and **Client Secret**.
 
-### 3. Configure `.env` (or your host's environment variables)
-```
-BASE_URL=https://YOUR-SITE
-SESSION_SECRET=<long random string>
-KICK_CLIENT_ID=...
-KICK_CLIENT_SECRET=...
-KICK_CHANNEL=yourchannelname
-CHAT_SOURCE=webhook
-DEV_MODE=false
-NODE_ENV=production
-```
+### 3. Set the variables
+In the service's **Variables** tab:
 
-### 4. Connect your channel
-1. Open your site and click **Log in with Kick** using your streamer account (the account named in `KICK_CHANNEL`, which is admin automatically).
-2. Go to **Admin → Connect channel** and approve. This subscribes the bot to your chat and lets it post replies.
-3. Optional: to reply from a dedicated account like `YourChannelBot`, log into that account on kick.com, then click **Connect bot account**.
+| Variable | Value |
+|---|---|
+| `KICK_CLIENT_ID` | from your Kick app |
+| `KICK_CLIENT_SECRET` | from your Kick app |
+| `KICK_CHANNEL` | your channel name (the part after `kick.com/`) |
+
+Everything else is optional (see `.env.example`). `BASE_URL`, `DB_PATH` and `SESSION_SECRET` are worked out automatically. Railway redeploys when you save.
+
+### 4. Go live
+1. On startup, the app uses an **app access token** to look up your channel and **subscribe to its chat** (`chat.message.sent`). It re-checks every 30 minutes, because Kick drops subscriptions whose webhook fails for over a day. Chat commands start working straight away and progress is tracked.
+2. For the bot to **reply in chat**, open your site, click **Log in with Kick** with your streamer account (the `KICK_CHANNEL` account is admin automatically), then go to **Admin → Connect channel**.
+3. Optional: to reply from a dedicated account like `YourChannelBot`, log into that account on kick.com and click **Admin → Connect bot account**.
 4. Type `!fish` in your chat. 🎣
 
-The admin page shows whether the chat subscription is active, message counts and the last error.
+The admin page shows the chat subscription, message and reply counts, storage status and the last error.
+
+Webhook requests are verified against Kick's signature (RSA-SHA256 over `message-id.timestamp.body`). The public key is fetched from the API, with the published key built in as a fallback. Duplicate deliveries are ignored.
 
 ### 5. Add the overlay (optional)
-In OBS, add a **Browser Source** at `https://YOUR-SITE/overlay.html` (about 400×600). Add `?all=1` to show every action instead of only level-ups and rare drops.
+In OBS, add a **Browser Source** at `https://<your-domain>/overlay.html` (about 400×600). Add `?all=1` to show every action instead of only level-ups and rare drops.
 
-### Running locally against real Kick chat
-Webhooks can't reach `localhost`. Either use a tunnel (e.g. `cloudflared tunnel --url http://localhost:3000`) and set `BASE_URL` to the tunnel URL, or set `CHAT_SOURCE=pusher` with `KICK_CHATROOM_ID` (open `https://kick.com/api/v2/channels/<channel>` and copy `chatroom.id`). The pusher option reads chat through Kick's public websocket. It works well but is unofficial, so use webhooks in production.
+### Testing with real Kick chat on your computer
+Kick can only deliver webhooks to a public URL. Run a tunnel (e.g. `cloudflared tunnel --url http://localhost:3000`), set `BASE_URL` to the tunnel URL in `.env`, and point a second Kick app's redirect and webhook URLs at it. Or just deploy to Railway and test there.
 
 ## Customizing
 
