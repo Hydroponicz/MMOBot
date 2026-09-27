@@ -1,0 +1,20 @@
+{
+  "name": "mmobot",
+  "version": "1.0.0",
+  "description": "RPG skilling chatbot for Kick livestreams with a companion website",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
+    "simulate": "node --disable-warning=ExperimentalWarning scripts/simulate.js",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.js\""
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}

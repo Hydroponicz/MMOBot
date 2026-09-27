@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>MMOBot Overlay</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@600;800&display=swap" rel="stylesheet" />
+  <style>
+    /* OBS Browser Source: transparent background, newest events slide in at the bottom.
+       Options: ?all=1 shows every action (default: only level-ups, rare drops and big sales). */
+    html, body { margin: 0; background: transparent; overflow: hidden; }
+    body { font-family: Inter, system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; justify-content: flex-end; padding: 12px; box-sizing: border-box; gap: 8px; }
+    .ev {
+      display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 12px;
+      background: rgba(11, 14, 17, 0.88); color: #e8edf2; font-weight: 600; font-size: 18px;
+      border-left: 4px solid #53fc18; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+      animation: in 0.4s ease-out, out 0.5s ease-in 9.5s forwards;
+    }
+    .ev .ic { font-size: 26px; }
+    .ev b { color: #53fc18; }
+    .ev.levelup, .ev.charlevel { border-left-color: #ffc940; }
+    .ev.levelup b, .ev.charlevel b { color: #ffc940; }
+    .ev.rare { border-left-color: #c084fc; }
+    .ev.rare b { color: #c084fc; }
+    @keyframes in { from { transform: translateX(-110%); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes out { to { opacity: 0; transform: translateY(-10px); } }
+  </style>
+</head>
+<body>
+  <script>
+    const showAll = new URLSearchParams(location.search).has('all');
+    const icons = { levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', action: '✨' };
+    const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    const es = new EventSource('/api/events');
+    es.addEventListener('activity', (e) => {
+      const a = JSON.parse(e.data);
+      if (!showAll && !['levelup', 'charlevel', 'rare'].includes(a.kind)) return;
+      const el = document.createElement('div');
+      el.className = `ev ${a.kind}`;
+      el.innerHTML = `<span class="ic">${icons[a.kind] || '✨'}</span><span><b>${esc(a.username)}</b> ${esc(a.text)}</span>`;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 10000);
+      while (document.body.querySelectorAll('.ev').length > 6) document.body.querySelector('.ev').remove();
+    });
+  </script>
+</body>
+</html>

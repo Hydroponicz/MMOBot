@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MMOBot — Chat Adventures</title>
+  <meta name="description" content="Level up your character by chatting on stream. Fish, mine, chop, dig and smelt your way to the top." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚔️</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="#/" class="brand"><span class="brand-mark">⚔️</span><span id="brand-name">MMOBot</span></a>
+      <nav class="nav" id="nav">
+        <a href="#/" data-route="home">Home</a>
+        <a href="#/leaderboards" data-route="leaderboards">Leaderboards</a>
+        <a href="#/guide" data-route="guide">How to play</a>
+        <a href="#/dev" data-route="dev" id="nav-dev" hidden>Test chat</a>
+        <a href="#/admin" data-route="admin" id="nav-admin" hidden>Admin</a>
+      </nav>
+      <div class="account" id="account"></div>
+    </div>
+  </header>
+
+  <main id="app" class="container" aria-live="polite"></main>
+
+  <footer class="footer">
+    <div class="container">Type <code>!commands</code> in chat to get started · Progress syncs automatically with your Kick account</div>
+  </footer>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="/app.js"></script>
+</body>
+</html>
