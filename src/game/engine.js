@@ -56,6 +56,8 @@ const INFO_COMMANDS = {
   hp: ['vitalsInfo', 'hp'], health: ['vitalsInfo', 'hp'], mana: ['vitalsInfo', 'hp'], vitals: ['vitalsInfo', 'hp'],
   drink: ['drink', 'drink'], quaff: ['drink', 'drink'], potion: ['drink', 'drink'],
   heal: ['healSpell', 'heal'],
+  monsters: ['monstersInfo', 'monsters'], mobs: ['monstersInfo', 'monsters'],
+  scout: ['scout', 'monsters'], check: ['scout', 'monsters'], con: ['scout', 'monsters'],
   commands: ['help', 'commands'], help: ['help', 'commands'], rpg: ['help', 'commands'], mmo: ['help', 'commands'],
 };
 
@@ -69,6 +71,14 @@ const SLOT_ALIASES = {
 };
 const SLOT_ICONS = { weapon: '🗡️', head: '⛑️', body: '👕', legs: '👖', shield: '🛡️' };
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+// How a fight looks for you (see assessFight).
+const RATINGS = {
+  easy: { id: 'easy', icon: '⚪', label: 'Too easy' },
+  fair: { id: 'fair', icon: '🟢', label: 'Good match' },
+  tough: { id: 'tough', icon: '🟠', label: 'Tough' },
+  hard: { id: 'hard', icon: '🔴', label: 'Hard' },
+  deadly: { id: 'deadly', icon: '☠️', label: 'Deadly' },
+};
 const CROPS = SKILLS.farming.resources;
 const minutesLeft = (ms) => {
   const m = ms < 3_600_000 ? Math.max(1, Math.ceil(ms / 60_000)) : Math.floor(ms / 60_000); // "23h 59m", not "24h 0m"
@@ -101,6 +111,7 @@ class GameEngine extends EventEmitter {
     this.farmWarned = new Map(); // same, for the farming cooldown
     this.lastBet = new Map(); // userId -> time of last casino bet (casino cooldown)
     this.betWarned = new Map();
+    this.fightWarned = new Map(); // userId -> { monster, at }: "type it again to fight anyway"
   }
 
   get cfg() {
@@ -435,18 +446,27 @@ class GameEngine extends EventEmitter {
     }
 
     const skill = SKILLS[pick.skillId];
-    const unlocked = skill.monsters.filter((m) => m.level <= pick.level);
+    // Rate fights with the weapon you're about to use.
+    const statsFor = { attack: ITEMS[pick.weapon].attack, defence: this.combatStats(user.id).defence };
+    const odds = (m) => this.assessFight(pick.level, statsFor, m, vit.maxHp);
     let monster;
     if (args.length) {
-      const q = args.join(' ').toLowerCase().replace(/^an? /, '');
-      monster = skill.monsters.find((m) => m.id === q.replace(/\s+/g, '_') || m.name.toLowerCase() === q) || skill.monsters.find((m) => m.name.toLowerCase().startsWith(q));
-      if (!monster) {
-        const near = [...unlocked.slice(-3), ...skill.monsters.filter((m) => m.level > pick.level).slice(0, 2)];
-        return { consumed: false, reply: `unknown monster. Near your level: ${near.map((m) => `${m.name} (${m.level})`).join(', ')}. Anything higher is risky!` };
+      monster = this.findMonster(skill, args);
+      if (!monster) return { consumed: false, reply: `unknown monster. ${this.monsterList(user, pick, vit)}` };
+      // Likely to knock you out with the HP you have now? Say so once; typing it again fights anyway.
+      const o = odds(monster);
+      const warned = this.fightWarned.get(user.id);
+      if ((!o.canWin || o.taken >= vit.hp) && !(warned && warned.monster === monster.id && now - warned.at < 120_000)) {
+        this.fightWarned.set(user.id, { monster: monster.id, at: now });
+        const why = !o.canWin ? `you can't beat it yet (it has ${fmt(monster.hp)} HP, you hit for ~${fmt(Math.round(o.hit))})` : `it would deal ~${fmt(Math.round(o.taken))} damage and you have ${fmt(Math.floor(vit.hp))} HP`;
+        return { consumed: false, reply: `${o.rating.icon} a ${monster.icon} ${monster.name} (level ${monster.level}) will probably knock you out: ${why}. Type !fight ${monster.name.toLowerCase()} again within 2 min to fight anyway.` };
       }
     } else {
-      monster = this.pickResource(unlocked);
+      // The best XP you can get safely: the strongest "good match" your current HP can handle.
+      monster = this.bestMonster(skill, odds, vit.hp) || skill.monsters[0];
     }
+    const rating = odds(monster).rating;
+    this.fightWarned.delete(user.id);
 
     // Wield the chosen weapon if it isn't already in hand.
     let swapped = '';
@@ -502,9 +522,14 @@ class GameEngine extends EventEmitter {
     });
     const gained = this.grantXp(user, pick.skillId, xpGain);
     const low = hpLeft < vit.maxHp * 0.25 ? ' ⚠️ low HP! !drink a potion or !heal' : '';
+    let easy = '';
+    if (rating.id === 'easy') {
+      const better = this.bestMonster(skill, odds, vit.maxHp);
+      easy = better && better.xp > monster.xp ? ` ⚪ Too easy for you, try !fight ${better.name.toLowerCase()} for ${fmt(this.xpFor(better.xp))} XP.` : ' ⚪ Too easy for you.';
+    }
     return {
       consumed: true,
-      reply: `${weapon.icon} you defeated a ${tag}${swapped} and looted ${rare ? 'a RARE ' : ''}${itemLabel(loot)}! ${gained.text} | ${hpText()} (-${fmt(Math.round(f.taken))})${low}${this.fullBagNote(user.id)}`,
+      reply: `${weapon.icon} you defeated a ${tag}${swapped} and looted ${rare ? 'a RARE ' : ''}${itemLabel(loot)}! ${gained.text} | ${hpText()}${f.taken >= 0.5 ? ` (-${fmt(Math.round(f.taken))})` : ''}${low}${easy}${this.fullBagNote(user.id)}`,
     };
   }
 
@@ -528,6 +553,72 @@ class GameEngine extends EventEmitter {
       if (taken >= hp) return { outcome: 'died', dealt, taken: hp };
     }
     return { outcome: 'fled', dealt, taken };
+  }
+
+  // What a fight would look like on average, from the same numbers simulateFight uses:
+  // rounds to win, expected damage taken, and a difficulty rating.
+  assessFight(level, stats, monster, maxHp) {
+    const offence = level + stats.attack;
+    const armor = clamp((monster.damage + 1) / (stats.defence + 1), 0.35, 2);
+    const outlevel = clamp(monster.level / Math.max(1, level), 0.5, 10);
+    const hit = Math.max(1, offence * 0.75);
+    const rounds = Math.ceil(monster.hp / hit);
+    const canWin = rounds <= 100;
+    const perRound = monster.attack * armor * outlevel * 0.75;
+    const taken = perRound * (Math.min(rounds, 100) - 1);
+    const cost = taken / maxHp;
+    const rating = !canWin || cost >= 0.9 ? RATINGS.deadly : cost >= 0.45 ? RATINGS.hard : cost >= 0.15 ? RATINGS.tough : monster.level >= level * 0.5 || cost >= 0.02 ? RATINGS.fair : RATINGS.easy;
+    return { hit, rounds, canWin, taken, cost, rating };
+  }
+
+  findMonster(skill, args) {
+    const q = args.join(' ').toLowerCase().replace(/^an? /, '');
+    return skill.monsters.find((m) => m.id === q.replace(/\s+/g, '_') || m.name.toLowerCase() === q) || skill.monsters.find((m) => m.name.toLowerCase().startsWith(q));
+  }
+
+  // The highest-XP monster that's a good match (not tough) and that `hp` can survive.
+  bestMonster(skill, odds, hp) {
+    const ok = skill.monsters.filter((m) => {
+      const o = odds(m);
+      return o.canWin && o.cost < 0.15 && o.taken < hp * 0.8;
+    });
+    return ok.sort((a, b) => b.xp - a.xp)[0] || null;
+  }
+
+  // "Monsters for you: ⚪ Goblin 10 · 🟢 Wolf 20 · 🟠 Bandit 30 · ☠️ Skeleton 40"
+  monsterList(user, pick, vit) {
+    const skill = SKILLS[pick.skillId];
+    const stats = { attack: ITEMS[pick.weapon].attack, defence: this.combatStats(user.id).defence };
+    const rated = skill.monsters.map((m) => ({ m, r: this.assessFight(pick.level, stats, m, vit.maxHp).rating }));
+    const i = Math.max(0, rated.findIndex((x) => x.r.id !== 'easy' && x.r.id !== 'fair') - 1);
+    const shown = rated.slice(Math.max(0, i - 2), i + 4);
+    return `Monsters for you: ${shown.map((x) => `${x.r.icon} ${x.m.name} ${x.m.level}`).join(' · ')} (⚪ too easy 🟢 good 🟠 tough 🔴 hard ☠️ deadly). !scout <monster> for details.`;
+  }
+
+  // !monsters
+  monstersInfo(user) {
+    const vit = this.vitals(user.id);
+    const pick = this.chooseWeapon(user.id);
+    if (!pick.weapon) return this.howToGetSword(user);
+    return this.monsterList(user, pick, vit);
+  }
+
+  // !scout <monster>: how a fight would go, without fighting.
+  scout(user, args) {
+    const vit = this.vitals(user.id);
+    const pick = this.chooseWeapon(user.id);
+    if (!pick.weapon) return this.howToGetSword(user);
+    const skill = SKILLS[pick.skillId];
+    if (!args.length) return this.monsterList(user, pick, vit);
+    const m = this.findMonster(skill, args);
+    if (!m) return `unknown monster. ${this.monsterList(user, pick, vit)}`;
+    const stats = { attack: ITEMS[pick.weapon].attack, defence: this.combatStats(user.id).defence };
+    const o = this.assessFight(pick.level, stats, m, vit.maxHp);
+    const verdict = !o.canWin
+      ? `you can't beat it yet, you'd need ~${o.rounds} rounds`
+      : `~${o.rounds} round${o.rounds === 1 ? '' : 's'}, you'd lose ~${fmt(Math.round(o.taken))} HP (${Math.round(o.cost * 100)}% of max)${o.taken >= vit.hp && !vit.ko ? ` ⚠️ more than your ${fmt(Math.floor(vit.hp))} HP now` : ''}`;
+    const tip = o.rating.id === 'easy' ? ' Barely worth it.' : o.rating.id === 'deadly' || o.rating.id === 'hard' ? ' Better weapon/armor or more levels help.' : '';
+    return `${o.rating.icon} ${o.rating.label}: ${m.icon} ${m.name} (level ${m.level}, ${fmt(m.hp)} HP) vs you (${skill.name} ${pick.level}, ${ITEMS[pick.weapon].name}, +${stats.defence} def): ${verdict}. ${fmt(this.xpFor(m.xp))} XP.${tip}`;
   }
 
   // ---- Health and mana ------------------------------------------------------
@@ -1068,7 +1159,7 @@ class GameEngine extends EventEmitter {
     const on = (list) => list.filter((c) => !off.includes(c)).map((c) => `${p}${c}`).join(' ');
     const skills = on(SKILL_IDS.flatMap((id) => (SKILLS[id].type === 'farm' ? ['plant', 'harvest'] : [SKILLS[id].command])));
     const tools = Object.keys(TOOL_TO_SKILL).join('/');
-    return `Skills: ${skills} (e.g. ${p}mine iron, ${p}smith bronze sword) | Gear: ${p}gear ${p}equip ${p}equipped ${p}shop ${p}buy, ${p}upgrade ${tools}/backpack | Combat: ${on(['hp', 'drink', 'heal'])} | Info: ${on(['stats', 'inv', 'sell', 'points', 'top'])}${this.cfg.casinoEnabled === false ? '' : ` | Casino: ${p}casino`} | ${this.siteUrl}`;
+    return `Skills: ${skills} (e.g. ${p}mine iron, ${p}smith bronze sword) | Gear: ${p}gear ${p}equip ${p}equipped ${p}shop ${p}buy, ${p}upgrade ${tools}/backpack | Combat: ${on(['hp', 'drink', 'heal', 'monsters'])}${off.includes('monsters') ? '' : ` ${p}scout`} | Info: ${on(['stats', 'inv', 'sell', 'points', 'top'])}${this.cfg.casinoEnabled === false ? '' : ` | Casino: ${p}casino`} | ${this.siteUrl}`;
   }
 
   // ---- Tools & upgrades (!upgrade rod, !upgrade backpack) --------------------
@@ -1505,6 +1596,17 @@ class GameEngine extends EventEmitter {
           maxMana: vit.maxMana,
           knockedOutUntil: vit.ko ? vit.koUntil : null,
           hpRegenHours: this.cfg.hpRegenHours,
+          // Every monster rated for this player (with their best usable weapon, or bare hands).
+          monsters: (() => {
+            const pick = this.chooseWeapon(userId);
+            const skillId = pick.skillId || COMBAT_SKILLS[0];
+            const level = pick.level || this.combatLevel(userId);
+            const stats = { attack: pick.weapon ? ITEMS[pick.weapon].attack : 0, defence: st.defence };
+            return SKILLS[skillId].monsters.map((m) => {
+              const o = this.assessFight(level, stats, m, vit.maxHp);
+              return { id: m.id, name: m.name, icon: m.icon, level: m.level, hp: m.hp, xp: this.xpFor(m.xp), rating: o.rating.id, label: o.rating.label, ratingIcon: o.rating.icon, cost: o.canWin ? Math.round(o.cost * 100) : null };
+            });
+          })(),
           worn: GEAR_SLOTS.map((slot) => ({ slot, item: st.worn[slot] ? { id: st.worn[slot], ...ITEMS[st.worn[slot]] } : null })),
         };
       })(),

@@ -254,6 +254,23 @@
       }`;
   }
 
+  // Monsters rated for this player: a few too-easy ones, every good match, and the first risky ones.
+  function monsterChips(list) {
+    if (!list || !list.length) return '';
+    const firstRisky = list.findIndex((m) => m.rating !== 'easy' && m.rating !== 'fair');
+    const end = firstRisky === -1 ? list.length : firstRisky + 2;
+    const start = Math.max(0, list.findIndex((m) => m.rating === 'fair') - 1);
+    const shown = list.slice(start, end);
+    const tip = (m) => (m.cost === null ? `${m.label}: you can't beat it yet` : `${m.label}: you'd lose ~${m.cost}% of your max HP`);
+    return `<div class="monster-chips">
+        <div class="gear-label">Monsters for you</div>
+        ${shown
+          .map((m) => `<span class="mchip r-${m.rating}" title="${esc(tip(m))} · ${fmt(m.hp)} HP · ${fmt(m.xp)} XP">${m.ratingIcon} ${m.icon} ${esc(m.name)} <small>${m.level}</small></span>`)
+          .join('')}
+        <div class="muted" style="font-size:.8rem;margin-top:6px">⚪ too easy · 🟢 good match · 🟠 tough · 🔴 hard · ☠️ deadly. <code>!scout &lt;monster&gt;</code> in chat for details.</div>
+      </div>`;
+  }
+
   function equipmentPanel(c, isMe) {
     return `
       <section class="panel" style="margin-top:28px">
@@ -277,6 +294,7 @@
             </div>`
           )
           .join('')}</div>
+        ${monsterChips(c.monsters)}
         <p class="muted" style="margin-bottom:0;font-size:.85rem">Buy a sword in the <a href="#/shop">shop</a> or <code>!smith</code> your own, then <code>!fight</code>. Your best weapon is equipped automatically when you fight. Fights cost HP; monsters above your level hit much harder.</p>
       </section>`;
   }
@@ -649,7 +667,7 @@
             <li><b>Smithing</b>: buy a 🔨 Smithing Hammer in the <a href="#/shop">shop</a> (keep it in your backpack), then turn alloys into weapons and armor: <code>!smith bronze sword</code>. <code>!equip</code> gear for attack and defence, or <code>!sell</code> it.</li>
             <li><b>Skinning</b>: with a 🔪 Skinning Knife in your backpack (buy it in the <a href="#/shop">shop</a> or smith it at Smithing 20 from a Sterling Alloy), <code>!skin</code> animals for hides, from rabbits up to celestial fleece.</li>
             <li><b>Farming</b>: everyone gets a free 🟫 farm plot. Buy seeds (and more plots, ${fmt((g.shop.find((x) => x.item === 'farm_plot') || {}).cost || 0)} pts each, up to 100) in the <a href="#/shop">shop</a>, <code>!plant carrot</code>, and <code>!harvest</code> when it's grown (carrots take 20 minutes, 1 crop per plot). ${g.skills.find((x) => x.type === 'farm')?.tiers.length || ''} crops to unlock up to level 500. Farming has its own cooldown, so you can farm while you do everything else.</li>
-            <li><b>Combat</b>: with a sword (shop or smithed), <code>!fight</code> monsters for Swords XP and loot. <code>!fight goblin</code> picks a target, and you can pick any monster, but ones above your level hit much harder. Fights cost ❤️ HP (better weapons and armor mean less). At 0 HP you're knocked out: wait until you're back at full HP (24h) or <code>!drink</code> a health potion. <code>!heal</code> spends 🔷 mana to restore HP.</li>
+            <li><b>Combat</b>: with a sword (shop or smithed), <code>!fight</code> monsters for Swords XP and loot. <code>!fight goblin</code> picks a target, and you can pick any monster, but ones above your level hit much harder. <code>!monsters</code> rates them for you (⚪ too easy · 🟢 good match · 🟠 tough · 🔴 hard · ☠️ deadly) and <code>!scout troll</code> shows how a fight would go. A plain <code>!fight</code> picks your best safe match, and you're warned before a fight that would likely knock you out. Fights cost ❤️ HP (better weapons and armor mean less). At 0 HP you're knocked out: wait until you're back at full HP (24h) or <code>!drink</code> a health potion. <code>!heal</code> spends 🔷 mana to restore HP.</li>
             <li><b>Alchemy</b>: <code>!brew</code> potions from crops you farm, e.g. 2 Carrots make a Minor Health Potion. Or buy potions in the <a href="#/shop">shop</a>.</li>
             <li>Your <b>character level</b> grows with the combined XP of all skills — train them all!</li>
           </ol>
@@ -669,6 +687,8 @@
             <dt><code>!fight [monster]</code></dt><dd>Fight for Swords XP and loot (costs HP)</dd>
             <dt><code>!hp</code></dt><dd>Show your health and mana</dd>
             <dt><code>!drink [potion]</code></dt><dd>Drink a potion (revives you if knocked out)</dd>
+            <dt><code>!monsters</code></dt><dd>Which monsters suit you (⚪ too easy to ☠️ deadly)</dd>
+            <dt><code>!scout &lt;monster&gt;</code></dt><dd>How a fight would go, without fighting</dd>
             <dt><code>!heal</code></dt><dd>Spend half your mana to restore 25% HP</dd>
             <dt><code>!equip &lt;item&gt;</code></dt><dd>Wear gear (<code>!unequip</code>, <code>!equipped</code>)</dd>
             <dt><code>!buy &lt;item&gt;</code></dt><dd>Buy a hammer or sword (<code>!shop</code> lists them)</dd>

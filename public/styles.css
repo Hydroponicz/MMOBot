@@ -435,3 +435,14 @@ tr.locked td { opacity: 0.55; }
 .vital.mana .vital-bar span { background: linear-gradient(90deg, #2563eb, #60a5fa); }
 .kind-potion { background: rgba(167, 139, 250, 0.15); color: var(--alchemy); }
 @media (max-width: 600px) { .vitals { grid-template-columns: 1fr; } }
+
+/* Monster difficulty chips */
+.monster-chips { margin: 14px 0 10px; }
+.monster-chips .gear-label { margin-bottom: 6px; }
+.mchip { display: inline-flex; align-items: center; gap: 4px; margin: 0 6px 6px 0; padding: 4px 10px; border-radius: 99px; border: 1px solid var(--border); background: var(--panel-2); font-size: 0.85rem; font-weight: 600; }
+.mchip small { color: var(--muted); font-weight: 700; }
+.mchip.r-easy { opacity: 0.6; }
+.mchip.r-fair { border-color: #16a34a; }
+.mchip.r-tough { border-color: #f97316; }
+.mchip.r-hard { border-color: #dc2626; }
+.mchip.r-deadly { border-color: #7f1d1d; background: rgba(127, 29, 29, 0.25); }

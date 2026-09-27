@@ -23,6 +23,7 @@ const COMMANDS = [
   'hp',
   'drink',
   'heal',
+  'monsters',
   'casino',
   'slots',
   'roulette',

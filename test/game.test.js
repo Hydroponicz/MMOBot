@@ -472,7 +472,7 @@ test('!fight needs a weapon, auto-equips the best one, and any monster can be fo
   assert.match(say('!fight'), /you defeated a 🐔 Chicken \(equipped your Bronze Sword\) and looted .*! \+10 XP.*Swords level 2!.*\| ❤️ \d+\/70 HP \(-\d\)/);
   assert.equal(repo.getWorn(u.id).weapon, 'bronze_sword');
   tick();
-  assert.match(say('!fight unicorn'), /unknown monster. Near your level: Chicken \(1\), Giant Rat \(5\), Goblin \(10\)/);
+  assert.match(say('!fight unicorn'), /unknown monster. Monsters for you: 🟢 Chicken 1 · 🔴 Giant Rat 5 · ☠️ Goblin 10/);
 
   repo.addXp(u.id, 'swords', xpForLevel(25));
   tick();
@@ -487,6 +487,8 @@ test('fighting far above your level knocks you out until you drink a potion or 2
   repo.addXp(u.id, 'swords', xpForLevel(5));
   repo.addItem(u.id, 'bronze_sword', 1);
   assert.match(engine.vitalsInfo(u), /❤️ 100\/100 HP · 🔷 30\/30 mana\.$/);
+  // First a warning (no cooldown used), then typing it again fights anyway.
+  assert.match(say('!fight dragon'), /☠️ a 🐉 Dragon \(level 400\) will probably knock you out: you can't beat it yet \(it has 2,750 HP, you hit for ~7\)\. Type !fight dragon again within 2 min/);
   assert.match(say('!fight dragon'), /💀 the 🐉 Dragon \(level 400\) knocked you out! \(equipped your Bronze Sword\) You hit it for 9 of its 2,750 HP\. \+\d XP.*Back at full HP in 24h, or !drink a health potion \(!buy minor health potion, 150 pts\)/);
   assert.equal(repo.getInventory(u.id).feathers, undefined, 'no loot');
   tick();
@@ -504,6 +506,7 @@ test('fighting far above your level knocks you out until you drink a potion or 2
   // Or wait it out.
   const bob = repo.upsertUser({ kickUserId: '2', username: 'Bob' });
   repo.addItem(bob.id, 'bronze_sword', 1);
+  say('!fight elder dragon', 'Bob', '2');
   say('!fight elder dragon', 'Bob', '2');
   assert.equal(engine.vitals(bob.id).ko, true);
   tick(24 * 3600);
@@ -544,6 +547,33 @@ test('fights at your level cost a little HP, which regenerates; armor matters', 
   assert.ok(armored.taken < 150 * 0.08, `a par fight costs under 8% HP: ${armored.taken}`);
   assert.ok(run(5, { attack: 4, defence: 15 }, mon('wolf')).win < 0.2, 'level 5 vs a level 20 wolf usually loses');
   assert.ok(run(40, { attack: 18, defence: 52 }, mon('orc')).win > 0.9, 'a bit above your level is fine with good gear');
+});
+
+test('fights are rated for you: !scout, !monsters, too-easy tips and a best-match default', () => {
+  const { repo, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addXp(u.id, 'swords', xpForLevel(40));
+  repo.addItem(u.id, 'mithril_sword', 1);
+  for (const piece of ['helmet', 'shield', 'platelegs', 'platebody']) {
+    repo.addItem(u.id, `mithril_${piece}`, 1);
+    say(`!equip mithril ${piece}`);
+  }
+  assert.match(say('!monsters'), /Monsters for you: .*🟢 Skeleton 40 · 🟢 Orc 55 · 🔴 Troll 70 · ☠️ Ogre 85/);
+  assert.match(say('!scout chicken'), /⚪ Too easy: 🐔 Chicken \(level 1, 15 HP\) vs you \(Swords 40, Mithril Sword, \+53 def\): ~1 round,.*Barely worth it/);
+  assert.match(say('!scout troll'), /🔴 Hard: 🧌 Troll \(level 70, 490 HP\).*you'd lose ~\d+ HP \(4\d% of max\).*Better weapon\/armor/);
+  assert.match(say('!scout ogre'), /☠️ Deadly/);
+  assert.match(say('!scout'), /Monsters for you/);
+
+  // Beating something far below you says so and points at a better fight.
+  assert.match(say('!fight chicken'), /you defeated a 🐔 Chicken.* ⚪ Too easy for you, try !fight orc for 105 XP\./);
+  tick();
+  // A bare !fight picks the best safe match.
+  assert.match(say('!fight'), /you defeated a 👹 Orc \(level 55\)/);
+  tick();
+  // A hard fight with little HP left gets a warning first.
+  repo.setVitals(u.id, { hp: 30, mana: 0, koUntil: 0 }, 1_000_000 + 62_000);
+  assert.match(say('!fight troll'), /🔴 a 🧌 Troll \(level 70\) will probably knock you out: it would deal ~\d+ damage and you have 30 HP/);
+  assert.match(say('!fight'), /you defeated a .*(Bandit|Wolf|Goblin|Skeleton)/, 'the default picks something your HP can take');
 });
 
 test('!drink picks the right potion, !heal spends mana, potions can be bought and brewed', () => {
