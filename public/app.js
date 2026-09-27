@@ -39,7 +39,7 @@
   };
   const skillIcon = (id) => state.site?.skills.find((s) => s.id === id)?.icon || '✨';
   const feedIcon = (a) =>
-    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒', jackpot: '🎰' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
+    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒', jackpot: '🎰', death: '💀' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
 
   // ---- live activity (SSE) ----------------------------------------------
   const listeners = new Set();
@@ -169,7 +169,7 @@
               <div class="nm">${esc(i.name)}</div><div class="val">${fmt(i.value * i.qty)} pts</div>
               ${
                 isMe
-                  ? `<div class="inv-actions">${i.gear ? `<button class="mini" data-act="equip" data-item="${esc(i.id)}">Equip</button>` : ''}<button class="mini" data-act="sell" data-item="${esc(i.id)}" data-name="${esc(i.name)}" data-value="${i.value}">Sell</button></div>`
+                  ? `<div class="inv-actions">${i.gear ? `<button class="mini" data-act="equip" data-item="${esc(i.id)}">Equip</button>` : ''}${i.potion ? `<button class="mini" data-act="drink" data-item="${esc(i.id)}">Drink</button>` : ''}<button class="mini" data-act="sell" data-item="${esc(i.id)}" data-name="${esc(i.name)}" data-value="${i.value}">Sell</button></div>`
                   : ''
               }</div>`
           )
@@ -232,6 +232,28 @@
     return bits.join(' · ');
   }
 
+  function vitalsBars(c, isMe) {
+    const ko = c.knockedOutUntil && c.knockedOutUntil > Date.now();
+    const left = (ms) => {
+      const m = ms < 3_600_000 ? Math.max(1, Math.ceil(ms / 60_000)) : Math.floor(ms / 60_000);
+      return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+    };
+    const bar = (cls, label, v, max) => `<div class="vital ${cls}">
+        <div class="vital-label"><span>${label}</span><b>${fmt(v)} / ${fmt(max)}</b></div>
+        <div class="vital-bar"><span style="width:${Math.round((v / max) * 100)}%"></span></div></div>`;
+    return `<div class="vitals">
+        ${bar(`hp${ko ? ' ko' : ''}`, ko ? '💀 Knocked out' : '❤️ Health', ko ? 0 : c.hp, c.maxHp)}
+        ${bar('mana', '🔷 Mana', c.mana, c.maxMana)}
+      </div>
+      ${
+        ko
+          ? `<p class="bag-warn">Knocked out! Back at full HP in ${left(c.knockedOutUntil - Date.now())}, or drink a health potion (<a href="#/shop">shop</a>, or <code>!brew</code> one) to fight again now.</p>`
+          : isMe && c.hp < c.maxHp
+            ? `<p class="muted" style="font-size:.85rem;margin:6px 0 0">HP refills over ${c.hpRegenHours}h. ${c.mana >= Math.ceil(c.maxMana / 2) ? '<button class="mini" data-act="heal">✨ Heal (half your mana)</button>' : '<code>!heal</code> needs half your mana.'}</p>`
+            : ''
+      }`;
+  }
+
   function equipmentPanel(c, isMe) {
     return `
       <section class="panel" style="margin-top:28px">
@@ -243,6 +265,7 @@
             <span class="badge">🎖️ Combat level ${fmt(c.level)}</span>
           </div>
         </div>
+        ${vitalsBars(c, isMe)}
         <div class="gear-grid">${c.worn
           .map(
             (w) => `<div class="gear-slot${w.item ? ' filled' : ''}" title="${w.item ? esc(itemTitle(w.item)) : ''}">
@@ -254,7 +277,7 @@
             </div>`
           )
           .join('')}</div>
-        <p class="muted" style="margin-bottom:0;font-size:.85rem">Buy a sword in the <a href="#/shop">shop</a> or <code>!smith</code> your own, then <code>!fight</code>. Your best weapon is equipped automatically when you fight.</p>
+        <p class="muted" style="margin-bottom:0;font-size:.85rem">Buy a sword in the <a href="#/shop">shop</a> or <code>!smith</code> your own, then <code>!fight</code>. Your best weapon is equipped automatically when you fight. Fights cost HP; monsters above your level hit much harder.</p>
       </section>`;
   }
 
@@ -305,7 +328,7 @@
       if (act === 'sell') {
         if (!confirm(`Sell 1 ${name} for ${fmt(value)} points?`)) return;
         body = { item, qty: 1 };
-      } else if (act === 'plant' || act === 'harvest') body = {};
+      } else if (act === 'plant' || act === 'harvest' || act === 'heal') body = {};
       else body = act === 'unequip' ? { slot } : { item };
       b.disabled = true;
       try {
@@ -413,17 +436,18 @@
             ${i.item === 'farm_plot' && loggedIn ? `<p class="shop-stat">You own ${plots}/100 plots</p>` : ''}
             <div class="shop-buy">
               <span class="shop-price">${fmt(i.cost)} pts</span>
-              ${i.item === 'farm_plot' && loggedIn ? `<input type="number" class="qty" id="qty-${esc(i.item)}" value="1" min="1" max="100" aria-label="How many">` : ''}
+              ${(i.item === 'farm_plot' || i.category === 'potions') && loggedIn ? `<input type="number" class="qty" id="qty-${esc(i.item)}" value="1" min="1" max="100" aria-label="How many">` : ''}
               ${buyBtn(i, i.item === 'farm_plot' && plots >= 100)}
             </div>
-            <p class="muted" style="font-size:.8rem;margin:8px 0 0">In chat: <code>!buy ${esc(i.item === 'farm_plot' ? 'plot' : i.name.split(' ').pop().toLowerCase())}</code></p>
+            <p class="muted" style="font-size:.8rem;margin:8px 0 0">In chat: <code>!buy ${esc(i.item === 'farm_plot' ? 'plot' : i.category === 'potions' ? i.name.toLowerCase() : i.name.split(' ').pop().toLowerCase())}</code></p>
           </section>`;
     const allSeeds = items.filter((i) => i.category === 'seeds');
     // Show what you can plant now plus the next few unlocks; "Show all" reveals the rest.
     const cap = loggedIn ? farmingLevel : 1;
     const locked = allSeeds.filter((i) => i.level > cap);
     const seeds = shopShowAllSeeds ? allSeeds : [...allSeeds.filter((i) => i.level <= cap), ...locked.slice(0, 5)];
-    const top = items.filter((i) => i.category !== 'seeds');
+    const top = items.filter((i) => !i.category || i.category === 'farming');
+    const potions = items.filter((i) => i.category === 'potions');
     $app.innerHTML = `
       <div class="panel-head" style="margin-bottom:6px"><h1 style="margin:0">🛒 Shop</h1>${
         loggedIn
@@ -434,6 +458,10 @@
       }</div>
       <p class="muted">Spend the points you earn in chat. You can also buy in chat, e.g. <code>!buy hammer</code> or <code>!buy carrot seeds 5</code>.</p>
       <div class="shop-grid">${top.map(card).join('')}</div>
+
+      <h2 style="margin:28px 0 6px">🧪 Potions</h2>
+      <p class="muted">Fights cost HP. At 0 you're knocked out until you're back at full HP (24h), or until you drink a health potion. <code>!drink</code> in chat drinks the best one for you. Or brew your own from farmed crops with <code>!brew</code>.</p>
+      <div class="shop-grid">${potions.map(card).join('')}</div>
 
       <h2 style="margin:28px 0 6px">🌱 Seeds</h2>
       <p class="muted">One seed per plot: <code>!plant carrot</code>, then <code>!harvest</code> when it's grown (1 crop per plot). Seeds don't take backpack space.${loggedIn ? ` Your Farming level: <b>${farmingLevel}</b>.` : ''}</p>
@@ -556,14 +584,15 @@
       if (s.type === 'combat') {
         return `
       <div class="table-wrap"><table>
-        <thead><tr><th>Level</th><th>Monster</th><th>Loot</th><th class="num">XP</th><th class="num">Loot sells for</th></tr></thead>
+        <thead><tr><th>Level</th><th>Monster</th><th class="num">HP</th><th>Loot</th><th class="num">XP</th><th class="num">Loot sells for</th></tr></thead>
         <tbody>${s.tiers
           .map(
-            (t) => `<tr><td><b>${t.level}</b></td><td>${t.icon} ${esc(t.item)}</td>
+            (t) => `<tr><td><b>${t.level}</b></td><td>${t.icon} ${esc(t.item)}</td><td class="num">${fmt(t.hp)}</td>
             <td class="wrap">${t.loot.map((l) => `${l.icon} ${esc(l.item)}`).join(', ')}</td>
             <td class="num">${t.xp}</td><td class="num">${t.loot.map((l) => fmt(l.value)).join(' / ')} pts</td></tr>`
           )
-          .join('')}${rareRows(s, 1)}</tbody></table></div>`;
+          .join('')}${rareRows(s, 2)}</tbody></table></div>
+      <p class="muted" style="font-size:.85rem">Any monster can be fought at any level, but ones above your level hit much harder: twice your level is a hard fight, three times will likely knock you out.</p>`;
       }
       const isProcess = s.type === 'process';
       const hasStats = s.tiers.some((t) => t.stats);
@@ -618,9 +647,10 @@
             <li>Every skill goes all the way to <b>level 500</b>. Every 50 levels you can buy a better tool with points: <code>!upgrade rod</code>, <code>pickaxe</code>, <code>axe</code>, <code>shovel</code> or <code>furnace</code>. Better tools fail less, give bonus XP and better rare odds (furnaces can smelt two at once). <code>!gear</code> shows all your tools.</li>
             ${g.xpMultiplier !== 1 ? `<li><b>🔥 ${g.xpMultiplier}× XP event is on right now!</b></li>` : ''}
             <li><b>Smithing</b>: buy a 🔨 Smithing Hammer in the <a href="#/shop">shop</a> (keep it in your backpack), then turn alloys into weapons and armor: <code>!smith bronze sword</code>. <code>!equip</code> gear for attack and defence, or <code>!sell</code> it.</li>
-            <li><b>Skinning</b>: with a 🔪 Skinning Knife in your backpack (buy it in the <a href="#/shop">shop</a> or smith it at Smithing 20 from a Steel Alloy), <code>!skin</code> animals for hides, from rabbits up to celestial fleece.</li>
+            <li><b>Skinning</b>: with a 🔪 Skinning Knife in your backpack (buy it in the <a href="#/shop">shop</a> or smith it at Smithing 20 from a Sterling Alloy), <code>!skin</code> animals for hides, from rabbits up to celestial fleece.</li>
             <li><b>Farming</b>: everyone gets a free 🟫 farm plot. Buy seeds (and more plots, ${fmt((g.shop.find((x) => x.item === 'farm_plot') || {}).cost || 0)} pts each, up to 100) in the <a href="#/shop">shop</a>, <code>!plant carrot</code>, and <code>!harvest</code> when it's grown (carrots take 20 minutes, 1 crop per plot). ${g.skills.find((x) => x.type === 'farm')?.tiers.length || ''} crops to unlock up to level 500. Farming has its own cooldown, so you can farm while you do everything else.</li>
-            <li><b>Combat</b>: with a sword (shop or smithed), <code>!fight</code> monsters for Swords XP and loot. Start with chickens; stronger monsters unlock as you level. <code>!fight goblin</code> picks a target. Better weapons and armor raise your win chance.</li>
+            <li><b>Combat</b>: with a sword (shop or smithed), <code>!fight</code> monsters for Swords XP and loot. <code>!fight goblin</code> picks a target, and you can pick any monster, but ones above your level hit much harder. Fights cost ❤️ HP (better weapons and armor mean less). At 0 HP you're knocked out: wait until you're back at full HP (24h) or <code>!drink</code> a health potion. <code>!heal</code> spends 🔷 mana to restore HP.</li>
+            <li><b>Alchemy</b>: <code>!brew</code> potions from crops you farm, e.g. 2 Carrots make a Minor Health Potion. Or buy potions in the <a href="#/shop">shop</a>.</li>
             <li>Your <b>character level</b> grows with the combined XP of all skills — train them all!</li>
           </ol>
         </section>
@@ -636,7 +666,10 @@
             <dt><code>!harvest</code></dt><dd>Collect grown crops (<code>!farm</code> shows your plots)</dd>
             <dt><code>!skin</code></dt><dd>Skin animals (needs a knife)</dd>
             <dt><code>!smith &lt;item&gt;</code></dt><dd>Smith gear from alloys (needs a hammer)</dd>
-            <dt><code>!fight [monster]</code></dt><dd>Fight for Swords XP and loot</dd>
+            <dt><code>!fight [monster]</code></dt><dd>Fight for Swords XP and loot (costs HP)</dd>
+            <dt><code>!hp</code></dt><dd>Show your health and mana</dd>
+            <dt><code>!drink [potion]</code></dt><dd>Drink a potion (revives you if knocked out)</dd>
+            <dt><code>!heal</code></dt><dd>Spend half your mana to restore 25% HP</dd>
             <dt><code>!equip &lt;item&gt;</code></dt><dd>Wear gear (<code>!unequip</code>, <code>!equipped</code>)</dd>
             <dt><code>!buy &lt;item&gt;</code></dt><dd>Buy a hammer or sword (<code>!shop</code> lists them)</dd>
             <dt><code>!stats [name]</code></dt><dd>Show levels and points</dd>

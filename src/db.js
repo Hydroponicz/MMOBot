@@ -109,6 +109,13 @@ function openDb(dbPath) {
 function migrate(db) {
   const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
   if (!cols.includes('last_farm_at')) db.exec('ALTER TABLE users ADD COLUMN last_farm_at INTEGER NOT NULL DEFAULT 0');
+  // Health and mana: NULL means full. *_at is when the value was last written (regen counts from there).
+  // ko_until: knocked out until this time (0 = not knocked out).
+  if (!cols.includes('hp')) db.exec('ALTER TABLE users ADD COLUMN hp REAL');
+  if (!cols.includes('hp_at')) db.exec('ALTER TABLE users ADD COLUMN hp_at INTEGER NOT NULL DEFAULT 0');
+  if (!cols.includes('mana')) db.exec('ALTER TABLE users ADD COLUMN mana REAL');
+  if (!cols.includes('mana_at')) db.exec('ALTER TABLE users ADD COLUMN mana_at INTEGER NOT NULL DEFAULT 0');
+  if (!cols.includes('ko_until')) db.exec('ALTER TABLE users ADD COLUMN ko_until INTEGER NOT NULL DEFAULT 0');
 }
 
 function createRepo(db) {
@@ -149,6 +156,7 @@ function createRepo(db) {
     plant: db.prepare('INSERT INTO farm_plots (user_id, plot, crop, planted_at, ready_at) VALUES (?, ?, ?, ?, ?)'),
     clearPlot: db.prepare('DELETE FROM farm_plots WHERE user_id = ? AND plot = ?'),
     setFarmAt: db.prepare('UPDATE users SET last_farm_at = ? WHERE id = ?'),
+    setVitals: db.prepare('UPDATE users SET hp = ?, hp_at = ?, mana = ?, mana_at = ?, ko_until = ? WHERE id = ?'),
     addPoints: db.prepare(
       'UPDATE users SET points = points + ?, lifetime_points = lifetime_points + MAX(?, 0) WHERE id = ?'
     ),
@@ -281,6 +289,7 @@ function createRepo(db) {
     plant: (userId, plot, crop, plantedAt, readyAt) => stmt.plant.run(userId, plot, crop, plantedAt, readyAt),
     clearPlot: (userId, plot) => stmt.clearPlot.run(userId, plot),
     setFarmAt: (userId, ts) => stmt.setFarmAt.run(ts, userId),
+    setVitals: (userId, { hp, mana, koUntil }, ts) => stmt.setVitals.run(hp, ts, mana, ts, koUntil, userId),
 
     addPoints: (userId, amount) => stmt.addPoints.run(amount, amount, userId),
     chatTick: (userId) => stmt.chatTick.run(userId),

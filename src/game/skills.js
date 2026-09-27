@@ -542,6 +542,17 @@ const SKILLS = {
     failMessages: ['the metal cracked'],
     recipes: [], // filled in below from SMITHING_RECIPES
   },
+  alchemy: {
+    name: 'Alchemy',
+    icon: '⚗️',
+    command: 'brew',
+    verb: 'brewed',
+    type: 'process',
+    maxLevel: 500,
+    // Brews potions from farmed herbs and vegetables. A bare "!brew" makes the best potion you have ingredients for.
+    failMessages: ['the potion fizzled'],
+    recipes: [], // filled in below from POTION_LIST
+  },
   swords: {
     name: 'Swords',
     icon: '🗡️',
@@ -568,6 +579,12 @@ SKILLS.smithing.recipes = SMITHING_RECIPES.map(({ item, level, bars, alloy, kind
 // Tools you can smith instead of buying.
 SKILLS.smithing.recipes.push({ item: 'skinning_knife', level: 20, kind: 'tool', xp: 55, inputs: { sterling_bar: 1 } });
 SKILLS.smithing.recipes.sort((a, b) => a.level - b.level);
+
+// ---- Health and mana -------------------------------------------------------------
+// Both grow with your combat level. HP drops in fights; at 0 you're knocked out until you're back at
+// full HP (24h by default, set on the admin page) or drink a health potion. Mana powers !heal.
+const maxHpFor = (level) => 50 + 10 * level;
+const maxManaFor = (level) => 20 + 2 * level;
 
 // Monsters for !fight. Level = Swords level needed. Stats are tuned so that at the monster's level,
 // with gear for that level, you win about 3 fights in 4; better gear or more levels push it higher.
@@ -605,7 +622,11 @@ SKILLS.swords.monsters = MONSTER_LIST.map(([id, name, icon, level, xp, loot, rar
     level,
     xp,
     power: level === 1 ? 3 : Math.round(level + m[5]), // matches your attack (level + sword) at par; chickens are easy
-    damage: level <= 5 ? level - 1 : Math.round(fullSetDefence * 0.9), // chickens and rats barely hit back
+    damage: level <= 5 ? level - 1 : Math.round(fullSetDefence * 0.9), // the armor you need so its hits don't hurt extra
+    // Fights are traded blows. At par (your level, gear for that level) you win in about 7 rounds
+    // and lose ~6% of your HP. Far above your level, it hits hard enough to knock you out fast.
+    hp: 5 * (level === 1 ? 3 : Math.round(level + m[5])),
+    attack: Math.round((maxHpFor(level) / 75) * 10) / 10,
     loot,
     rare: rare || null,
   };
@@ -743,6 +764,28 @@ for (const [id, name, icon, level, kind] of CROP_LIST) {
   });
 }
 
+// ---- Potions (Alchemy, !brew; also sold in the shop) ------------------------------------
+// Health potions heal a share of your max HP (and revive you if you're knocked out); mana
+// potions restore mana; an elixir does both. They're kept by "!sell all".
+const POTION_LIST = [
+  // id, name, icon, Alchemy level, ingredients, { hp, mana } as a share of max, shop price
+  ['minor_health_potion', 'Minor Health Potion', '🧪', 1, { carrot: 2 }, { hp: 0.25 }, 150],
+  ['minor_mana_potion', 'Minor Mana Potion', '🔹', 10, { parsley: 2 }, { mana: 0.4 }, 150],
+  ['health_potion', 'Health Potion', '❤️', 25, { mint: 1, chamomile: 1 }, { hp: 0.5 }, 400],
+  ['mana_potion', 'Mana Potion', '🔷', 50, { lavender: 1, sage: 1 }, { mana: 0.7 }, 400],
+  ['greater_health_potion', 'Greater Health Potion', '💖', 75, { rosemary: 1, ginseng: 1 }, { hp: 0.75 }, 900],
+  ['greater_mana_potion', 'Greater Mana Potion', '💠', 120, { snapdragon: 1, moonpetal: 1 }, { mana: 1 }, 900],
+  ['super_health_potion', 'Super Health Potion', '💗', 200, { mandrake: 1, bloodroot: 1 }, { hp: 1 }, 2000],
+  ['elixir', 'Elixir of Life', '🌟', 300, { silverleaf: 1, stormvine: 1, emberroot: 1 }, { hp: 1, mana: 1 }, 3500],
+];
+for (const [id, name, icon, level, inputs, restores] of POTION_LIST) {
+  for (const i of Object.keys(inputs)) if (!ITEMS[i]) throw new Error(`potion ${id} needs unknown item ${i}`);
+  const inputValue = Object.entries(inputs).reduce((sum, [i, q]) => sum + ITEMS[i].value * q, 0);
+  const inputXp = Object.entries(inputs).reduce((sum, [i, q]) => sum + SKILLS.farming.resources.find((c) => c.item === i).xp * q, 0);
+  ITEMS[id] = { name, icon, value: Math.round(inputValue * 1.3), keep: true, potion: restores };
+  SKILLS.alchemy.recipes.push({ item: id, level, kind: 'potion', xp: Math.round(inputXp * 0.8) + 5, inputs });
+}
+
 // Shop (website + "!buy"). Prices can be changed on the admin page.
 const SHOP = [
   { item: 'smithing_hammer', cost: 500, description: 'Lets you !smith weapons and armor from alloys. Keep it in your backpack.' },
@@ -755,6 +798,16 @@ const SHOP = [
     category: 'seeds',
     level: c.level,
     description: `Plant with !plant ${ITEMS[c.item].name.toLowerCase()} (Farming ${c.level}). Ready in ${c.grow} min, 1 ${ITEMS[c.item].name} per plot.`,
+  })),
+  ...POTION_LIST.map(([item, , , level, inputs, restores, cost]) => ({
+    item,
+    cost,
+    category: 'potions',
+    description: `${[restores.hp && `Restores ${restores.hp * 100}% HP${restores.hp ? ' (revives you if knocked out)' : ''}`, restores.mana && `${restores.hp ? 'and' : 'Restores'} ${restores.mana * 100}% mana`]
+      .filter(Boolean)
+      .join(' ')}. !drink it. Or !brew it at Alchemy ${level} from ${Object.entries(inputs)
+      .map(([i, q]) => `${q} ${ITEMS[i].name}`)
+      .join(' + ')}.`,
   })),
 ];
 
@@ -821,5 +874,7 @@ module.exports = {
   TOOL_TO_SKILL,
   TOOL_ALIASES,
   maxLevel,
+  maxHpFor,
+  maxManaFor,
   findItem,
 };

@@ -14,6 +14,8 @@ const {
   TOOL_TO_SKILL,
   TOOL_ALIASES,
   maxLevel,
+  maxHpFor,
+  maxManaFor,
   findItem,
 } = require('./skills');
 const { levelForXp, progress, characterProgress } = require('./xp');
@@ -50,6 +52,10 @@ const INFO_COMMANDS = {
   blackjack: ['chatBlackjack', 'blackjack'], bj: ['chatBlackjack', 'blackjack'],
   hit: ['chatHit', 'blackjack'], stand: ['chatStand', 'blackjack'], double: ['chatDouble', 'blackjack'],
   casino: ['casinoHelp', 'casino'], gamble: ['casinoHelp', 'casino'],
+  // Health and mana. Potions and !heal have no cooldown.
+  hp: ['vitalsInfo', 'hp'], health: ['vitalsInfo', 'hp'], mana: ['vitalsInfo', 'hp'], vitals: ['vitalsInfo', 'hp'],
+  drink: ['drink', 'drink'], quaff: ['drink', 'drink'], potion: ['drink', 'drink'],
+  heal: ['healSpell', 'heal'],
   commands: ['help', 'commands'], help: ['help', 'commands'], rpg: ['help', 'commands'], mmo: ['help', 'commands'],
 };
 
@@ -64,7 +70,10 @@ const SLOT_ALIASES = {
 const SLOT_ICONS = { weapon: '🗡️', head: '⛑️', body: '👕', legs: '👖', shield: '🛡️' };
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 const CROPS = SKILLS.farming.resources;
-const minutesLeft = (ms) => (ms <= 60_000 ? '1m' : ms < 3_600_000 ? `${Math.ceil(ms / 60_000)}m` : `${Math.floor(ms / 3_600_000)}h ${Math.ceil((ms % 3_600_000) / 60_000)}m`);
+const minutesLeft = (ms) => {
+  const m = ms < 3_600_000 ? Math.max(1, Math.ceil(ms / 60_000)) : Math.floor(ms / 60_000); // "23h 59m", not "24h 0m"
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+};
 
 // Where each material comes from, for "you're missing..." hints:
 // copper_ore -> "!mine copper", bronze_bar -> "!smelt bronze".
@@ -408,6 +417,9 @@ class GameEngine extends EventEmitter {
   }
 
   fight(user, args) {
+    const now = this.now();
+    const vit = this.vitals(user.id, now);
+    if (vit.ko) return { consumed: false, reply: this.knockedOutMessage(user.id, vit, now) };
     const pick = this.chooseWeapon(user.id);
     if (!pick.weapon) {
       if (pick.reason === 'level') {
@@ -429,12 +441,8 @@ class GameEngine extends EventEmitter {
       const q = args.join(' ').toLowerCase().replace(/^an? /, '');
       monster = skill.monsters.find((m) => m.id === q.replace(/\s+/g, '_') || m.name.toLowerCase() === q) || skill.monsters.find((m) => m.name.toLowerCase().startsWith(q));
       if (!monster) {
-        const next = skill.monsters.find((m) => m.level > pick.level);
-        const opts = [...unlocked, ...(next ? [next] : [])].map((m) => `${m.name} (${m.level})`).join(', ');
-        return { consumed: false, reply: `unknown monster. You can fight: ${opts}` };
-      }
-      if (monster.level > pick.level) {
-        return { consumed: false, reply: `you need ${skill.icon} ${skill.name} level ${monster.level} to fight a ${monster.name} (you are ${pick.level}).` };
+        const near = [...unlocked.slice(-3), ...skill.monsters.filter((m) => m.level > pick.level).slice(0, 2)];
+        return { consumed: false, reply: `unknown monster. Near your level: ${near.map((m) => `${m.name} (${m.level})`).join(', ')}. Anything higher is risky!` };
       }
     } else {
       monster = this.pickResource(unlocked);
@@ -451,14 +459,28 @@ class GameEngine extends EventEmitter {
     }
 
     const stats = this.combatStats(user.id);
-    const chance = this.winChance(pick.level, stats, monster);
     const weapon = ITEMS[pick.weapon];
-    if (this.rng() >= chance) {
-      const gained = this.grantXp(user, pick.skillId, this.xpFor(monster.xp * 0.25));
+    const f = this.simulateFight(pick.level, stats, monster, vit.hp);
+    const hpLeft = Math.max(0, vit.hp - f.taken);
+    const tag = `${monster.icon} ${monster.name}${monster.level > pick.level ? ` (level ${monster.level})` : ''}`;
+
+    if (f.outcome === 'died') {
+      this.repo.setVitals(user.id, { hp: 0, mana: vit.mana, koUntil: now + this.cfg.hpRegenHours * 3_600_000 }, now);
+      // A little XP for the damage you did before going down.
+      const gained = this.grantXp(user, pick.skillId, this.xpFor(monster.xp * 0.5 * (f.dealt / monster.hp)));
+      this.emitActivity(user, { kind: 'death', skill: pick.skillId, text: `was knocked out by a ${monster.name}` });
+      const potion = this.shopItems().find((x) => x.item === 'minor_health_potion');
       return {
         consumed: true,
-        reply: `${monster.icon} the ${monster.name} was too strong and you retreated!${swapped} ${gained.text} (win chance ${Math.round(chance * 100)}% — better gear helps)`,
+        reply: `💀 the ${tag} knocked you out!${swapped} You hit it for ${fmt(f.dealt)} of its ${fmt(monster.hp)} HP. ${gained.text} Back at full HP in ${this.cfg.hpRegenHours}h, or !drink a health potion${potion ? ` (!buy minor health potion, ${fmt(potion.cost)} pts)` : ''}.`,
       };
+    }
+    this.repo.setVitals(user.id, { hp: hpLeft, mana: vit.mana, koUntil: 0 }, now);
+    // Read after the XP so a level-up's bigger max HP shows.
+    const hpText = () => `❤️ ${fmt(Math.ceil(hpLeft))}/${fmt(this.vitals(user.id, now).maxHp)} HP`;
+    if (f.outcome === 'fled') {
+      const gained = this.grantXp(user, pick.skillId, this.xpFor(monster.xp * 0.25));
+      return { consumed: true, reply: `${monster.icon} you couldn't beat the ${tag} and backed off.${swapped} ${gained.text} | ${hpText()}` };
     }
 
     let loot;
@@ -479,10 +501,134 @@ class GameEngine extends EventEmitter {
       text: `defeated a ${monster.name}${rare ? ` and found a RARE ${ITEMS[loot].name}` : ''}`,
     });
     const gained = this.grantXp(user, pick.skillId, xpGain);
+    const low = hpLeft < vit.maxHp * 0.25 ? ' ⚠️ low HP! !drink a potion or !heal' : '';
     return {
       consumed: true,
-      reply: `${weapon.icon} you defeated a ${monster.icon} ${monster.name}${swapped} and looted ${rare ? 'a RARE ' : ''}${itemLabel(loot)}! ${gained.text}${this.fullBagNote(user.id)}`,
+      reply: `${weapon.icon} you defeated a ${tag}${swapped} and looted ${rare ? 'a RARE ' : ''}${itemLabel(loot)}! ${gained.text} | ${hpText()} (-${fmt(Math.round(f.taken))})${low}${this.fullBagNote(user.id)}`,
     };
+  }
+
+  // Trade blows until someone drops. Each round you hit for 50-100% of your attack (level + weapon);
+  // the monster hits for 50-100% of its attack, more if your armor is weaker than its level calls
+  // for (less if stronger) and more the further it outlevels you. After 100 rounds you back off.
+  simulateFight(level, stats, monster, hp) {
+    const offence = level + stats.attack;
+    const armor = clamp((monster.damage + 1) / (stats.defence + 1), 0.35, 2);
+    // Monsters above your level hit harder the further above they are (2x your level: twice as hard).
+    const outlevel = clamp(monster.level / Math.max(1, level), 0.5, 10);
+    let monsterHp = monster.hp;
+    let dealt = 0;
+    let taken = 0;
+    for (let round = 0; round < 100; round++) {
+      const hit = Math.max(1, Math.round(offence * (0.5 + 0.5 * this.rng())));
+      dealt += Math.min(hit, monsterHp);
+      monsterHp -= hit;
+      if (monsterHp <= 0) return { outcome: 'won', dealt, taken };
+      taken += monster.attack * armor * outlevel * (0.5 + 0.5 * this.rng());
+      if (taken >= hp) return { outcome: 'died', dealt, taken: hp };
+    }
+    return { outcome: 'fled', dealt, taken };
+  }
+
+  // ---- Health and mana ------------------------------------------------------
+
+  // Current HP and mana with regeneration applied. Knocked-out players have 0 HP until ko_until,
+  // then they're back at full.
+  vitals(userId, now = this.now()) {
+    const u = this.repo.getUser(userId);
+    const level = this.combatLevel(userId);
+    const maxHp = maxHpFor(level);
+    const maxMana = maxManaFor(level);
+    const regen = (value, at, max, hours) => (value === null || value === undefined ? max : Math.min(max, value + (max * Math.max(0, now - at)) / (hours * 3_600_000)));
+    const mana = regen(u.mana, u.mana_at, maxMana, this.cfg.manaRegenHours);
+    if (u.ko_until > now) return { hp: 0, maxHp, mana, maxMana, ko: true, koUntil: u.ko_until };
+    const hp = u.ko_until ? maxHp : regen(u.hp, u.hp_at, maxHp, this.cfg.hpRegenHours);
+    return { hp, maxHp, mana, maxMana, ko: false, koUntil: 0 };
+  }
+
+  knockedOutMessage(userId, vit, now) {
+    const owned = this.healthPotions(userId);
+    const fix = owned.length ? `!drink ${ITEMS[owned[0]].name.toLowerCase()}` : '!buy minor health potion then !drink';
+    return `💀 you're knocked out! Back at full HP in ${minutesLeft(vit.koUntil - now)}, or ${fix} to get back up now.`;
+  }
+
+  // Health potions the player owns, weakest first.
+  healthPotions(userId) {
+    const inv = this.repo.getInventory(userId);
+    return Object.keys(inv)
+      .filter((id) => ITEMS[id]?.potion?.hp && inv[id] > 0)
+      .sort((a, b) => ITEMS[a].potion.hp - ITEMS[b].potion.hp);
+  }
+
+  vitalsLine(vit) {
+    const hp = vit.ko ? `💀 knocked out (0/${fmt(vit.maxHp)} HP)` : `❤️ ${fmt(Math.floor(vit.hp))}/${fmt(vit.maxHp)} HP`;
+    return `${hp} · 🔷 ${fmt(Math.floor(vit.mana))}/${fmt(vit.maxMana)} mana`;
+  }
+
+  // !hp
+  vitalsInfo(user) {
+    const now = this.now();
+    const vit = this.vitals(user.id, now);
+    const extra = vit.ko
+      ? ` Back up in ${minutesLeft(vit.koUntil - now)}, or !drink a health potion.`
+      : vit.hp < vit.maxHp
+        ? ` Full in ${minutesLeft(((vit.maxHp - vit.hp) / vit.maxHp) * this.cfg.hpRegenHours * 3_600_000)}. !heal (mana) or !drink a potion to heal now.`
+        : '';
+    return `${this.vitalsLine(vit)}.${extra}`;
+  }
+
+  // !drink [potion]: with no name, drinks what you need most — the weakest health potion that tops
+  // you up (or your strongest if none does), else a mana potion.
+  drink(user, args) {
+    const now = this.now();
+    const inv = this.repo.getInventory(user.id);
+    const owned = Object.keys(inv).filter((id) => ITEMS[id]?.potion && inv[id] > 0);
+    const vit = this.vitals(user.id, now);
+    let id;
+    if (args.length) {
+      id = findItem(args.join(' '), owned);
+      if (!id) {
+        const any = findItem(args.join(' '), SHOP.filter((x) => x.category === 'potions').map((x) => x.item));
+        return any ? `you don't have a ${ITEMS[any].name}. !buy ${ITEMS[any].name.toLowerCase()} or !brew it.` : `unknown potion. You have: ${owned.map((i) => ITEMS[i].name).join(', ') || 'none — see !shop'}`;
+      }
+    } else {
+      if (!owned.length) return `you have no potions. !buy minor health potion (see !shop) or !brew one from farmed crops.`;
+      const missingHp = vit.maxHp - vit.hp;
+      const hpPots = owned.filter((i) => ITEMS[i].potion.hp).sort((a, b) => ITEMS[a].potion.hp - ITEMS[b].potion.hp);
+      const manaPots = owned.filter((i) => ITEMS[i].potion.mana).sort((a, b) => ITEMS[a].potion.mana - ITEMS[b].potion.mana);
+      if (missingHp > 0.5 && hpPots.length) id = hpPots.find((i) => ITEMS[i].potion.hp * vit.maxHp >= missingHp) || hpPots[hpPots.length - 1];
+      else if (vit.maxMana - vit.mana > 0.5 && manaPots.length) {
+        id = manaPots.find((i) => ITEMS[i].potion.mana * vit.maxMana >= vit.maxMana - vit.mana) || manaPots[manaPots.length - 1];
+      } else return `you're already at full health${manaPots.length ? ' and mana' : ''}. ${this.vitalsLine(vit)}`;
+    }
+    const p = ITEMS[id].potion;
+    const heals = p.hp && (vit.ko || vit.hp < vit.maxHp);
+    const mana = p.mana && vit.mana < vit.maxMana;
+    if (!heals && !mana) return `no need — ${this.vitalsLine(vit)}.`;
+    const hp = heals ? Math.min(vit.maxHp, (vit.ko ? 0 : vit.hp) + p.hp * vit.maxHp) : vit.hp;
+    const newMana = p.mana ? Math.min(vit.maxMana, vit.mana + p.mana * vit.maxMana) : vit.mana;
+    this.repo.transaction(() => {
+      this.repo.removeItem(user.id, id, 1);
+      this.repo.setVitals(user.id, { hp, mana: newMana, koUntil: vit.ko && !heals ? vit.koUntil : 0 }, now);
+    });
+    const after = this.vitals(user.id, now);
+    return `${ITEMS[id].icon} you drank a ${ITEMS[id].name}${vit.ko && heals ? ' and got back on your feet' : ''}! ${this.vitalsLine(after)}${after.ko ? '. Still knocked out — only health potions revive.' : ''}`;
+  }
+
+  // !heal: spend half your max mana to restore a quarter of your max HP. Can't revive you.
+  healSpell(user) {
+    const now = this.now();
+    const vit = this.vitals(user.id, now);
+    if (vit.ko) return `${this.knockedOutMessage(user.id, vit, now)} (!heal can't revive you.)`;
+    if (vit.hp >= vit.maxHp) return `you're already at full health. ${this.vitalsLine(vit)}`;
+    const cost = Math.ceil(vit.maxMana / 2);
+    if (vit.mana < cost) {
+      const wait = ((cost - vit.mana) / vit.maxMana) * this.cfg.manaRegenHours * 3_600_000;
+      return `✨ !heal needs ${cost} mana (you have ${Math.floor(vit.mana)}). Enough in ${minutesLeft(wait)}, or !drink a mana potion.`;
+    }
+    const hp = Math.min(vit.maxHp, vit.hp + vit.maxHp * 0.25);
+    this.repo.setVitals(user.id, { hp, mana: vit.mana - cost, koUntil: 0 }, now);
+    return `✨ you cast Heal (+${fmt(Math.round(hp - vit.hp))} HP). ${this.vitalsLine(this.vitals(user.id, now))}`;
   }
 
   // What the bot says when someone tries to !fight without a weapon: the two ways to get a sword,
@@ -497,14 +643,6 @@ class GameEngine extends EventEmitter {
     const hammer = inv.smithing_hammer ? 'hammer ✅' : '!buy hammer';
     const craft = `⚒️ ${hammer} → !smelt bronze (${have}/${need}) → !smith bronze sword`;
     return `⚔️ you need a sword! ${buy}${buy ? ' or ' : ''}${craft}. Then !equip bronze sword.`;
-  }
-
-  // Your attack (level + weapon) against the monster's power, your defence against its damage.
-  // Evenly matched with the right gear: ~75%. Always between 5% and 95%.
-  winChance(level, stats, monster) {
-    const offence = Math.min(1.5, (level + stats.attack) / monster.power);
-    const defence = Math.min(1.5, (stats.defence + 1) / (monster.damage + 1));
-    return clamp(0.25 + 0.5 * (0.65 * offence + 0.35 * defence), 0.05, 0.95);
   }
 
   // !equip <item>: wear gear from the backpack (whatever was in that slot goes back in the backpack).
@@ -554,7 +692,7 @@ class GameEngine extends EventEmitter {
   equippedInfo(user) {
     const st = this.combatStats(user.id);
     const parts = GEAR_SLOTS.map((sl) => (st.worn[sl] ? itemLabel(st.worn[sl]) : `${SLOT_ICONS[sl]} —`));
-    return `${parts.join(' | ')} | ⚔️ Attack +${st.attack} · 🛡️ Defence +${st.defence} · Combat level ${st.level}`;
+    return `${parts.join(' | ')} | ⚔️ Attack +${st.attack} · 🛡️ Defence +${st.defence} · Combat level ${st.level} | ${this.vitalsLine(this.vitals(user.id))}`;
   }
 
   // ---- Shop (!buy, website) -------------------------------------------------
@@ -565,9 +703,11 @@ class GameEngine extends EventEmitter {
   }
 
   shopList() {
-    const main = this.shopItems().filter((x) => x.category !== 'seeds');
+    const main = this.shopItems().filter((x) => !x.category || x.category === 'farming');
     const list = main.map((x) => `${x.icon} ${x.name} ${fmt(x.cost)}`).join(', ');
-    return `🛒 Shop: ${list} pts, plus seeds (e.g. !buy carrot seeds 5) — ${this.siteUrl}/#/shop`;
+    const potion = this.shopItems().find((x) => x.category === 'potions');
+    const potions = potion ? `, potions from ${fmt(potion.cost)} (!buy ${potion.name.toLowerCase()})` : '';
+    return `🛒 Shop: ${list} pts${potions}, plus seeds (e.g. !buy carrot seeds 5) — ${this.siteUrl}/#/shop`;
   }
 
   // Shared by "!buy" and the website shop. Returns the reply text.
@@ -589,7 +729,7 @@ class GameEngine extends EventEmitter {
     if (found.item === 'farm_plot') return this.buyPlots(user, qty, found);
 
     const inv = this.repo.getInventory(user.id);
-    const isTool = found.keep && !found.gear && !found.seedFor;
+    const isTool = found.keep && !found.gear && !found.seedFor && !found.potion;
     if (isTool) {
       if (inv[found.item]) return `you already have a ${found.icon} ${found.name}.`;
       qty = 1;
@@ -617,7 +757,9 @@ class GameEngine extends EventEmitter {
               ? ' Now try !skin.'
               : found.seedFor
                 ? ` Now !plant ${ITEMS[found.seedFor].name.toLowerCase()}.`
-                : '';
+                : found.potion
+                  ? ' !drink it when you need it.'
+                  : '';
       return `🛒 bought ${itemLabel(found.item, qty)} for ${fmt(total)} pts!${tip} Balance: ${fmt(this.repo.getUser(user.id).points)}`;
     });
   }
@@ -926,7 +1068,7 @@ class GameEngine extends EventEmitter {
     const on = (list) => list.filter((c) => !off.includes(c)).map((c) => `${p}${c}`).join(' ');
     const skills = on(SKILL_IDS.flatMap((id) => (SKILLS[id].type === 'farm' ? ['plant', 'harvest'] : [SKILLS[id].command])));
     const tools = Object.keys(TOOL_TO_SKILL).join('/');
-    return `Skills: ${skills} (e.g. ${p}mine iron, ${p}smith bronze sword) | Gear: ${p}gear ${p}equip ${p}equipped ${p}shop ${p}buy, ${p}upgrade ${tools}/backpack | Info: ${on(['stats', 'inv', 'sell', 'points', 'top'])}${this.cfg.casinoEnabled === false ? '' : ` | Casino: ${p}casino`} | ${this.siteUrl}`;
+    return `Skills: ${skills} (e.g. ${p}mine iron, ${p}smith bronze sword) | Gear: ${p}gear ${p}equip ${p}equipped ${p}shop ${p}buy, ${p}upgrade ${tools}/backpack | Combat: ${on(['hp', 'drink', 'heal'])} | Info: ${on(['stats', 'inv', 'sell', 'points', 'top'])}${this.cfg.casinoEnabled === false ? '' : ` | Casino: ${p}casino`} | ${this.siteUrl}`;
   }
 
   // ---- Tools & upgrades (!upgrade rod, !upgrade backpack) --------------------
@@ -1352,10 +1494,17 @@ class GameEngine extends EventEmitter {
       },
       combat: (() => {
         const st = this.combatStats(userId);
+        const vit = this.vitals(userId);
         return {
           attack: st.attack,
           defence: st.defence,
           level: st.level,
+          hp: Math.floor(vit.hp),
+          maxHp: vit.maxHp,
+          mana: Math.floor(vit.mana),
+          maxMana: vit.maxMana,
+          knockedOutUntil: vit.ko ? vit.koUntil : null,
+          hpRegenHours: this.cfg.hpRegenHours,
           worn: GEAR_SLOTS.map((slot) => ({ slot, item: st.worn[slot] ? { id: st.worn[slot], ...ITEMS[st.worn[slot]] } : null })),
         };
       })(),
@@ -1389,6 +1538,7 @@ class GameEngine extends EventEmitter {
             icon: r.item ? ITEMS[r.item].icon : r.icon,
             value: r.item ? this.sellValue(r.item) : undefined,
             kind: r.kind,
+            hp: r.hp,
             grow: r.grow ? Math.max(1, Math.round(r.grow * (this.cfg.growMultiplier ?? 1))) : undefined,
             seedCost: r.seed ? this.seedPrice(r) : undefined,
             loot: r.loot ? r.loot.map((i) => ({ item: ITEMS[i].name, icon: ITEMS[i].icon, value: this.sellValue(i) })) : undefined,
@@ -1425,7 +1575,7 @@ class GameEngine extends EventEmitter {
 // Fixed settings built from config, for tests and scripts that don't need live editing.
 function staticSettings(config) {
   return {
-    game: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, disabledCommands: [], ...config.game },
+    game: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, hpRegenHours: 24, manaRegenHours: 12, disabledCommands: [], ...config.game },
     all: {},
   };
 }

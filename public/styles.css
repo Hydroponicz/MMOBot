@@ -23,6 +23,7 @@
   --skinning: #c08457;
   --farming: #84cc16;
   --swords: #f87171;
+  --alchemy: #a78bfa;
 }
 
 * { box-sizing: border-box; }
@@ -422,3 +423,15 @@ tr.locked td { opacity: 0.55; }
   .card { width: 52px; height: 76px; }
 }
 .casino-side .form-row > input:first-child { max-width: none; }
+
+/* Health and mana */
+.vitals { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+.vital-label { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 4px; }
+.vital-label b { font-variant-numeric: tabular-nums; }
+.vital-bar { height: 12px; border-radius: 99px; background: var(--bg-2); border: 1px solid var(--border); overflow: hidden; }
+.vital-bar span { display: block; height: 100%; border-radius: inherit; transition: width 0.4s; }
+.vital.hp .vital-bar span { background: linear-gradient(90deg, #dc2626, #f87171); }
+.vital.hp.ko .vital-label { color: var(--danger); }
+.vital.mana .vital-bar span { background: linear-gradient(90deg, #2563eb, #60a5fa); }
+.kind-potion { background: rgba(167, 139, 250, 0.15); color: var(--alchemy); }
+@media (max-width: 600px) { .vitals { grid-template-columns: 1fr; } }

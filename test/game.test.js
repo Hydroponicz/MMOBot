@@ -128,7 +128,7 @@ test('!stats, !inv, !top, !points and !commands respond', () => {
   assert.match(say('!top'), /1\. Alice/);
   assert.match(say('!top fishing'), /Fishing: 1\. Alice Lv2/);
   assert.match(say('!points'), /points/);
-  assert.match(say('!commands'), /!fish !mine !chop !dig !skin !plant !harvest !smelt !smith !fight/);
+  assert.match(say('!commands'), /!fish !mine !chop !dig !skin !plant !harvest !smelt !smith !brew !fight/);
   assert.equal(say('!unknowncommand'), null);
 });
 
@@ -136,7 +136,7 @@ test('profile exposes everything the website needs', () => {
   const { repo, engine, say } = setup();
   say('!fish');
   const p = engine.profile(repo.getUserByName('alice').id);
-  assert.equal(p.skills.length, 9);
+  assert.equal(p.skills.length, 10);
   assert.equal(p.skills[0].id, 'fishing');
   assert.equal(p.skills[0].level, 2);
   assert.equal(p.skills[0].rank, 1);
@@ -408,7 +408,7 @@ test('rod prices saved before the tool rework still apply', () => {
 test('the shop sells a smithing hammer (500) and a sword (1,000) via !buy', () => {
   const { repo, say } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
-  assert.match(say('!shop'), /🔨 Smithing Hammer 500, 🗡️ Bronze Sword 1,000, 🔪 Skinning Knife 500, 🟫 Farm Plot 750 pts, plus seeds/);
+  assert.match(say('!shop'), /🔨 Smithing Hammer 500, 🗡️ Bronze Sword 1,000, 🔪 Skinning Knife 500, 🟫 Farm Plot 750 pts, potions from 150 \(!buy minor health potion\), plus seeds/);
   assert.match(say('!buy hammer'), /Smithing Hammer costs 500 pts, you have 5/);
   repo.addPoints(u.id, 2000);
   assert.match(say('!buy hammer'), /bought 🔨 Smithing Hammer for 500 pts! Now try !smith bronze sword/);
@@ -462,19 +462,17 @@ test('!sell all keeps gear and tools', () => {
   assert.match(say('!sell bronze sword'), /sold 🗡️ Bronze Sword for 26 pts/);
 });
 
-test('!fight needs a weapon, auto-equips the best one, and fights levelled monsters', () => {
-  // rolls: monster pick, win roll (0.1 < chance), rare roll (no), loot pick (0.1 -> first loot)
-  const { repo, say, tick } = setup({ rolls: [0.0, 0.1, 0.99, 0.1] });
+test('!fight needs a weapon, auto-equips the best one, and any monster can be fought', () => {
+  // rolls: monster pick, then the fight's hit rolls (0.99 by default), rare roll, loot pick
+  const { repo, say, tick } = setup({ rolls: [0.0] });
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
   assert.match(say('!fight'), /you need a sword! 🛒 !buy sword \(1,000 pts, you have 5\)/);
   repo.addItem(u.id, 'bronze_sword', 1);
   repo.addItem(u.id, 'steel_sword', 1); // too high level for now
-  assert.match(say('!fight'), /you defeated a 🐔 Chicken \(equipped your Bronze Sword\) and looted 🪶 Feathers! \+10 XP/);
+  assert.match(say('!fight'), /you defeated a 🐔 Chicken \(equipped your Bronze Sword\) and looted .*! \+10 XP.*Swords level 2!.*\| ❤️ \d+\/70 HP \(-\d\)/);
   assert.equal(repo.getWorn(u.id).weapon, 'bronze_sword');
   tick();
-  assert.match(say('!fight wolf'), /need 🗡️ Swords level 20 to fight a Wolf \(you are 2\)/);
-  assert.match(say('!fight dragon'), /need 🗡️ Swords level 400/);
-  assert.match(say('!fight unicorn'), /unknown monster. You can fight: Chicken \(1\), Giant Rat \(5\)/);
+  assert.match(say('!fight unicorn'), /unknown monster. Near your level: Chicken \(1\), Giant Rat \(5\), Goblin \(10\)/);
 
   repo.addXp(u.id, 'swords', xpForLevel(25));
   tick();
@@ -483,18 +481,99 @@ test('!fight needs a weapon, auto-equips the best one, and fights levelled monst
   assert.equal(repo.getInventory(u.id).bronze_sword, 1, 'old weapon goes back in the backpack');
 });
 
-test('losing a fight gives a little XP and no loot; gear raises the win chance', () => {
-  const { repo, engine, say } = setup({ rolls: [0.99] });
+test('fighting far above your level knocks you out until you drink a potion or 24h pass', () => {
+  const { repo, engine, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addXp(u.id, 'swords', xpForLevel(5));
+  repo.addItem(u.id, 'bronze_sword', 1);
+  assert.match(engine.vitalsInfo(u), /❤️ 100\/100 HP · 🔷 30\/30 mana\.$/);
+  assert.match(say('!fight dragon'), /💀 the 🐉 Dragon \(level 400\) knocked you out! \(equipped your Bronze Sword\) You hit it for 9 of its 2,750 HP\. \+\d XP.*Back at full HP in 24h, or !drink a health potion \(!buy minor health potion, 150 pts\)/);
+  assert.equal(repo.getInventory(u.id).feathers, undefined, 'no loot');
+  tick();
+  assert.match(say('!fight chicken'), /💀 you're knocked out! Back at full HP in 23h 59m/);
+  assert.match(say('!hp'), /💀 knocked out \(0\/100 HP\).*Back up in 23h 59m/);
+  assert.match(say('!heal'), /can't revive you/);
+  assert.match(say('!drink'), /you have no potions/);
+
+  // A potion gets you back up with part of your HP.
+  repo.addItem(u.id, 'minor_health_potion', 1);
+  assert.match(say('!drink'), /🧪 you drank a Minor Health Potion and got back on your feet! ❤️ 25\/100 HP/);
+  tick();
+  assert.match(say('!fight chicken'), /defeated a 🐔 Chicken/);
+
+  // Or wait it out.
+  const bob = repo.upsertUser({ kickUserId: '2', username: 'Bob' });
+  repo.addItem(bob.id, 'bronze_sword', 1);
+  say('!fight elder dragon', 'Bob', '2');
+  assert.equal(engine.vitals(bob.id).ko, true);
+  tick(24 * 3600);
+  assert.equal(engine.vitals(bob.id).ko, false);
+  assert.equal(engine.vitals(bob.id).hp, 60, 'back at full HP');
+});
+
+test('fights at your level cost a little HP, which regenerates; armor matters', () => {
+  const { repo, engine, say, tick } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
   repo.addXp(u.id, 'swords', xpForLevel(10));
   repo.addItem(u.id, 'bronze_sword', 1);
-  assert.match(say('!fight goblin'), /the Goblin was too strong and you retreated! \(equipped your Bronze Sword\) \+7 XP, \+1 pts.*win chance \d+%/);
-  const goblin = require('../src/game/skills').SKILLS.swords.monsters.find((m) => m.id === 'goblin');
-  const bare = engine.winChance(10, { attack: 4, defence: 0 }, goblin);
-  const armored = engine.winChance(10, { attack: 4, defence: 15 }, goblin);
-  assert.ok(bare > 0.5 && bare < 0.65, `bronze sword, no armor: ${bare}`);
-  assert.ok(armored > 0.7, `full bronze: ${armored}`);
-  assert.ok(engine.winChance(1, { attack: 4, defence: 0 }, require('../src/game/skills').SKILLS.swords.monsters[0]) > 0.9, 'chickens are easy');
+  assert.match(say('!fight goblin'), /you defeated a 👺 Goblin .*\| ❤️ 1[23]\d\/150 HP/);
+  const hurt = engine.vitals(u.id).hp;
+  assert.ok(hurt < 150);
+  tick(3600);
+  assert.ok(Math.abs(engine.vitals(u.id).hp - (hurt + 150 / 24)) < 0.01, 'regains 1/24 of max HP per hour');
+
+  // Simulated fights with random rolls: at par you almost always win, armor saves HP.
+  const { SKILLS } = require('../src/game/skills');
+  const mon = (id) => SKILLS.swords.monsters.find((m) => m.id === id);
+  let seed = 1;
+  engine.rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const run = (level, stats, m, n = 400) => {
+    let wins = 0;
+    let taken = 0;
+    for (let i = 0; i < n; i++) {
+      const f = engine.simulateFight(level, stats, m, 50 + 10 * level);
+      if (f.outcome === 'won') wins++;
+      taken += f.taken;
+    }
+    return { win: wins / n, taken: taken / n };
+  };
+  const bare = run(10, { attack: 4, defence: 0 }, mon('goblin'));
+  const armored = run(10, { attack: 4, defence: 15 }, mon('goblin'));
+  assert.equal(armored.win, 1);
+  assert.ok(armored.taken < bare.taken / 1.8, `armor: ${armored.taken} vs ${bare.taken}`);
+  assert.ok(armored.taken < 150 * 0.08, `a par fight costs under 8% HP: ${armored.taken}`);
+  assert.ok(run(5, { attack: 4, defence: 15 }, mon('wolf')).win < 0.2, 'level 5 vs a level 20 wolf usually loses');
+  assert.ok(run(40, { attack: 18, defence: 52 }, mon('orc')).win > 0.9, 'a bit above your level is fine with good gear');
+});
+
+test('!drink picks the right potion, !heal spends mana, potions can be bought and brewed', () => {
+  const { repo, engine, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.setVitals(u.id, { hp: 20, mana: 20, koUntil: 0 }, 1_000_000);
+  assert.match(say('!heal'), /✨ you cast Heal \(\+15 HP\)\. ❤️ 35\/60 HP · 🔷 9\/22 mana/);
+  assert.match(say('!heal'), /needs 11 mana \(you have 9\)\. Enough in 1h 5m/);
+  repo.addItem(u.id, 'minor_health_potion', 2);
+  repo.addItem(u.id, 'health_potion', 1);
+  repo.addItem(u.id, 'minor_mana_potion', 1);
+  assert.match(say('!drink'), /drank a Health Potion! ❤️ 60\/60 HP/, 'the smallest potion that tops you up');
+  assert.match(say('!drink'), /drank a Minor Mana Potion! ❤️ 60\/60 HP · 🔷 17\/22 mana/);
+  assert.match(say('!drink'), /already at full health/);
+  assert.match(say('!drink minor health'), /no need/);
+  assert.match(say('!drink elixir'), /don't have a Elixir of Life\. !buy elixir of life or !brew it/);
+  assert.equal(repo.getInventory(u.id).minor_health_potion, 2);
+
+  // Buying several, keeping them on !sell all.
+  repo.addPoints(u.id, 1000);
+  assert.match(say('!buy minor health potion 3'), /bought 🧪 3x Minor Health Potion for 450 pts! !drink it/);
+  assert.match(say('!sell all'), /nothing to sell/);
+
+  // Brewing from crops.
+  repo.addItem(u.id, 'carrot', 2);
+  assert.match(say('!brew'), /⚗️ you brewed 🧪 Minor Health Potion! \+24 XP/);
+  tick();
+  assert.match(say('!brew health potion'), /need ⚗️ Alchemy level 25/);
+  assert.match(say('!brew'), /nothing to brew! a Minor Health Potion \(potion\) needs 2 Carrot\. You're missing 2 Carrot — try !plant carrot/);
+  assert.match(engine.equippedInfo(u), /❤️ 60\/60 HP · 🔷 17\/22 mana/);
 });
 
 test('new skills never lower anyone\'s character level', () => {
