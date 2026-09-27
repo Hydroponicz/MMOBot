@@ -370,9 +370,7 @@ class GameEngine extends EventEmitter {
         const sk = SKILLS[WEAPON_SKILL[it.weaponType]];
         return { consumed: false, reply: `your ${it.icon} ${it.name} needs ${sk.name} level ${it.level}. Get a weaker weapon to train up first.` };
       }
-      const sword = this.shopItems().find((x) => ITEMS[x.item].weaponType);
-      const buy = sword ? `!buy sword (${fmt(sword.cost)} pts, or ${this.siteUrl}/#/shop)` : 'the shop';
-      return { consumed: false, reply: `you need a weapon to fight! Get a sword from ${buy} or smith one: !smith bronze sword` };
+      return { consumed: false, reply: this.howToGetSword(user) };
     }
     const bag = this.backpack(user.id);
     if (bag.used >= bag.capacity) {
@@ -440,6 +438,30 @@ class GameEngine extends EventEmitter {
       consumed: true,
       reply: `${weapon.icon} you defeated a ${monster.icon} ${monster.name}${swapped} and looted ${rare ? 'a RARE ' : ''}${itemLabel(loot)}! ${gained.text}${this.fullBagNote(user.id)}`,
     };
+  }
+
+  // What the bot says when someone tries to !fight without a weapon: both ways to get a sword,
+  // with checkmarks for what they already have. Stays well under Kick's 500-character limit.
+  howToGetSword(user) {
+    const points = this.repo.getUser(user.id).points;
+    const inv = this.repo.getInventory(user.id);
+    const shop = this.shopItems();
+    const sword = shop.find((x) => x.weaponType);
+    const hammer = shop.find((x) => x.item === 'smithing_hammer');
+    const recipe = SKILLS.smithing.recipes.find((r) => r.item === 'bronze_sword');
+    const [alloy, need] = Object.entries(recipe.inputs)[0];
+    const have = inv[alloy] || 0;
+
+    const parts = ['⚔️ you need a sword to fight!'];
+    if (sword) {
+      const afford = points >= sword.cost ? `you have ${fmt(points)} ✅` : `you have ${fmt(points)}, need ${fmt(sword.cost - points)} more`;
+      parts.push(`🛒 BUY: !buy sword (${fmt(sword.cost)} pts, ${afford}) or ${this.siteUrl}/#/shop.`);
+    }
+    const step1 = inv.smithing_hammer ? '1) Smithing Hammer ✅' : `1) !buy hammer${hammer ? ` (${fmt(hammer.cost)} pts)` : ''}`;
+    const step2 = `2) !mine copper + !mine tin, then !smelt bronze (${Math.min(have, need)}/${need} ${ITEMS[alloy].name}${have >= need ? ' ✅' : ''})`;
+    parts.push(`⚒️ OR CRAFT: ${step1} ${step2} 3) !smith bronze sword.`);
+    parts.push('Then !equip bronze sword and !fight (your best sword is equipped automatically).');
+    return parts.join(' ');
   }
 
   // Your attack (level + weapon) against the monster's power, your defence against its damage.

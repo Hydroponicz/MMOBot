@@ -466,7 +466,7 @@ test('!fight needs a weapon, auto-equips the best one, and fights levelled monst
   // rolls: monster pick, win roll (0.1 < chance), rare roll (no), loot pick (0.1 -> first loot)
   const { repo, say, tick } = setup({ rolls: [0.0, 0.1, 0.99, 0.1] });
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
-  assert.match(say('!fight'), /need a weapon to fight! Get a sword from !buy sword \(1,000 pts/);
+  assert.match(say('!fight'), /you need a sword to fight! 🛒 BUY: !buy sword \(1,000 pts, you have 5, need 995 more\)/);
   repo.addItem(u.id, 'bronze_sword', 1);
   repo.addItem(u.id, 'steel_sword', 1); // too high level for now
   assert.match(say('!fight'), /you defeated a 🐔 Chicken \(equipped your Bronze Sword\) and looted 🪶 Feathers! \+10 XP/);
@@ -511,4 +511,21 @@ test('a bare !smith (listing options) ignores the cooldown', () => {
   repo.addItem(u.id, 'bronze_bar', 2);
   assert.match(say('!smith bronze sword'), /smithed/);
   assert.match(say('!smith'), /nothing to smith yet|you can smith/);
+});
+
+test('!fight without a sword explains how to buy or craft one, with progress', () => {
+  const { repo, say } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  const first = say('!fight');
+  assert.ok(first.length <= 500, `fits in one Kick message (${first.length} chars)`);
+  assert.match(first, /🛒 BUY: !buy sword \(1,000 pts, you have 5, need 995 more\) or http:\/\/localhost:3000\/#\/shop\./);
+  assert.match(first, /⚒️ OR CRAFT: 1\) !buy hammer \(500 pts\) 2\) !mine copper \+ !mine tin, then !smelt bronze \(0\/2 Bronze Alloy\) 3\) !smith bronze sword\./);
+  assert.match(first, /Then !equip bronze sword and !fight/);
+
+  repo.addPoints(u.id, 2000);
+  repo.addItem(u.id, 'smithing_hammer', 1);
+  repo.addItem(u.id, 'bronze_bar', 2);
+  const later = say('!fight');
+  assert.match(later, /1,000 pts, you have 2,005 ✅/);
+  assert.match(later, /1\) Smithing Hammer ✅ 2\) .*\(2\/2 Bronze Alloy ✅\)/);
 });
