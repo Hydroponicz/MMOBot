@@ -63,7 +63,13 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
 
   // Live activity feed (Server-Sent Events) for the website and the OBS overlay.
   router.get('/events', (req, res) => {
-    res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+    // no-transform / X-Accel-Buffering stop proxies from buffering or compressing the stream.
+    res.set({
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
     res.flushHeaders();
     res.write('retry: 5000\n\n');
     const send = (entry) => res.write(`event: activity\ndata: ${JSON.stringify(entry)}\n\n`);
@@ -171,6 +177,23 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     const reason = String(req.body?.reason || '').slice(0, 200);
     logger.info(`[admin] ${req.user.username} ${applied >= 0 ? 'gave' : 'took'} ${Math.abs(applied)} points ${applied >= 0 ? 'to' : 'from'} ${user.username}${reason ? ` (${reason})` : ''}`);
     res.json({ player: repo.getUser(user.id) });
+  });
+
+  // Pops a sample event onto every open overlay (and the live feeds) so OBS setup can be checked.
+  // Not saved anywhere.
+  router.post('/admin/overlay-test', requireAdmin, (req, res) => {
+    engine.emit('activity', {
+      id: 0,
+      kind: 'test',
+      username: req.user.username,
+      text: 'is testing the overlay — it works! 🎉',
+      skill: null,
+      item: null,
+      xp: 0,
+      created_at: Date.now(),
+    });
+    logger.info(`[admin] ${req.user.username} sent a test overlay event`);
+    res.json({ ok: true });
   });
 
   router.post('/admin/disconnect/:kind', requireAdmin, (req, res) => {

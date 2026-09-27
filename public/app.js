@@ -39,7 +39,7 @@
   };
   const skillIcon = (id) => state.site?.skills.find((s) => s.id === id)?.icon || '✨';
   const feedIcon = (a) =>
-    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
+    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
 
   // ---- live activity (SSE) ----------------------------------------------
   const listeners = new Set();
@@ -554,11 +554,63 @@
           </section>
           <section class="panel">
             <h2>OBS overlay</h2>
-            <p class="muted">Add a Browser Source (400×600) with this URL to show level-ups and rare drops on stream.</p>
-            <code>${esc(location.origin)}/overlay.html</code>
+            <p class="muted">In OBS: <b>Sources → + → Browser</b>, paste the link below, set width 400 and height 600, then place it where you like. When it loads you'll see “MMOBot overlay connected” for a few seconds.</p>
+            <form id="overlay-form" class="overlay-form">
+              <label>Show
+                <select name="events">
+                  <option value="all">every action</option>
+                  <option value="big">only level-ups, rare finds &amp; upgrades</option>
+                </select>
+              </label>
+              <label>for <input type="number" name="seconds" value="10" min="2" max="120" style="width:70px"> seconds</label>
+              <label>max <input type="number" name="max" value="6" min="1" max="30" style="width:64px"> at once</label>
+            </form>
+            <div class="form-row" style="margin-top:10px">
+              <input type="text" id="overlay-url" readonly style="max-width:none" aria-label="Overlay link">
+              <button class="btn" id="overlay-copy">Copy</button>
+            </div>
+            <div class="form-row" style="margin-top:10px;flex-wrap:wrap">
+              <button class="btn btn-primary" id="overlay-test">Send test event</button>
+              <a class="btn" id="overlay-open" target="_blank" rel="noopener">Preview ↗</a>
+            </div>
+            <p class="muted" style="font-size:.85rem;margin-bottom:0">“Send test event” pops a message onto every open overlay (it isn't saved anywhere). If it doesn't appear in OBS, right-click the source → <b>Refresh</b>.</p>
           </section>
         </div>
       </div>`;
+
+    const overlayForm = $app.querySelector('#overlay-form');
+    const overlayUrl = () => {
+      const f = overlayForm;
+      const q = new URLSearchParams();
+      if (f.events.value === 'big') q.set('events', 'big');
+      if (Number(f.seconds.value) !== 10) q.set('seconds', f.seconds.value);
+      if (Number(f.max.value) !== 6) q.set('max', f.max.value);
+      return `${location.origin}/overlay.html${q.toString() ? `?${q}` : ''}`;
+    };
+    const syncOverlay = () => {
+      $app.querySelector('#overlay-url').value = overlayUrl();
+      $app.querySelector('#overlay-open').href = overlayUrl();
+    };
+    overlayForm.oninput = syncOverlay;
+    syncOverlay();
+    $app.querySelector('#overlay-copy').onclick = async () => {
+      const input = $app.querySelector('#overlay-url');
+      try {
+        await navigator.clipboard.writeText(input.value);
+        toast('Overlay link copied');
+      } catch {
+        input.select();
+        toast('Press Ctrl+C / ⌘C to copy');
+      }
+    };
+    $app.querySelector('#overlay-test').onclick = async () => {
+      try {
+        await api('/admin/overlay-test', { method: 'POST' });
+        toast('Test event sent. Check OBS.');
+      } catch (e) {
+        toast(`Failed: ${e.message}`);
+      }
+    };
 
     $app.querySelectorAll('[data-disconnect]').forEach((b) => {
       b.onclick = async () => {

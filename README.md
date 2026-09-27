@@ -25,7 +25,7 @@ Viewers type commands in your Kick chat to train skills, collect loot and level 
   - **Settings**: edit live, with no redeploy. Covers the command prefix, cooldowns, chat points, reply on/off, extra admins, XP/points/sell multipliers (e.g. double-XP events), switching individual commands on and off, and every rod's and backpack's price and stats.
   - **Players**: search players and give or take points.
   - **Logs**: chat commands and bot replies, Kick/webhook errors, logins and admin changes. Filter by level, source or text, with live tail. Kept for 14 days.
-- **OBS overlay** at `/overlay.html` that pops up level-ups and rare drops on stream.
+- **OBS overlay** at `/overlay.html` showing live actions on stream, with level-ups, rare finds and upgrades highlighted, plus a test button on the admin page.
 - **Test mode**: play from the browser (`DEV_MODE=true`) or terminal (`npm run simulate`) without connecting to Kick.
 
 ## Tech
@@ -102,7 +102,7 @@ The admin page shows the chat subscription, message and reply counts, storage st
 Webhook requests are verified against Kick's signature (RSA-SHA256 over `message-id.timestamp.body`). The public key is fetched from the API, with the published key built in as a fallback. Duplicate deliveries are ignored.
 
 ### 5. Add the overlay (optional)
-In OBS, add a **Browser Source** at `https://<your-domain>/overlay.html` (about 400×600). Add `?all=1` to show every action instead of only level-ups and rare drops.
+In OBS, go to **Sources → + → Browser** and paste `https://<your-domain>/overlay.html`, with width 400 and height 600. It shows "MMOBot overlay connected" for a few seconds when it loads, then every action as it happens, with level-ups, rare finds and upgrades highlighted. **Admin → Overview → OBS overlay** builds the link for you: every action or only the big moments (`?events=big`), how long each stays on screen and how many show at once. Its **Send test event** button pops a sample message onto every open overlay, so you can check your OBS setup without anyone playing.
 
 ### Testing with real Kick chat on your computer
 Kick can only deliver webhooks to a public URL. Run a tunnel (e.g. `cloudflared tunnel --url http://localhost:3000`), set `BASE_URL` to the tunnel URL in `.env`, and point a second Kick app's redirect and webhook URLs at it. Or just deploy to Railway and test there.

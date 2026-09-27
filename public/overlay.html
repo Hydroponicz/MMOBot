@@ -3,44 +3,91 @@
 <head>
   <meta charset="utf-8" />
   <title>MMOBot Overlay</title>
+  <link rel="icon" href="data:," />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@600;800&display=swap" rel="stylesheet" />
   <style>
-    /* OBS Browser Source: transparent background, newest events slide in at the bottom.
-       Options: ?all=1 shows every action (default: only level-ups, rare drops and big sales). */
+    /* OBS Browser Source (e.g. 400×600): transparent background, newest events slide in at the bottom.
+       URL options (build them on the admin page):
+         ?events=all      every action (default)       ?events=big   only level-ups, rare finds, upgrades
+         &seconds=10      how long each event stays    &max=6        how many can be on screen at once
+         &quiet=1         don't show the "connected" message when the overlay loads */
     html, body { margin: 0; background: transparent; overflow: hidden; }
     body { font-family: Inter, system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; justify-content: flex-end; padding: 12px; box-sizing: border-box; gap: 8px; }
     .ev {
-      display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 12px;
-      background: rgba(11, 14, 17, 0.88); color: #e8edf2; font-weight: 600; font-size: 18px;
+      display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-radius: 12px;
+      background: rgba(11, 14, 17, 0.88); color: #e8edf2; font-weight: 600; font-size: 16px;
       border-left: 4px solid #53fc18; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
-      animation: in 0.4s ease-out, out 0.5s ease-in 9.5s forwards;
+      animation: in 0.4s ease-out, out 0.5s ease-in var(--out, 9.5s) forwards;
     }
-    .ev .ic { font-size: 26px; }
+    .ev .ic { font-size: 22px; }
     .ev b { color: #53fc18; }
+    .ev small { color: #8b98a8; font-weight: 600; margin-left: 4px; }
+    .ev.big { font-size: 19px; padding: 11px 16px; }
+    .ev.big .ic { font-size: 28px; }
     .ev.levelup, .ev.charlevel { border-left-color: #ffc940; }
     .ev.levelup b, .ev.charlevel b { color: #ffc940; }
     .ev.rare { border-left-color: #c084fc; }
-    .ev.upgrade { border-left-color: #38bdf8; }
     .ev.rare b { color: #c084fc; }
+    .ev.upgrade { border-left-color: #38bdf8; }
+    .ev.upgrade b { color: #38bdf8; }
+    .ev.status { border-left-color: #8b98a8; font-size: 14px; }
+    .ev.status.bad { border-left-color: #ff5c7a; }
     @keyframes in { from { transform: translateX(-110%); opacity: 0; } to { transform: none; opacity: 1; } }
     @keyframes out { to { opacity: 0; transform: translateY(-10px); } }
   </style>
 </head>
 <body>
   <script>
-    const showAll = new URLSearchParams(location.search).has('all');
-    const icons = { levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', action: '✨' };
-    const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    const params = new URLSearchParams(location.search);
+    const onlyBig = params.get('events') === 'big' || params.has('big');
+    const seconds = Math.min(Math.max(Number(params.get('seconds')) || 10, 2), 120);
+    const max = Math.min(Math.max(Number(params.get('max')) || 6, 1), 30);
+    const quiet = params.has('quiet');
+
+    const BIG = ['levelup', 'charlevel', 'rare', 'upgrade'];
+    const icons = { levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', action: '✨', test: '🧪' };
+    const skillIcons = { fishing: '🎣', mining: '⛏️', woodcutting: '🪓', digging: '🏺', smelting: '🔥' };
+    const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+    function show(html, cls, stay = seconds) {
+      const el = document.createElement('div');
+      el.className = `ev ${cls}`;
+      el.style.setProperty('--out', `${stay - 0.5}s`);
+      el.innerHTML = html;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), stay * 1000);
+      const all = document.body.querySelectorAll('.ev');
+      for (let i = 0; i < all.length - max; i++) all[i].remove();
+      return el;
+    }
+
+    let connected = false;
+    let lostTimer = null;
+    let lostNotice = null;
     const es = new EventSource('/api/events');
+    es.addEventListener('open', () => {
+      clearTimeout(lostTimer);
+      lostNotice?.remove();
+      lostNotice = null;
+      if (!connected && !quiet) show('<span class="ic">✅</span><span>MMOBot overlay connected</span>', 'status', 5);
+      connected = true;
+    });
+    es.addEventListener('error', () => {
+      // EventSource reconnects by itself; only say something if it stays down.
+      clearTimeout(lostTimer);
+      lostTimer = setTimeout(() => {
+        if (es.readyState !== EventSource.OPEN && !lostNotice) {
+          lostNotice = show('<span class="ic">⚠️</span><span>Overlay reconnecting…</span>', 'status bad', 3600);
+        }
+      }, 10000);
+    });
     es.addEventListener('activity', (e) => {
       const a = JSON.parse(e.data);
-      if (!showAll && !['levelup', 'charlevel', 'rare', 'upgrade'].includes(a.kind)) return;
-      const el = document.createElement('div');
-      el.className = `ev ${a.kind}`;
-      el.innerHTML = `<span class="ic">${icons[a.kind] || '✨'}</span><span><b>${esc(a.username)}</b> ${esc(a.text)}</span>`;
-      document.body.appendChild(el);
-      setTimeout(() => el.remove(), 10000);
-      while (document.body.querySelectorAll('.ev').length > 6) document.body.querySelector('.ev').remove();
+      const big = BIG.includes(a.kind) || a.kind === 'test';
+      if (onlyBig && !big) return;
+      const icon = a.kind === 'action' ? skillIcons[a.skill] || icons.action : icons[a.kind] || '✨';
+      const xp = a.xp && !big ? `<small>+${Number(a.xp).toLocaleString()} xp</small>` : '';
+      show(`<span class="ic">${icon}</span><span><b>${esc(a.username)}</b> ${esc(a.text)}${xp}</span>`, `${esc(a.kind)}${big ? ' big' : ''}`, big ? seconds + 3 : seconds);
     });
   </script>
 </body>

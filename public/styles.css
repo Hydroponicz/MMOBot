@@ -277,3 +277,6 @@ details > summary.panel-head::-webkit-details-marker { display: none; }
 details > summary.panel-head h2::before { content: '▸ '; color: var(--muted); }
 details[open] > summary.panel-head { margin-bottom: 14px; }
 details[open] > summary.panel-head h2::before { content: '▾ '; }
+.overlay-form { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; font-size: 0.9rem; }
+.overlay-form label { display: flex; align-items: center; gap: 6px; }
+.overlay-form input[type=number] { padding: 6px 8px; }

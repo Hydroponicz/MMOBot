@@ -205,3 +205,36 @@ test('admin API: settings, logs and players need an admin; logs record chat comm
   const take = await api(`/api/admin/players/${found.players[0].id}/points`, { method: 'POST', body: { delta: -1e9 } });
   assert.equal((await take.json()).player.points, 0, 'never below zero');
 });
+
+test('overlay: the live stream is unbuffered, and the admin test event reaches it', async (t) => {
+  const { createSessions } = require('../src/web/session');
+  const s = await start();
+  t.after(s.close);
+  assert.equal((await fetch(`${s.url}/api/admin/overlay-test`, { method: 'POST' })).status, 403);
+
+  const ac = new AbortController();
+  t.after(() => ac.abort());
+  const stream = await fetch(`${s.url}/api/events`, { signal: ac.signal });
+  assert.equal(stream.headers.get('x-accel-buffering'), 'no');
+  assert.match(stream.headers.get('cache-control'), /no-transform/);
+  const reader = stream.body.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  const waitFor = async (re) => {
+    while (!re.test(text)) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value);
+    }
+    return text;
+  };
+  await waitFor(/retry: 5000/);
+
+  const owner = s.repo.upsertUser({ kickUserId: '99', username: 'streamer' });
+  let cookie;
+  createSessions({ secret: 'test-secret', secure: false }).write({ cookie: (n, v) => (cookie = `${n}=${v}`) }, 'mmo_session', { uid: owner.id }, 60_000);
+  const res = await fetch(`${s.url}/api/admin/overlay-test`, { method: 'POST', headers: { cookie } });
+  assert.equal(res.status, 200);
+  assert.match(await waitFor(/testing the overlay/), /event: activity\ndata: .*"kind":"test".*"username":"streamer"/);
+  assert.equal(s.repo.recentActivity(0, 10).length, 0, 'test events are not saved');
+});
