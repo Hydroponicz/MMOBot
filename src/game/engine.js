@@ -5,6 +5,7 @@ const {
   SKILL_IDS,
   BACKPACK_TIERS,
   SHOP,
+  MAX_PLOTS,
   GEAR_SLOTS,
   COMMAND_TO_SKILL,
   COMBAT_SKILLS,
@@ -36,6 +37,10 @@ const INFO_COMMANDS = {
   unequip: ['unequip', 'unequip'], remove: ['unequip', 'unequip'],
   equipped: ['equippedInfo', 'equipped'], worn: ['equippedInfo', 'equipped'], armor: ['equippedInfo', 'equipped'], armour: ['equippedInfo', 'equipped'],
   buy: ['buy', 'buy'], shop: ['shopList', 'shop'], store: ['shopList', 'shop'],
+  // Farming has its own cooldown, separate from the skilling one.
+  plant: ['plant', 'plant'], sow: ['plant', 'plant'],
+  harvest: ['harvest', 'harvest'], reap: ['harvest', 'harvest'],
+  farm: ['farmInfo', 'farm'], plots: ['farmInfo', 'farm'], garden: ['farmInfo', 'farm'],
   commands: ['help', 'commands'], help: ['help', 'commands'], rpg: ['help', 'commands'], mmo: ['help', 'commands'],
 };
 
@@ -49,6 +54,8 @@ const SLOT_ALIASES = {
 };
 const SLOT_ICONS = { weapon: '🗡️', head: '⛑️', body: '👕', legs: '👖', shield: '🛡️' };
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+const CROPS = SKILLS.farming.resources;
+const minutesLeft = (ms) => (ms <= 60_000 ? '1m' : ms < 3_600_000 ? `${Math.ceil(ms / 60_000)}m` : `${Math.floor(ms / 3_600_000)}h ${Math.ceil((ms % 3_600_000) / 60_000)}m`);
 
 // Where each material comes from, for "you're missing..." hints:
 // copper_ore -> "!mine copper", bronze_bar -> "!smelt bronze".
@@ -71,6 +78,7 @@ class GameEngine extends EventEmitter {
     this.rng = rng;
     this.now = now;
     this.cooldownWarned = new Map(); // userId -> last_action_at we already warned about
+    this.farmWarned = new Map(); // same, for the farming cooldown
   }
 
   get cfg() {
@@ -544,28 +552,233 @@ class GameEngine extends EventEmitter {
   }
 
   shopList() {
-    const list = this.shopItems().map((x) => `${x.icon} ${x.name} ${fmt(x.cost)} pts`).join(', ');
-    return `🛒 Shop: ${list} — !buy <item> or ${this.siteUrl}/#/shop`;
+    const main = this.shopItems().filter((x) => x.category !== 'seeds');
+    const list = main.map((x) => `${x.icon} ${x.name} ${fmt(x.cost)}`).join(', ');
+    return `🛒 Shop: ${list} pts, plus seeds (e.g. !buy carrot seeds 5) — ${this.siteUrl}/#/shop`;
   }
 
   // Shared by "!buy" and the website shop. Returns the reply text.
+  // "!buy hammer", "!buy carrot seeds 10", "!buy plot 3".
   buy(user, args) {
-    const q = args.join(' ').toLowerCase().trim();
+    const words = args.map((w) => String(w).toLowerCase()).filter(Boolean);
+    let qty = 1;
+    if (words.length > 1 && /^\d+$/.test(words[words.length - 1])) qty = Math.min(1000, Math.max(1, Number(words.pop())));
+    const q = words.join(' ').trim();
     const items = this.shopItems();
-    const found = q && items.find((x) => x.item === q.replace(/\s+/g, '_') || x.name.toLowerCase() === q || x.name.toLowerCase().includes(q));
-    if (!found) return `usage: !buy <item>. ${this.shopList()}`;
+    const name = (x) => x.name.toLowerCase();
+    const found =
+      q &&
+      (items.find((x) => x.item === q.replace(/\s+/g, '_') || name(x) === q) ||
+        items.find((x) => name(x) === `${q} seeds`) ||
+        items.find((x) => name(x).startsWith(q)) ||
+        items.find((x) => name(x).includes(q)));
+    if (!found) return `usage: !buy <item> [amount]. ${this.shopList()}`;
+    if (found.item === 'farm_plot') return this.buyPlots(user, qty, found);
+
     const inv = this.repo.getInventory(user.id);
-    if (found.keep && !found.gear && inv[found.item]) return `you already have a ${found.icon} ${found.name}.`;
-    const bag = this.backpack(user.id);
-    if (bag.used >= bag.capacity) return `🎒 no room in your backpack (${bag.used}/${bag.capacity}). !sell something first.`;
+    const isTool = found.keep && !found.gear && !found.seedFor;
+    if (isTool) {
+      if (inv[found.item]) return `you already have a ${found.icon} ${found.name}.`;
+      qty = 1;
+    }
+    if (found.seedFor) {
+      const crop = CROPS.find((c) => c.item === found.seedFor);
+      const lvl = skillLevel('farming', this.repo.getSkills(user.id).farming);
+      if (lvl < crop.level) return `you need 🌱 Farming level ${crop.level} to grow ${ITEMS[crop.item].name} (you are ${lvl}).`;
+    } else {
+      const bag = this.backpack(user.id);
+      if (bag.used + qty > bag.capacity) return `🎒 no room in your backpack (${bag.used}/${bag.capacity}). !sell something first.`;
+    }
+    const total = found.cost * qty;
     return this.repo.transaction(() => {
-      const refused = this.pay(user, found.cost, found.name);
+      const refused = this.pay(user, total, qty > 1 ? `${qty}x ${found.name}` : found.name);
       if (refused) return refused;
-      this.repo.addItem(user.id, found.item, 1);
-      this.emitActivity(user, { kind: 'buy', item: found.item, text: `bought a ${found.name}` });
-      const tip = found.item === 'smithing_hammer' ? ' Now try !smith bronze sword.' : found.weaponType ? ' Now try !fight.' : '';
-      return `🛒 bought ${itemLabel(found.item)} for ${fmt(found.cost)} pts!${tip} Balance: ${fmt(this.repo.getUser(user.id).points)}`;
+      this.repo.addItem(user.id, found.item, qty);
+      this.emitActivity(user, { kind: 'buy', item: found.item, text: `bought ${qty > 1 ? `${qty}x ${found.name}` : `a ${found.name}`}` });
+      const tip =
+        found.item === 'smithing_hammer'
+          ? ' Now try !smith bronze sword.'
+          : found.weaponType
+            ? ' Now try !fight.'
+            : found.item === 'skinning_knife'
+              ? ' Now try !skin.'
+              : found.seedFor
+                ? ` Now !plant ${ITEMS[found.seedFor].name.split(' ')[0].toLowerCase()}.`
+                : '';
+      return `🛒 bought ${itemLabel(found.item, qty)} for ${fmt(total)} pts!${tip} Balance: ${fmt(this.repo.getUser(user.id).points)}`;
     });
+  }
+
+  buyPlots(user, qty, found) {
+    const have = this.plotCount(user.id);
+    if (have >= MAX_PLOTS) return `you already have the maximum of ${MAX_PLOTS} farm plots! 🏆`;
+    qty = Math.min(qty, MAX_PLOTS - have);
+    const total = found.cost * qty;
+    return this.repo.transaction(() => {
+      const refused = this.pay(user, total, qty > 1 ? `${qty} farm plots` : 'farm plot');
+      if (refused) return refused;
+      this.repo.setEquipment(user.id, 'plots', have + qty);
+      this.emitActivity(user, { kind: 'buy', text: `bought ${qty > 1 ? `${qty} farm plots` : 'a farm plot'} (${have + qty} total)` });
+      const first = have === 0 ? ' Buy seeds (!buy carrot seeds 5) and !plant them!' : '';
+      return `🟫 bought ${qty > 1 ? `${qty} farm plots` : 'a farm plot'} for ${fmt(total)} pts! You now have ${have + qty}/${MAX_PLOTS}.${first}`;
+    });
+  }
+
+  // ---- Farming (!plant, !harvest, !farm) ----------------------------------------
+
+  plotCount(userId) {
+    return Math.min(this.repo.getEquipment(userId).plots || 0, MAX_PLOTS);
+  }
+
+  // Every owned plot with what's in it: { plot, crop, readyAt, plantedAt, ready } (crop null = empty).
+  farmPlots(userId) {
+    const now = this.now();
+    const byPlot = Object.fromEntries(this.repo.getPlots(userId).map((p) => [p.plot, p]));
+    return Array.from({ length: this.plotCount(userId) }, (_, i) => {
+      const p = byPlot[i + 1];
+      return p
+        ? { plot: i + 1, crop: p.crop, plantedAt: p.planted_at, readyAt: p.ready_at, ready: p.ready_at <= now }
+        : { plot: i + 1, crop: null, ready: false };
+    });
+  }
+
+  // Farming's own cooldown (so you can farm between other actions). Returns a reply if still waiting.
+  farmCooldown(user) {
+    const now = this.now();
+    const last = this.repo.getUser(user.id).last_farm_at || 0;
+    const readyAt = last + (this.cfg.farmCooldown ?? 10) * 1000;
+    if (now >= readyAt) return null;
+    if (this.farmWarned.get(user.id) === last) return '';
+    this.farmWarned.set(user.id, last);
+    return `🌱 easy there, farmer! Try again in ${Math.ceil((readyAt - now) / 1000)}s.`;
+  }
+
+  noPlotsMessage() {
+    const plot = this.shopItems().find((x) => x.item === 'farm_plot');
+    return `you don't have a farm plot yet! 🟫 !buy plot (${fmt(plot?.cost ?? 0)} pts) or ${this.siteUrl}/#/shop`;
+  }
+
+  // !plant [crop] [amount]: one seed per empty plot.
+  plant(user, args) {
+    if (!this.plotCount(user.id)) return this.noPlotsMessage();
+    const wait = this.farmCooldown(user);
+    if (wait !== null) return wait || null;
+
+    const plots = this.farmPlots(user.id);
+    const empty = plots.filter((p) => !p.crop);
+    if (!empty.length) {
+      const next = plots.filter((p) => !p.ready).sort((a, b) => a.readyAt - b.readyAt)[0];
+      const readyCount = plots.filter((p) => p.ready).length;
+      return readyCount
+        ? `all your plots are full — ${readyCount} ready to !harvest!`
+        : `all ${plots.length} plots are growing. Next ready in ${minutesLeft(next.readyAt - this.now())}.`;
+    }
+
+    const words = args.map((w) => String(w).toLowerCase());
+    let limit = empty.length;
+    if (words.length && /^\d+$/.test(words[words.length - 1])) limit = Math.max(1, Number(words.pop()));
+    else if (words[words.length - 1] === 'all') words.pop();
+    if (words[words.length - 1] === 'seeds' || words[words.length - 1] === 'seed') words.pop();
+
+    const level = skillLevel('farming', this.repo.getSkills(user.id).farming);
+    const inv = this.repo.getInventory(user.id);
+    let crop;
+    if (words.length) {
+      const id = findItem(words.join(' '), CROPS.map((c) => c.item));
+      if (!id) return `unknown crop. You can grow: ${CROPS.filter((c) => c.level <= level).map((c) => ITEMS[c.item].name).slice(-6).join(', ')}`;
+      crop = CROPS.find((c) => c.item === id);
+      if (crop.level > level) return `you need 🌱 Farming level ${crop.level} to grow ${ITEMS[crop.item].name} (you are ${level}).`;
+      if (!inv[crop.seed]) {
+        return `you have no ${ITEMS[crop.seed].name}! !buy ${ITEMS[crop.item].name.toLowerCase()} seeds ${empty.length} (${fmt(this.seedPrice(crop))} pts each)`;
+      }
+    } else {
+      // No crop named: plant the best seeds you have and can grow.
+      crop = [...CROPS].reverse().find((c) => c.level <= level && inv[c.seed]);
+      if (!crop) {
+        const best = [...CROPS].reverse().find((c) => c.level <= level);
+        return `you have no seeds! !buy ${ITEMS[best.item].name.toLowerCase()} seeds ${empty.length} (${fmt(this.seedPrice(best))} pts each), then !plant`;
+      }
+    }
+
+    const n = Math.min(empty.length, inv[crop.seed], limit);
+    const now = this.now();
+    const growMs = Math.round(crop.grow * 60_000 * (this.cfg.growMultiplier ?? 1));
+    const result = this.repo.transaction(() => {
+      this.repo.removeItem(user.id, crop.seed, n);
+      for (const p of empty.slice(0, n)) this.repo.plant(user.id, p.plot, crop.item, now, now + growMs);
+      this.repo.setFarmAt(user.id, now);
+      return this.grantXp(user, 'farming', this.xpFor(Math.max(1, Math.round(crop.xp * 0.2)) * n));
+    });
+    const c = ITEMS[crop.item];
+    this.emitActivity(user, { kind: 'action', skill: 'farming', item: crop.item, text: `planted ${n}x ${c.name}` });
+    const left = empty.length - n;
+    return `🌱 planted ${c.icon} ${c.name} in ${n} plot${n === 1 ? '' : 's'} — ready in ${minutesLeft(growMs)}. ${result.text}${left ? ` (${left} plot${left === 1 ? '' : 's'} still empty)` : ''}`;
+  }
+
+  seedPrice(crop) {
+    return this.shopItems().find((x) => x.item === crop.seed)?.cost ?? crop.seedCost;
+  }
+
+  // !harvest: collect every ready plot (as much as fits in the backpack).
+  harvest(user) {
+    if (!this.plotCount(user.id)) return this.noPlotsMessage();
+    const wait = this.farmCooldown(user);
+    if (wait !== null) return wait || null;
+
+    const plots = this.farmPlots(user.id);
+    const ready = plots.filter((p) => p.ready);
+    if (!ready.length) {
+      const growing = plots.filter((p) => p.crop).sort((a, b) => a.readyAt - b.readyAt);
+      if (!growing.length) return `your plots are empty! !plant some seeds first (!buy carrot seeds ${plots.length}).`;
+      const c = ITEMS[growing[0].crop];
+      return `nothing is ready yet. Next: ${c.icon} ${c.name} in ${minutesLeft(growing[0].readyAt - this.now())}.`;
+    }
+
+    const bag = this.backpack(user.id);
+    let room = bag.capacity - bag.used;
+    const gathered = {};
+    let harvestedPlots = 0;
+    let xp = 0;
+    this.repo.transaction(() => {
+      for (const p of ready) {
+        const crop = CROPS.find((c) => c.item === p.crop);
+        const [lo, hi] = crop.yield;
+        const qty = lo + Math.floor(this.rng() * (hi - lo + 1));
+        if (qty > room) break;
+        room -= qty;
+        this.repo.addItem(user.id, p.crop, qty);
+        this.repo.clearPlot(user.id, p.plot);
+        gathered[p.crop] = (gathered[p.crop] || 0) + qty;
+        xp += crop.xp;
+        harvestedPlots++;
+      }
+      if (harvestedPlots) this.repo.setFarmAt(user.id, this.now());
+    });
+    if (!harvestedPlots) {
+      const free = bag.capacity - bag.used;
+      return `🎒 not enough backpack space to harvest: a plot gives up to ${CROPS.find((c) => c.item === ready[0].crop).yield[1]} crops and you have ${free} free slot${free === 1 ? '' : 's'} (${bag.used}/${bag.capacity}). !sell or !upgrade backpack first.`;
+    }
+
+    const list = Object.entries(gathered).map(([id, q]) => itemLabel(id, q)).join(', ');
+    this.emitActivity(user, { kind: 'action', skill: 'farming', xp, text: `harvested ${Object.entries(gathered).map(([id, q]) => `${q}x ${ITEMS[id].name}`).join(', ')}` });
+    const gained = this.grantXp(user, 'farming', this.xpFor(xp));
+    const leftover = ready.length - harvestedPlots;
+    const note = leftover ? ` 🎒 Backpack full — ${leftover} plot${leftover === 1 ? '' : 's'} still waiting!` : ' !plant again!';
+    return `🌾 harvested ${harvestedPlots} plot${harvestedPlots === 1 ? '' : 's'}: ${list}! ${gained.text}${note}`;
+  }
+
+  // !farm: plot overview.
+  farmInfo(user) {
+    const plots = this.farmPlots(user.id);
+    if (!plots.length) return this.noPlotsMessage();
+    const ready = plots.filter((p) => p.ready).length;
+    const growing = plots.filter((p) => p.crop && !p.ready).sort((a, b) => a.readyAt - b.readyAt);
+    const empty = plots.filter((p) => !p.crop).length;
+    const parts = [`🌱 Farm: ${plots.length}/${MAX_PLOTS} plots`];
+    if (ready) parts.push(`✅ ${ready} ready (!harvest)`);
+    if (growing.length) parts.push(`⏳ ${growing.length} growing (next ${ITEMS[growing[0].crop].icon} in ${minutesLeft(growing[0].readyAt - this.now())})`);
+    if (empty) parts.push(`🟫 ${empty} empty (!plant)`);
+    return parts.join(' · ');
   }
 
   emitActivity(user, entry) {
@@ -583,7 +796,8 @@ class GameEngine extends EventEmitter {
   backpack(userId) {
     const tiers = this.backpackTiers();
     const tier = Math.min(this.repo.getEquipment(userId).backpack || 0, tiers.length - 1);
-    const used = Object.entries(this.repo.getInventory(userId)).reduce((s, [id, q]) => s + (ITEMS[id] ? q : 0), 0);
+    // Seeds live in a seed pouch and don't take backpack slots.
+    const used = Object.entries(this.repo.getInventory(userId)).reduce((s, [id, q]) => s + (ITEMS[id] && !ITEMS[id].seedFor ? q : 0), 0);
     const next = tiers[tier + 1];
     return {
       level: tier + 1,
@@ -695,7 +909,7 @@ class GameEngine extends EventEmitter {
     const p = this.cfg.prefix;
     const off = this.cfg.disabledCommands || [];
     const on = (list) => list.filter((c) => !off.includes(c)).map((c) => `${p}${c}`).join(' ');
-    const skills = on(SKILL_IDS.map((id) => SKILLS[id].command));
+    const skills = on(SKILL_IDS.flatMap((id) => (SKILLS[id].type === 'farm' ? ['plant', 'harvest'] : [SKILLS[id].command])));
     const tools = Object.keys(TOOL_TO_SKILL).join('/');
     return `Skills: ${skills} (e.g. ${p}mine iron, ${p}smith bronze sword) | Gear: ${p}gear ${p}equip ${p}equipped ${p}shop ${p}buy, ${p}upgrade ${tools}/backpack | Info: ${on(['stats', 'inv', 'sell', 'points', 'top'])} | ${this.siteUrl}`;
   }
@@ -895,6 +1109,14 @@ class GameEngine extends EventEmitter {
       inventory,
       inventoryValue: inventory.reduce((s, i) => s + i.value * i.qty, 0),
       backpack: this.backpack(userId),
+      farm: {
+        max: MAX_PLOTS,
+        plotCost: this.shopItems().find((x) => x.item === 'farm_plot')?.cost,
+        plots: this.farmPlots(userId).map((p) => ({
+          ...p,
+          crop: p.crop ? { id: p.crop, name: ITEMS[p.crop].name, icon: ITEMS[p.crop].icon } : null,
+        })),
+      },
       combat: (() => {
         const st = this.combatStats(userId);
         return {
@@ -934,6 +1156,8 @@ class GameEngine extends EventEmitter {
             icon: r.item ? ITEMS[r.item].icon : r.icon,
             value: r.item ? this.sellValue(r.item) : undefined,
             kind: r.kind,
+            grow: r.grow ? Math.max(1, Math.round(r.grow * (this.cfg.growMultiplier ?? 1))) : undefined,
+            seedCost: r.seed ? this.seedPrice(r) : undefined,
             loot: r.loot ? r.loot.map((i) => ({ item: ITEMS[i].name, icon: ITEMS[i].icon, value: this.sellValue(i) })) : undefined,
             stats: r.item && ITEMS[r.item].gear ? { slot: ITEMS[r.item].slot, attack: ITEMS[r.item].attack, defence: ITEMS[r.item].defence, wear: ITEMS[r.item].level } : undefined,
             inputs: r.inputs

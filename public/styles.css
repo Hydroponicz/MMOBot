@@ -21,6 +21,7 @@
   --smelting: #fb923c;
   --smithing: #94a3b8;
   --skinning: #c08457;
+  --farming: #84cc16;
   --swords: #f87171;
 }
 
@@ -309,3 +310,18 @@ details[open] > summary.panel-head h2::before { content: '▾ '; }
 .shop-buy { display: flex; align-items: center; justify-content: space-between; margin-top: auto; padding-top: 10px; }
 .shop-price { font-size: 1.3rem; font-weight: 800; color: var(--gold); }
 .span-all { grid-column: 1 / -1; }
+
+/* ---- Farm ---- */
+.plot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); gap: 6px; margin-bottom: 12px; }
+.plot {
+  position: relative; height: 58px; border-radius: 10px; border: 1px solid var(--border); overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 1.4rem;
+  background: linear-gradient(to top, color-mix(in srgb, var(--farming) 22%, transparent) var(--g, 0%), var(--panel-2) var(--g, 0%));
+}
+.plot small { font-size: 0.65rem; color: var(--muted); font-weight: 600; }
+.plot.ready { border-color: var(--farming); box-shadow: 0 0 0 1px var(--farming) inset; }
+.plot.empty { color: var(--muted); background: #1a1511; border-style: dashed; }
+.qty { width: 70px !important; padding: 6px 8px !important; }
+tr.locked td { opacity: 0.55; }
+.kind-herb { background: rgba(132, 204, 22, 0.15); color: var(--farming); }
+.kind-veg { background: rgba(251, 146, 60, 0.15); color: var(--smelting); }

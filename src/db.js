@@ -54,6 +54,16 @@ CREATE TABLE IF NOT EXISTS worn_gear (
   PRIMARY KEY (user_id, slot)
 );
 
+-- Farming: what's growing in each of a player's plots (the number of plots owned is in equipment, slot "plots").
+CREATE TABLE IF NOT EXISTS farm_plots (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  plot INTEGER NOT NULL,
+  crop TEXT NOT NULL,
+  planted_at INTEGER NOT NULL,
+  ready_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, plot)
+);
+
 CREATE TABLE IF NOT EXISTS activity (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -91,7 +101,14 @@ function openDb(dbPath) {
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
   db.exec(SCHEMA);
+  migrate(db);
   return createRepo(db);
+}
+
+// Columns added after the first release. Safe to run on every start.
+function migrate(db) {
+  const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+  if (!cols.includes('last_farm_at')) db.exec('ALTER TABLE users ADD COLUMN last_farm_at INTEGER NOT NULL DEFAULT 0');
 }
 
 function createRepo(db) {
@@ -128,6 +145,10 @@ function createRepo(db) {
        ON CONFLICT(user_id, slot) DO UPDATE SET item = excluded.item`
     ),
     takeOff: db.prepare('DELETE FROM worn_gear WHERE user_id = ? AND slot = ?'),
+    plots: db.prepare('SELECT plot, crop, planted_at, ready_at FROM farm_plots WHERE user_id = ? ORDER BY plot'),
+    plant: db.prepare('INSERT INTO farm_plots (user_id, plot, crop, planted_at, ready_at) VALUES (?, ?, ?, ?, ?)'),
+    clearPlot: db.prepare('DELETE FROM farm_plots WHERE user_id = ? AND plot = ?'),
+    setFarmAt: db.prepare('UPDATE users SET last_farm_at = ? WHERE id = ?'),
     addPoints: db.prepare(
       'UPDATE users SET points = points + ?, lifetime_points = lifetime_points + MAX(?, 0) WHERE id = ?'
     ),
@@ -255,6 +276,11 @@ function createRepo(db) {
     },
     wear: (userId, slot, item) => stmt.wear.run(userId, slot, item),
     takeOff: (userId, slot) => stmt.takeOff.run(userId, slot),
+
+    getPlots: (userId) => stmt.plots.all(userId),
+    plant: (userId, plot, crop, plantedAt, readyAt) => stmt.plant.run(userId, plot, crop, plantedAt, readyAt),
+    clearPlot: (userId, plot) => stmt.clearPlot.run(userId, plot),
+    setFarmAt: (userId, ts) => stmt.setFarmAt.run(ts, userId),
 
     addPoints: (userId, amount) => stmt.addPoints.run(amount, amount, userId),
     chatTick: (userId) => stmt.chatTick.run(userId),

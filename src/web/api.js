@@ -1,7 +1,7 @@
 // JSON API consumed by the website (public/app.js) and the OBS overlay.
 const crypto = require('node:crypto');
 const express = require('express');
-const { SKILLS, SKILL_IDS, maxLevel } = require('../game/skills');
+const { ITEMS, SKILLS, SKILL_IDS, maxLevel } = require('../game/skills');
 const { levelForXp, progress, CHARACTER_MAX_LEVEL, CHARACTER_SKILL_COUNT } = require('../game/xp');
 const { makeIsAdmin } = require('./auth');
 const { SettingsError } = require('../settings');
@@ -37,7 +37,20 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   const requireLogin = (req, res, next) => (req.user ? next() : res.status(401).json({ error: 'log in with Kick first' }));
 
   router.get('/shop', (req, res) => {
-    res.json({ items: engine.shopItems(), points: req.user ? repo.getUser(req.user.id).points : null });
+    const crops = Object.fromEntries(SKILLS.farming.resources.map((c) => [c.seed, c]));
+    const items = engine.shopItems().map((x) => {
+      const crop = crops[x.item];
+      if (!crop) return x;
+      const it = ITEMS[crop.item];
+      return { ...x, crop: { name: it.name, icon: it.icon, kind: crop.kind, value: engine.sellValue(crop.item), grow: Math.max(1, Math.round(crop.grow * (engine.cfg.growMultiplier ?? 1))) } };
+    });
+    const me = req.user ? repo.getUser(req.user.id) : null;
+    res.json({
+      items,
+      points: me ? me.points : null,
+      farmingLevel: me ? levelForXp(repo.getSkills(me.id).farming, maxLevel('farming')) : null,
+      plots: me ? engine.plotCount(me.id) : null,
+    });
   });
 
   // Same rules as the chat commands; the reply text is shown to the player.
@@ -46,7 +59,12 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     logger.info(`[site] ${req.user.username}: ${req.path} ${JSON.stringify(req.body || {}).slice(0, 200)} → ${message}`);
     res.json({ message, profile: engine.profile(req.user.id) });
   };
-  router.post('/shop/buy', requireLogin, act((req) => engine.buy(req.user, [String(req.body?.item || '')])));
+  router.post('/shop/buy', requireLogin, act((req) => {
+    const qty = Math.min(1000, Math.max(1, Number.parseInt(req.body?.qty, 10) || 1));
+    return engine.buy(req.user, [String(req.body?.item || ''), String(qty)]);
+  }));
+  router.post('/me/plant', requireLogin, act((req) => engine.plant(req.user, req.body?.crop ? [String(req.body.crop)] : []) || 'Slow down a little, farmer!'));
+  router.post('/me/harvest', requireLogin, act((req) => engine.harvest(req.user) || 'Slow down a little, farmer!'));
   router.post('/me/equip', requireLogin, act((req) => engine.equip(req.user, [String(req.body?.item || '')])));
   router.post('/me/unequip', requireLogin, act((req) => engine.unequip(req.user, [String(req.body?.slot || '')])));
   router.post('/me/sell', requireLogin, act((req) => {

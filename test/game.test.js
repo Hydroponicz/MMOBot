@@ -128,7 +128,7 @@ test('!stats, !inv, !top, !points and !commands respond', () => {
   assert.match(say('!top'), /1\. Alice/);
   assert.match(say('!top fishing'), /Fishing: 1\. Alice Lv2/);
   assert.match(say('!points'), /points/);
-  assert.match(say('!commands'), /!fish !mine !chop !dig !skin !smelt !smith !fight/);
+  assert.match(say('!commands'), /!fish !mine !chop !dig !skin !plant !harvest !smelt !smith !fight/);
   assert.equal(say('!unknowncommand'), null);
 });
 
@@ -136,7 +136,7 @@ test('profile exposes everything the website needs', () => {
   const { repo, engine, say } = setup();
   say('!fish');
   const p = engine.profile(repo.getUserByName('alice').id);
-  assert.equal(p.skills.length, 8);
+  assert.equal(p.skills.length, 9);
   assert.equal(p.skills[0].id, 'fishing');
   assert.equal(p.skills[0].level, 2);
   assert.equal(p.skills[0].rank, 1);
@@ -408,14 +408,14 @@ test('rod prices saved before the tool rework still apply', () => {
 test('the shop sells a smithing hammer (500) and a sword (1,000) via !buy', () => {
   const { repo, say } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
-  assert.match(say('!shop'), /🔨 Smithing Hammer 500 pts, 🗡️ Bronze Sword 1,000 pts/);
+  assert.match(say('!shop'), /🔨 Smithing Hammer 500, 🗡️ Bronze Sword 1,000, 🔪 Skinning Knife 500, 🟫 Farm Plot 750 pts, plus seeds/);
   assert.match(say('!buy hammer'), /Smithing Hammer costs 500 pts, you have 5/);
   repo.addPoints(u.id, 2000);
   assert.match(say('!buy hammer'), /bought 🔨 Smithing Hammer for 500 pts! Now try !smith bronze sword/);
   assert.match(say('!buy hammer'), /already have a 🔨 Smithing Hammer/);
   assert.match(say('!buy sword'), /bought 🗡️ Bronze Sword for 1,000 pts! Now try !fight/);
   assert.equal(repo.getUser(u.id).points, 505);
-  assert.match(say('!buy dragon'), /usage: !buy <item>/);
+  assert.match(say('!buy unicorn'), /usage: !buy <item>/);
 });
 
 test('smithing needs a hammer and alloys, and makes gear', () => {
@@ -531,18 +531,18 @@ test('!fight without a sword explains how to buy or craft one, briefly, with pro
 
 // ---- Skinning, emote shortcuts --------------------------------------------------
 
-test('!skin needs a skinning knife (buy it or smith it at Smithing 20 from a Steel Alloy)', () => {
+test('!skin needs a skinning knife (buy it or smith it at Smithing 20 from a Sterling Alloy)', () => {
   const { repo, say, tick } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
-  assert.match(say('!skin'), /need a 🔪 Skinning Knife in your backpack to skin! !buy knife \(500 pts\) or !smith skinning knife \(Smithing 20: 1 Steel Alloy\)/);
-  assert.match(say('!shop'), /🔪 Skinning Knife 500 pts/);
+  assert.match(say('!skin'), /need a 🔪 Skinning Knife in your backpack to skin! !buy knife \(500 pts\) or !smith skinning knife \(Smithing 20: 1 Sterling Alloy\)/);
+  assert.match(say('!shop'), /🔪 Skinning Knife 500/);
 
   // Smith one: needs a hammer, Smithing 20 and a steel alloy.
   repo.addItem(u.id, 'smithing_hammer', 1);
-  repo.addItem(u.id, 'steel_bar', 1);
+  repo.addItem(u.id, 'sterling_bar', 1);
   assert.match(say('!smith knife'), /need ⚒️ Smithing level 20 for Skinning Knife/);
   repo.addXp(u.id, 'smithing', xpForLevel(20));
-  assert.match(say('!smith knife'), /smithed 🔪 Skinning Knife! \+70 XP/);
+  assert.match(say('!smith knife'), /smithed 🔪 Skinning Knife! \+55 XP/);
   tick();
   assert.match(say('!skin'), /🔪 you skinned 🐇 Rabbit Hide! \+10 XP/);
   assert.equal(repo.getInventory(u.id).skinning_knife, 1, 'the knife is not used up');
@@ -583,5 +583,105 @@ test('saved shop prices survive new shop items being added', () => {
   const repo = openDb(':memory:');
   repo.setSetting('config_overrides', { shop: [{ cost: 111 }, { cost: 222 }] });
   const settings = new Settings({ config: { ...baseConfig, adminUsers: [], kick: { channel: 's' } }, repo });
-  assert.deepEqual(settings.all.shop.map((r) => r.cost), [111, 222, 500]);
+  assert.deepEqual(settings.all.shop.slice(0, 4).map((r) => r.cost), [111, 222, 500, 750]);
+});
+
+// ---- Sterling alloy, farming ---------------------------------------------------
+
+test('Sterling Alloy (silver + copper) at Smelting 20 is what the knife is smithed from', () => {
+  const { repo, say } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addXp(u.id, 'smelting', xpForLevel(20));
+  repo.addItem(u.id, 'silver_ore', 1);
+  repo.addItem(u.id, 'copper_ore', 1);
+  assert.match(say('!smelt sterling'), /smelted 🪙 Sterling Alloy/);
+  assert.deepEqual(repo.getInventory(u.id), { sterling_bar: 1 });
+});
+
+function farmSetup() {
+  const repo = openDb(':memory:');
+  let t = 1_000_000;
+  const cfg = { ...baseConfig, game: { ...baseConfig.game, farmCooldown: 10 } };
+  const engine = new GameEngine({ repo, config: cfg, rng: () => 0.5, now: () => t });
+  const say = (content) => engine.handleChat({ kickUserId: '1', username: 'Alice', content }).reply;
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  return { repo, engine, say, u, wait: (sec) => (t += sec * 1000) };
+}
+
+test('farming: buy a plot and seeds, plant, wait 20 minutes, harvest', () => {
+  const { repo, engine, say, u, wait } = farmSetup();
+  assert.match(say('!plant'), /don't have a farm plot yet! 🟫 !buy plot \(750 pts\)/);
+  assert.match(say('!harvest'), /don't have a farm plot yet/);
+  repo.addPoints(u.id, 2000);
+  assert.match(say('!buy plot 2'), /bought 2 farm plots for 1,500 pts! You now have 2\/100\. Buy seeds/);
+  assert.match(say('!plant'), /you have no seeds! !buy carrot seeds 2 \(2 pts each\)/);
+  assert.match(say('!buy carrot seeds 5'), /bought 🌱 5x Carrot Seeds for 10 pts! Now !plant carrot/);
+  assert.equal(engine.backpack(u.id).used, 0, "seeds don't use backpack slots");
+
+  assert.match(say('!plant carrot'), /🌱 planted 🥕 Carrot in 2 plots — ready in 20m\. \+4 XP/);
+  assert.equal(repo.getInventory(u.id).carrot_seeds, 3);
+  wait(11);
+  assert.match(say('!plant'), /all 2 plots are growing\. Next ready in 20m/);
+  wait(11);
+  assert.match(say('!harvest'), /nothing is ready yet\. Next: 🥕 Carrot in 20m/);
+  assert.match(say('!farm'), /🌱 Farm: 2\/100 plots · ⏳ 2 growing \(next 🥕 in 20m\)/);
+
+  wait(20 * 60);
+  assert.match(say('!farm'), /✅ 2 ready \(!harvest\)/);
+  // rng 0.5 -> 3 carrots per plot
+  assert.match(say('!harvest'), /🌾 harvested 2 plots: 🥕 6x Carrot! \+24 XP.* !plant again!/);
+  assert.equal(repo.getInventory(u.id).carrot, 6);
+  assert.equal(engine.farmPlots(u.id).filter((p) => p.crop).length, 0);
+  assert.match(say('!sell carrot all'), /sold 🥕 6x Carrot for \d+ pts/);
+});
+
+test('farming has its own cooldown, separate from skilling', () => {
+  const { repo, say, u } = farmSetup();
+  repo.addPoints(u.id, 3000);
+  say('!buy plot 3');
+  say('!buy carrot seeds 3');
+  assert.match(say('!plant carrot 1'), /planted 🥕 Carrot in 1 plot.*\(2 plots still empty\)/);
+  assert.match(say('!plant carrot'), /easy there, farmer! Try again in 10s/);
+  assert.equal(say('!plant carrot'), null, 'warns once');
+  assert.match(say('!fish'), /you caught/, 'skilling is not blocked by farming');
+});
+
+test('farming level gates seeds; plot limit is 100; harvest respects backpack space', () => {
+  const { repo, engine, say, u, wait } = farmSetup();
+  repo.addPoints(u.id, 1_000_000);
+  assert.match(say('!buy tomato seeds'), /need 🌱 Farming level 30 to grow Tomato/);
+  assert.match(say('!buy plot 150'), /bought 100 farm plots/);
+  assert.match(say('!buy plot'), /maximum of 100 farm plots/);
+  say('!buy carrot seeds 100');
+  say('!plant');
+  wait(21 * 60);
+  // 10-slot backpack: 3 plots of 3 carrots fit, the rest wait.
+  assert.match(say('!harvest'), /harvested 3 plots: 🥕 9x Carrot!.*Backpack full — 97 plots still waiting!/);
+  assert.equal(engine.farmPlots(u.id).filter((p) => p.ready).length, 97);
+});
+
+test('growth time multiplier (admin) speeds up new plantings', () => {
+  const { Settings } = require('../src/settings');
+  const repo = openDb(':memory:');
+  const settings = new Settings({ config: { ...baseConfig, adminUsers: [], kick: { channel: 's' } }, repo });
+  settings.update('economy', { growMultiplier: 0.5 });
+  let t = 1_000_000;
+  const engine = new GameEngine({ repo, config: baseConfig, settings, rng: () => 0.5, now: () => t });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addPoints(u.id, 1000);
+  engine.handleChat({ kickUserId: '1', username: 'Alice', content: '!buy plot' });
+  engine.handleChat({ kickUserId: '1', username: 'Alice', content: '!buy carrot seeds' });
+  assert.match(engine.handleChat({ kickUserId: '1', username: 'Alice', content: '!plant' }).reply, /ready in 10m/);
+});
+
+test('41 crops from Carrot (1) to World Tree Fruit (500); value rises with level', () => {
+  const { SKILLS, ITEMS } = require('../src/game/skills');
+  const crops = SKILLS.farming.resources;
+  assert.equal(crops.length, 41);
+  assert.equal(crops[0].item, 'carrot');
+  assert.equal(crops[0].grow, 20);
+  assert.equal(crops[1].level, 5);
+  assert.equal(crops.at(-1).level, 500);
+  for (let i = 1; i < crops.length; i++) assert.ok(ITEMS[crops[i].item].value > ITEMS[crops[i - 1].item].value, crops[i].item);
+  for (const c of crops) assert.ok(ITEMS[c.item].value * 2 > c.seedCost, `${c.item} is profitable`);
 });

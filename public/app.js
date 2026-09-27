@@ -203,6 +203,7 @@
       <div class="grid grid-skills">${p.skills.map(skillCard).join('')}</div>
 
       ${equipmentPanel(p.combat, isMe)}
+      ${farmPanel(p.farm, isMe)}
 
       <div class="grid grid-2" style="margin-top:16px">
         <section class="panel">
@@ -257,6 +258,41 @@
       </section>`;
   }
 
+  function farmPanel(f, isMe) {
+    const now = Date.now();
+    const left = (ms) => (ms < 60_000 ? '<1m' : ms < 3_600_000 ? `${Math.ceil(ms / 60_000)}m` : `${Math.floor(ms / 3_600_000)}h${Math.ceil((ms % 3_600_000) / 60_000)}m`);
+    if (!f.plots.length) {
+      return `<section class="panel" style="margin-top:16px">
+        <div class="panel-head"><h2>🌱 Farm</h2></div>
+        <div class="empty"><span class="ic">🟫</span>No farm plots yet. Buy one in the <a href="#/shop">shop</a> (${fmt(f.plotCost)} pts) or <code>!buy plot</code> in chat.</div>
+      </section>`;
+    }
+    const ready = f.plots.filter((p) => p.ready).length;
+    const empty = f.plots.filter((p) => !p.crop).length;
+    return `<section class="panel" style="margin-top:16px">
+      <div class="panel-head">
+        <h2>🌱 Farm <span class="muted" style="font-size:.9rem">${f.plots.length}/${f.max} plots</span></h2>
+        ${
+          isMe
+            ? `<div class="form-row">${ready ? `<button class="btn btn-primary btn-sm" data-act="harvest">Harvest ${ready}</button>` : ''}${
+                empty ? `<button class="btn btn-sm" data-act="plant">Plant ${empty}</button>` : ''
+              }</div>`
+            : ''
+        }
+      </div>
+      <div class="plot-grid">${f.plots
+        .map((p) => {
+          if (!p.crop) return `<div class="plot empty" title="Plot ${p.plot}: empty">·</div>`;
+          const total = p.readyAt - p.plantedAt;
+          const pctDone = p.ready ? 100 : Math.min(99, Math.round(((now - p.plantedAt) / total) * 100));
+          return `<div class="plot${p.ready ? ' ready' : ''}" title="Plot ${p.plot}: ${esc(p.crop.name)} — ${p.ready ? 'ready!' : `${left(p.readyAt - now)} left`}" style="--g:${pctDone}%">
+            <span>${p.crop.icon}</span><small>${p.ready ? '✅' : left(p.readyAt - now)}</small></div>`;
+        })
+        .join('')}</div>
+      <p class="muted" style="margin-bottom:0;font-size:.85rem"><code>!plant carrot</code> fills empty plots (one seed each), <code>!harvest</code> collects ready ones, <code>!farm</code> shows this in chat. Buy seeds and plots in the <a href="#/shop">shop</a>.</p>
+    </section>`;
+  }
+
   // Equip / unequip / sell buttons on your own character page.
   function bindSheetActions() {
     const sheet = document.getElementById('sheet');
@@ -269,7 +305,8 @@
       if (act === 'sell') {
         if (!confirm(`Sell 1 ${name} for ${fmt(value)} points?`)) return;
         body = { item, qty: 1 };
-      } else body = act === 'unequip' ? { slot } : { item };
+      } else if (act === 'plant' || act === 'harvest') body = {};
+      else body = act === 'unequip' ? { slot } : { item };
       b.disabled = true;
       try {
         const r = await api(`/me/${act}`, { method: 'POST', body });
@@ -363,40 +400,68 @@
   }
 
   pages.shop = async () => {
-    const { items, points } = await api('/shop');
+    const { items, points, farmingLevel, plots } = await api('/shop');
+    const loggedIn = points !== null;
+    const buyBtn = (i, locked) =>
+      loggedIn ? `<button class="btn btn-primary btn-sm" data-buy="${esc(i.item)}" ${locked ? 'disabled' : ''}>Buy</button>` : '';
+    const card = (i) => `<section class="panel shop-item">
+            <div class="shop-icon">${i.icon}</div>
+            <h2>${esc(i.name)}</h2>
+            <p class="muted">${esc(i.description || '')}</p>
+            ${i.attack ? `<p class="shop-stat">⚔️ +${i.attack} attack · needs Swords ${i.level}</p>` : ''}
+            ${i.item === 'farm_plot' && loggedIn ? `<p class="shop-stat">You own ${plots}/100 plots</p>` : ''}
+            <div class="shop-buy">
+              <span class="shop-price">${fmt(i.cost)} pts</span>
+              ${i.item === 'farm_plot' && loggedIn ? `<input type="number" class="qty" id="qty-${esc(i.item)}" value="1" min="1" max="100" aria-label="How many">` : ''}
+              ${buyBtn(i, i.item === 'farm_plot' && plots >= 100)}
+            </div>
+            <p class="muted" style="font-size:.8rem;margin:8px 0 0">In chat: <code>!buy ${esc(i.item === 'farm_plot' ? 'plot' : i.name.split(' ').pop().toLowerCase())}</code></p>
+          </section>`;
+    const seeds = items.filter((i) => i.category === 'seeds');
+    const top = items.filter((i) => i.category !== 'seeds');
     $app.innerHTML = `
       <div class="panel-head" style="margin-bottom:6px"><h1 style="margin:0">🛒 Shop</h1>${
-        points !== null
+        loggedIn
           ? `<span class="badge gold" style="font-size:1rem">💰 ${fmt(points)} points</span>`
           : state.loginEnabled
             ? `<a class="btn btn-primary" href="/auth/login">Log in with Kick to buy</a>`
             : ''
       }</div>
-      <p class="muted">Spend the points you earn in chat. Items go into your backpack. You can also buy in chat with <code>!buy &lt;item&gt;</code>.</p>
-      <div class="shop-grid">${items
-        .map(
-          (i) => `<section class="panel shop-item">
-            <div class="shop-icon">${i.icon}</div>
-            <h2>${esc(i.name)}</h2>
-            <p class="muted">${esc(i.description || '')}</p>
-            ${i.attack ? `<p class="shop-stat">⚔️ +${i.attack} attack · needs Swords ${i.level}</p>` : ''}
-            <div class="shop-buy">
-              <span class="shop-price">${fmt(i.cost)} pts</span>
+      <p class="muted">Spend the points you earn in chat. You can also buy in chat, e.g. <code>!buy hammer</code> or <code>!buy carrot seeds 5</code>.</p>
+      <div class="shop-grid">${top.map(card).join('')}</div>
+
+      <h2 style="margin:28px 0 6px">🌱 Seeds</h2>
+      <p class="muted">One seed per plot: <code>!plant carrot</code>, then <code>!harvest</code> when it's grown. Seeds don't take backpack space.${loggedIn ? ` Your Farming level: <b>${farmingLevel}</b>.` : ''}</p>
+      <section class="panel"><div class="table-wrap"><table>
+        <thead><tr><th>Level</th><th>Seed</th><th>Grows</th><th class="num">Ready in</th><th class="num">Crop sells for</th><th class="num">Price</th>${loggedIn ? '<th>Buy</th>' : ''}</tr></thead>
+        <tbody>${seeds
+          .map((i) => {
+            const locked = loggedIn && farmingLevel < i.level;
+            return `<tr class="${locked ? 'locked' : ''}">
+              <td><b>${i.level}</b></td>
+              <td>🌱 ${esc(i.crop.name)} seeds</td>
+              <td>${i.crop.icon} ${esc(i.crop.kind)}</td>
+              <td class="num">${i.crop.grow} min</td>
+              <td class="num">${fmt(i.crop.value)} pts ×2-4</td>
+              <td class="num">${fmt(i.cost)} pts</td>
               ${
-                points !== null
-                  ? `<button class="btn btn-primary" data-buy="${esc(i.item)}" ${points < i.cost ? 'disabled title="Not enough points"' : ''}>Buy</button>`
+                loggedIn
+                  ? `<td>${
+                      locked
+                        ? `<span class="muted">Farming ${i.level}</span>`
+                        : `<div class="form-row"><input type="number" class="qty" id="qty-${esc(i.item)}" value="${Math.max(1, plots || 1)}" min="1" max="1000" aria-label="How many"> ${buyBtn(i, false)}</div>`
+                    }</td>`
                   : ''
               }
-            </div>
-            <p class="muted" style="font-size:.8rem;margin:8px 0 0">In chat: <code>!buy ${esc(i.name.split(' ').pop().toLowerCase())}</code></p>
-          </section>`
-        )
-        .join('')}</div>`;
+            </tr>`;
+          })
+          .join('')}</tbody></table></div></section>`;
     $app.querySelectorAll('[data-buy]').forEach((b) => {
       b.onclick = async () => {
+        const qtyInput = document.getElementById(`qty-${b.dataset.buy}`);
         b.disabled = true;
         try {
-          const r = await api('/shop/buy', { method: 'POST', body: { item: b.dataset.buy } });
+          const r = await api('/shop/buy', { method: 'POST', body: { item: b.dataset.buy, qty: qtyInput ? qtyInput.value : 1 } });
           toast(r.message);
           route();
         } catch (err) {
@@ -462,6 +527,17 @@
         .join('');
     const gearStat = (st) => (st.attack ? `+${st.attack} atk · Swords ${st.wear}` : `+${st.defence} def · Combat ${st.wear}`);
     const tierTable = (s) => {
+      if (s.type === 'farm') {
+        return `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Level</th><th>Crop</th><th>Type</th><th class="num">Seed</th><th class="num">Ready in</th><th class="num">XP</th><th class="num">Sells for</th></tr></thead>
+        <tbody>${s.tiers
+          .map(
+            (t) => `<tr><td><b>${t.level}</b></td><td>${t.icon} ${esc(t.item)}</td><td><span class="kind kind-${t.kind === 'herb' ? 'herb' : 'veg'}">${esc(t.kind)}</span></td>
+            <td class="num">${fmt(t.seedCost)} pts</td><td class="num">${t.grow} min</td><td class="num">${t.xp}</td><td class="num">${fmt(t.value)} pts ×2-4</td></tr>`
+          )
+          .join('')}</tbody></table></div>`;
+      }
       if (s.type === 'combat') {
         return `
       <div class="table-wrap"><table>
@@ -528,6 +604,7 @@
             ${g.xpMultiplier !== 1 ? `<li><b>🔥 ${g.xpMultiplier}× XP event is on right now!</b></li>` : ''}
             <li><b>Smithing</b>: buy a 🔨 Smithing Hammer in the <a href="#/shop">shop</a> (keep it in your backpack), then turn alloys into weapons and armor: <code>!smith bronze sword</code>. <code>!equip</code> gear for attack and defence, or <code>!sell</code> it.</li>
             <li><b>Skinning</b>: with a 🔪 Skinning Knife in your backpack (buy it in the <a href="#/shop">shop</a> or smith it at Smithing 20 from a Steel Alloy), <code>!skin</code> animals for hides, from rabbits up to celestial fleece.</li>
+            <li><b>Farming</b>: buy a 🟫 farm plot (${fmt((g.shop.find((x) => x.item === 'farm_plot') || {}).cost || 0)} pts, up to 100) and seeds in the <a href="#/shop">shop</a>, <code>!plant carrot</code>, and <code>!harvest</code> when it's grown (carrots take 20 minutes). Farming has its own cooldown, so you can farm while you do everything else.</li>
             <li><b>Combat</b>: with a sword (shop or smithed), <code>!fight</code> monsters for Swords XP and loot. Start with chickens; stronger monsters unlock as you level. <code>!fight goblin</code> picks a target. Better weapons and armor raise your win chance.</li>
             <li>Your <b>character level</b> grows with the combined XP of all skills — train them all!</li>
           </ol>
@@ -540,6 +617,8 @@
             <dt><code>!&lt;tool&gt;</code></dt><dd>Show one tool: <code>!rod</code> <code>!pickaxe</code> <code>!axe</code> <code>!shovel</code> <code>!furnace</code></dd>
             <dt><code>!upgrade &lt;tool&gt;</code></dt><dd>Upgrade a tool (every 50 levels, costs points)</dd>
             <dt><code>!upgrade backpack</code></dt><dd>More backpack slots (costs points)</dd>
+            <dt><code>!plant [crop]</code></dt><dd>Plant seeds in empty plots</dd>
+            <dt><code>!harvest</code></dt><dd>Collect grown crops (<code>!farm</code> shows your plots)</dd>
             <dt><code>!skin</code></dt><dd>Skin animals (needs a knife)</dd>
             <dt><code>!smith &lt;item&gt;</code></dt><dd>Smith gear from alloys (needs a hammer)</dd>
             <dt><code>!fight [monster]</code></dt><dd>Fight for Swords XP and loot</dd>
@@ -567,7 +646,7 @@
       <div class="grid grid-guide">
         ${g.skills
           .map(
-            (s) => `<section class="panel${s.type === 'combat' || s.tiers.some((t) => t.stats) ? ' span-all' : ''}"><h2>${s.icon} ${esc(s.name)} <code>${esc(s.command)}</code> <span class="muted" style="font-size:.8rem;font-weight:600">max level ${s.maxLevel}</span></h2>${tierTable(s)}${s.tool ? toolTable(s.tool, s) : ''}</section>`
+            (s) => `<section class="panel${s.type === 'combat' || s.type === 'farm' || s.tiers.some((t) => t.stats) ? ' span-all' : ''}"><h2>${s.icon} ${esc(s.name)} <code>${esc(s.command)}</code> <span class="muted" style="font-size:.8rem;font-weight:600">max level ${s.maxLevel}</span></h2>${tierTable(s)}${s.tool ? toolTable(s.tool, s) : ''}</section>`
           )
           .join('')}
       </div>`;

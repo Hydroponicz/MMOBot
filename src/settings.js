@@ -17,6 +17,9 @@ const COMMANDS = [
   'equipped',
   'shop',
   'buy',
+  'plant',
+  'harvest',
+  'farm',
   ...TOOL_SKILLS.map((id) => SKILLS[id].tool.id),
   'stats',
   'inv',
@@ -31,6 +34,7 @@ const FIELDS = {
   general: {
     prefix: { type: 'string', label: 'Command prefix', help: 'What commands start with, e.g. ! for !fish.', maxLength: 3 },
     actionCooldown: { type: 'int', label: 'Action cooldown (seconds)', help: 'Time between skilling actions per viewer.', min: 0, max: 3600 },
+    farmCooldown: { type: 'int', label: 'Farming cooldown (seconds)', help: 'Time between !plant / !harvest per viewer (separate from the action cooldown).', min: 0, max: 3600 },
     chatPoints: { type: 'int', label: 'Points for chatting', help: 'Points for talking in chat (any message).', min: 0, max: 100000 },
     chatCooldown: { type: 'int', label: 'Chat points cooldown (seconds)', help: 'How often chatting can earn points.', min: 0, max: 86400 },
     replyInChat: { type: 'bool', label: 'Reply in chat', help: 'Turn off to play silently (site and overlay still update).' },
@@ -45,6 +49,7 @@ const FIELDS = {
     xpMultiplier: { type: 'number', label: 'XP multiplier', help: '2 = double XP event.', min: 0.1, max: 100 },
     pointsMultiplier: { type: 'number', label: 'Action points multiplier', help: 'Scales the points earned per skilling action.', min: 0, max: 100 },
     sellMultiplier: { type: 'number', label: 'Sell price multiplier', help: 'Scales what items sell for with !sell.', min: 0, max: 100 },
+    growMultiplier: { type: 'number', label: 'Crop growth time multiplier', help: '0.5 = crops grow twice as fast (applies to new plantings).', min: 0.01, max: 100 },
   },
 };
 
@@ -140,13 +145,14 @@ class Settings extends EventEmitter {
       general: {
         prefix: config.game.prefix,
         actionCooldown: config.game.actionCooldown,
+        farmCooldown: config.game.farmCooldown ?? 10,
         chatPoints: config.game.chatPoints,
         chatCooldown: config.game.chatCooldown,
         replyInChat: config.game.replyInChat,
         emoteCommands: config.game.emoteCommands || [],
         adminUsers: config.adminUsers || [],
       },
-      economy: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1 },
+      economy: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, growMultiplier: 1 },
       disabledCommands: [],
     };
     for (const [key, t] of Object.entries(TABLES)) {

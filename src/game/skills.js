@@ -102,6 +102,7 @@ const ITEMS = {
   bronze_bar: { name: 'Bronze Alloy', icon: '🟤', value: 10 },
   iron_bar: { name: 'Iron Ingot', icon: '🔩', value: 22 },
   silver_bar: { name: 'Silver Ingot', icon: '🥈', value: 40 },
+  sterling_bar: { name: 'Sterling Alloy', icon: '🪙', value: 32 },
   steel_bar: { name: 'Steel Alloy', icon: '⚙️', value: 60 },
   gold_bar: { name: 'Gold Ingot', icon: '🟨', value: 80 },
   mithril_bar: { name: 'Mithril Alloy', icon: '🔷', value: 170 },
@@ -444,7 +445,7 @@ const SKILLS = {
     verb: 'skinned',
     type: 'gather',
     maxLevel: 500,
-    // Needs this item in the backpack (buy it, or smith it at Smithing 20 from a Steel Alloy). Not used up.
+    // Needs this item in the backpack (buy it, or smith it at Smithing 20 from a Sterling Alloy). Not used up.
     requires: 'skinning_knife',
     failMessages: ['the animal ran off', 'you nicked the hide and ruined it', 'you only found tracks'],
     resources: [
@@ -473,6 +474,15 @@ const SKILLS = {
       { item: 'golden_fleece', chance: 1 / 1000, xp: 750 },
     ],
   },
+  farming: {
+    name: 'Farming',
+    icon: '🌱',
+    command: 'plant', // also !harvest and !farm
+    verb: 'harvested',
+    type: 'farm',
+    maxLevel: 500,
+    resources: [], // crops, filled in below
+  },
   smelting: {
     name: 'Smelting',
     icon: '🔥',
@@ -487,6 +497,7 @@ const SKILLS = {
       { item: 'bronze_bar', level: 1, xp: 14, kind: 'alloy', inputs: { copper_ore: 1, tin_ore: 1 } },
       { item: 'iron_bar', level: 15, xp: 30, kind: 'ingot', inputs: { iron_ore: 1 } },
       { item: 'silver_bar', level: 20, xp: 40, kind: 'ingot', inputs: { silver_ore: 1 } },
+      { item: 'sterling_bar', level: 20, xp: 45, kind: 'alloy', inputs: { silver_ore: 1, copper_ore: 1 } },
       { item: 'steel_bar', level: 30, xp: 60, kind: 'alloy', inputs: { iron_ore: 1, coal: 2 } },
       { item: 'gold_bar', level: 40, xp: 80, kind: 'ingot', inputs: { gold_ore: 1 } },
       { item: 'mithril_bar', level: 55, xp: 120, kind: 'alloy', inputs: { mithril_ore: 1, coal: 3 } },
@@ -555,7 +566,7 @@ SKILLS.smithing.recipes = SMITHING_RECIPES.map(({ item, level, bars, alloy, kind
   inputs: { [alloy]: bars },
 }));
 // Tools you can smith instead of buying.
-SKILLS.smithing.recipes.push({ item: 'skinning_knife', level: 20, kind: 'tool', xp: 70, inputs: { steel_bar: 1 } });
+SKILLS.smithing.recipes.push({ item: 'skinning_knife', level: 20, kind: 'tool', xp: 55, inputs: { sterling_bar: 1 } });
 SKILLS.smithing.recipes.sort((a, b) => a.level - b.level);
 
 // Monsters for !fight. Level = Swords level needed. Stats are tuned so that at the monster's level,
@@ -600,11 +611,89 @@ SKILLS.swords.monsters = MONSTER_LIST.map(([id, name, icon, level, xp, loot, rar
   };
 });
 
+// ---- Farming ---------------------------------------------------------------------
+// Buy plots and seeds, "!plant carrot" puts one seed in each empty plot, and "!harvest" collects
+// what's grown. Each plot holds one crop and yields a few of it. Crops are sold for now; later they
+// can feed potions and food. Value and XP scale with the Farming level needed.
+const CROP_LIST = [
+  // id, name, icon, Farming level, vegetable|herb
+  ['carrot', 'Carrot', '🥕', 1, 'vegetable'],
+  ['potato', 'Potato', '🥔', 5, 'vegetable'],
+  ['parsley', 'Parsley', '🌿', 10, 'herb'],
+  ['onion', 'Onion', '🧅', 15, 'vegetable'],
+  ['cabbage', 'Cabbage', '🥬', 20, 'vegetable'],
+  ['mint', 'Mint', '🍃', 25, 'herb'],
+  ['tomato', 'Tomato', '🍅', 30, 'vegetable'],
+  ['basil', 'Basil', '🌱', 35, 'herb'],
+  ['corn', 'Corn', '🌽', 40, 'vegetable'],
+  ['chamomile', 'Chamomile', '🌼', 45, 'herb'],
+  ['garlic', 'Garlic', '🧄', 50, 'vegetable'],
+  ['thyme', 'Thyme', '☘️', 55, 'herb'],
+  ['bell_pepper', 'Bell Pepper', '🫑', 60, 'vegetable'],
+  ['lavender', 'Lavender', '💜', 65, 'herb'],
+  ['eggplant', 'Eggplant', '🍆', 70, 'vegetable'],
+  ['sage', 'Sage', '🍀', 75, 'herb'],
+  ['pumpkin', 'Pumpkin', '🎃', 80, 'vegetable'],
+  ['rosemary', 'Rosemary', '🌾', 85, 'herb'],
+  ['chili_pepper', 'Chili Pepper', '🌶️', 90, 'vegetable'],
+  ['ginseng', 'Ginseng', '🌰', 95, 'herb'],
+  ['watermelon', 'Watermelon', '🍉', 100, 'vegetable'],
+  ['snapdragon', 'Snapdragon', '🌺', 120, 'herb'],
+  ['starfruit', 'Starfruit', '⭐', 140, 'vegetable'],
+  ['moonpetal', 'Moonpetal', '🌙', 160, 'herb'],
+  ['dragonfruit', 'Dragonfruit', '🍈', 180, 'vegetable'],
+  ['mandrake', 'Mandrake Root', '😱', 200, 'herb'],
+  ['frostleaf', 'Frostleaf', '❄️', 220, 'herb'],
+  ['sunbloom', 'Sunbloom', '🌻', 240, 'herb'],
+  ['bloodroot', 'Bloodroot', '🩸', 260, 'herb'],
+  ['ghost_pepper', 'Ghost Pepper', '👻', 280, 'vegetable'],
+  ['silverleaf', 'Silverleaf', '🍂', 300, 'herb'],
+  ['emberroot', 'Emberroot', '🔥', 320, 'herb'],
+  ['stormvine', 'Stormvine', '⛈️', 340, 'herb'],
+  ['crystal_melon', 'Crystal Melon', '💎', 360, 'vegetable'],
+  ['nightshade', 'Nightshade', '🌑', 380, 'herb'],
+  ['golden_pumpkin', 'Golden Pumpkin', '🟡', 400, 'vegetable'],
+  ['phoenix_pepper', 'Phoenix Pepper', '🌋', 420, 'vegetable'],
+  ['dreamroot', 'Dreamroot', '💤', 440, 'herb'],
+  ['starbloom', 'Starbloom', '🌟', 460, 'herb'],
+  ['voidcap', 'Voidcap', '🍄', 480, 'herb'],
+  ['world_tree_fruit', 'World Tree Fruit', '🍎', 500, 'vegetable'],
+];
+const cropValue = (level) => Math.round(3 + 0.5 * level + 0.0045 * level * level);
+const cropXp = (level) => Math.round(10 + 1.6 * level + 0.0045 * level * level);
+const growMinutes = (level) => 20 + 5 * Math.floor(level / 40); // carrot 20 min ... level 500: 80 min
+const MAX_PLOTS = 100;
+ITEMS.farm_plot = { name: 'Farm Plot', icon: '🟫', value: 0, notItem: true };
+for (const [id, name, icon, level, kind] of CROP_LIST) {
+  const value = cropValue(level);
+  ITEMS[id] = { name, icon, value, crop: kind };
+  // Seeds are kept by "!sell all" and sell back for half their shop price.
+  ITEMS[`${id}_seeds`] = { name: `${name} Seeds`, icon: '🌱', value: Math.max(1, Math.round(value / 4)), keep: true, seedFor: id };
+  SKILLS.farming.resources.push({
+    item: id,
+    level,
+    kind,
+    xp: cropXp(level),
+    seed: `${id}_seeds`,
+    seedCost: Math.max(2, Math.round(value / 2)),
+    grow: growMinutes(level),
+    yield: [2, 4], // crops per plot
+  });
+}
+
 // Shop (website + "!buy"). Prices can be changed on the admin page.
 const SHOP = [
   { item: 'smithing_hammer', cost: 500, description: 'Lets you !smith weapons and armor from alloys. Keep it in your backpack.' },
   { item: 'bronze_sword', cost: 1000, description: "A ready-made sword so you can start fighting with !fight right away. Or smith your own!" },
-  { item: 'skinning_knife', cost: 500, description: 'Lets you !skin animals for hides. Keep it in your backpack. Or smith one at Smithing 20 from a Steel Alloy.' },
+  { item: 'skinning_knife', cost: 500, description: 'Lets you !skin animals for hides. Keep it in your backpack. Or smith one at Smithing 20 from a Sterling Alloy (silver + copper ore).' },
+  { item: 'farm_plot', cost: 750, category: 'farming', description: `A plot of land for !plant. Each holds one crop. Up to ${MAX_PLOTS} plots.` },
+  ...SKILLS.farming.resources.map((c) => ({
+    item: c.seed,
+    cost: c.seedCost,
+    category: 'seeds',
+    level: c.level,
+    description: `Plant with !plant ${ITEMS[c.item].name.split(' ')[0].toLowerCase()} (Farming ${c.level}). Ready in ${c.grow} min, 2-4 ${ITEMS[c.item].name} per plot.`,
+  })),
 ];
 
 // Backpack: how many items (total, across all stacks) a player can carry. Upgrade with
@@ -636,7 +725,7 @@ const TOOL_ALIASES = { rod: 'rod', pole: 'rod', pickaxe: 'pickaxe', pick: 'picka
 // "!fish" -> "fishing". Combat skills share one command (!fight), so it maps to the first one;
 // the engine then picks the combat skill from your weapons.
 const COMMAND_TO_SKILL = {};
-for (const id of SKILL_IDS) COMMAND_TO_SKILL[SKILLS[id].command] ??= id;
+for (const id of SKILL_IDS) if (SKILLS[id].type !== 'farm') COMMAND_TO_SKILL[SKILLS[id].command] ??= id; // farming has its own commands
 const COMBAT_SKILLS = SKILL_IDS.filter((id) => SKILLS[id].type === 'combat');
 // "sword" -> "swords"
 const WEAPON_SKILL = Object.fromEntries(COMBAT_SKILLS.map((id) => [SKILLS[id].weaponType, id]));
@@ -661,6 +750,7 @@ module.exports = {
   SKILL_IDS,
   BACKPACK_TIERS,
   SHOP,
+  MAX_PLOTS,
   GEAR_SLOTS,
   COMMAND_TO_SKILL,
   COMBAT_SKILLS,
