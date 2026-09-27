@@ -153,7 +153,7 @@ test('everyone starts with the Basic Rod; !rod shows it', () => {
 test('!upgrade rod checks the Fishing level, then upgrades one tier at a time', () => {
   const { repo, engine, say } = setup();
   assert.match(say('!upgrade'), /usage: !upgrade rod/);
-  assert.match(say('!upgrade pickaxe'), /can't upgrade "pickaxe"/);
+  assert.match(say('!upgrade sword'), /can't upgrade "sword"/);
   assert.match(say('!upgrade rod'), /can be upgraded to 🌳 Oak Rod at Fishing level 50 \(you are 1\)/);
 
   const u = repo.getUserByName('alice');
@@ -183,14 +183,14 @@ test('the best rod is the last upgrade', () => {
   assert.match(say('!upgrade rod'), /already wield the best rod/);
 });
 
-test('Fishing goes to level 500; other skills stop at 99', () => {
+test('every skill goes to level 500', () => {
   const { repo, engine } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
   repo.addXp(u.id, 'fishing', 10 ** 9);
   repo.addXp(u.id, 'mining', 10 ** 9);
   const p = engine.profile(u.id);
   assert.equal(p.skills.find((s) => s.id === 'fishing').level, 500);
-  assert.equal(p.skills.find((s) => s.id === 'mining').level, 99);
+  assert.equal(p.skills.find((s) => s.id === 'mining').level, 500);
 });
 
 test('the rod sets the snap chance and boosts fishing XP', () => {
@@ -326,4 +326,79 @@ test('admin settings apply live: XP multiplier, prices, disabled commands', () =
   settings.reset('general');
   assert.equal(settings.all.general.prefix, '!');
   assert.equal(settings.all.economy.xpMultiplier, 2, 'other sections keep their changes');
+});
+
+// ---- Tools for every skill -----------------------------------------------
+
+test('every skill has a tool with 10 tiers; !upgrade works for each', () => {
+  const { repo, engine, say } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addPoints(u.id, 1_000_000);
+  for (const skill of ['fishing', 'mining', 'woodcutting', 'digging', 'smelting']) repo.addXp(u.id, skill, xpForLevel(60));
+  assert.match(say('!upgrade pickaxe'), /upgraded to 🔩 Iron Pickaxe: 15% miss chance, \+10% XP, rare finds x1.1 for 2,000 pts!/);
+  assert.match(say('!upgrade axe'), /upgraded to 🔩 Iron Axe/);
+  assert.match(say('!upgrade spade'), /upgraded to 🔩 Iron Shovel/);
+  assert.match(say('!upgrade forge'), /upgraded to 🪨 Stone Furnace: \+10% XP, 3% chance to smelt two for 2,000 pts!/);
+  assert.match(say('!upgrade pick'), /can be upgraded to ⚙️ Steel Pickaxe at Mining level 100 \(you are 60\) for 10,000 pts/);
+  const tools = engine.profile(u.id).skills.map((s) => s.tool.name);
+  assert.deepEqual(tools, ['Basic Rod', 'Iron Pickaxe', 'Iron Axe', 'Iron Shovel', 'Stone Furnace']);
+});
+
+test('!axe, !pickaxe etc. show the tool; !gear shows everything', () => {
+  const { repo, say } = setup();
+  assert.match(say('!axe'), /🪓 Bronze Axe: 18% miss chance, \+0% XP, rare finds x1 \(tier 1\/10\)\. Next: Iron Axe at Woodcutting level 50 for 2,000 pts/);
+  assert.match(say('!furnace'), /🧱 Clay Furnace: \+0% XP, 0% chance to smelt two/);
+  const u = repo.getUserByName('alice');
+  repo.addXp(u.id, 'mining', xpForLevel(50));
+  assert.match(
+    say('!gear'),
+    /🎣 Basic Rod 1\/10 \| ⛏️ Bronze Pickaxe 1\/10 ⬆️ \| 🪓 Bronze Axe 1\/10 \| 🥄 Wooden Shovel 1\/10 \| 🧱 Clay Furnace 1\/10 \| 👝 Cloth Pouch 0\/10 — ⬆️ = ready to !upgrade/
+  );
+});
+
+test('the pickaxe sets the mining miss chance', () => {
+  const { repo, say, tick } = setup({ rolls: [0.16, 0.5] });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!mine'), /better luck next time/, '0.16 < 18% Bronze Pickaxe');
+  repo.addXp(u.id, 'mining', xpForLevel(50));
+  repo.setEquipment(u.id, 'pickaxe', 1); // Iron Pickaxe: 15%, +10% XP
+  tick();
+  assert.match(say('!mine tin'), /\+11 XP/, '10 base XP * 1.1');
+});
+
+test('woodcutting has birch, pine and spruce between the classic woods, up to level 500', () => {
+  const { SKILLS } = require('../src/game/skills');
+  const woods = SKILLS.woodcutting.resources.map((r) => `${r.item}@${r.level}`);
+  assert.deepEqual(woods.slice(0, 6), ['logs@1', 'birch_logs@8', 'oak_logs@15', 'pine_logs@22', 'willow_logs@30', 'spruce_logs@38']);
+  assert.equal(SKILLS.woodcutting.resources.at(-1).level, 500);
+  for (const id of ['mining', 'woodcutting', 'digging', 'smelting']) {
+    const list = SKILLS[id].resources || SKILLS[id].recipes;
+    assert.equal(list.at(-1).level, 500, id);
+  }
+  const { repo, say } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addXp(u.id, 'woodcutting', xpForLevel(8));
+  assert.match(say('!chop birch'), /Birch Logs/);
+});
+
+test('a better furnace can smelt two at once (if the backpack has room)', () => {
+  // rolls: doubleChance roll (0.01 < 3%)
+  const { repo, say } = setup({ rolls: [0.01] });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.setEquipment(u.id, 'furnace', 1);
+  repo.addItem(u.id, 'copper_ore', 1);
+  repo.addItem(u.id, 'tin_ore', 1);
+  assert.match(say('!smelt'), /smelted 🟤 2x Bronze Alloy! \(double!\) \+15 XP/);
+  assert.equal(repo.getInventory(u.id).bronze_bar, 2);
+});
+
+test('rod prices saved before the tool rework still apply', () => {
+  const { Settings } = require('../src/settings');
+  const repo = openDb(':memory:');
+  const old = Array.from({ length: 10 }, (_, i) => ({ level: i === 0 ? 1 : i * 50, cost: i * 7, snapChance: 0.2, xpBonus: 0, rareBonus: 1 }));
+  repo.setSetting('config_overrides', { rods: old });
+  const settings = new Settings({ config: { ...baseConfig, adminUsers: [], kick: { channel: 's' } }, repo });
+  assert.equal(settings.all.rods[1].cost, 7);
+  assert.equal(settings.all.rods[1].failChance, 0.2);
+  assert.deepEqual(Object.keys(settings.all).filter((k) => k.endsWith('s') && Array.isArray(settings.all[k])).sort(), ['axes', 'disabledCommands', 'furnaces', 'pickaxes', 'rods', 'shovels']);
 });

@@ -115,6 +115,21 @@
       </div>`;
   }
 
+  // "15% miss · +10% XP · rare x1.1" for a tool tier, based on which stats that tool has.
+  const pctText = (x) => `${Math.round(x * 1000) / 10}%`;
+  const toolStats = (t, stats, failWord) =>
+    stats
+      .map((st) =>
+        st === 'failChance'
+          ? `${pctText(t.failChance)} ${failWord}`
+          : st === 'xpBonus'
+            ? `+${Math.round(t.xpBonus * 100)}% XP`
+            : st === 'rareBonus'
+              ? `rare x${t.rareBonus}`
+              : `${pctText(t.doubleChance)} double`
+      )
+      .join(' · ');
+
   function toolRow(t) {
     const status = !t.next
       ? '<span class="tool-max">Max tier 🏆</span>'
@@ -122,9 +137,9 @@
         ? `<span class="tool-ready">Ready: <code>!upgrade ${esc(t.id)}</code> · ${fmt(t.next.cost)} pts</span>`
         : `<span class="muted">Next: ${t.next.icon} ${esc(t.next.name)} at level ${t.next.level} · ${fmt(t.next.cost)} pts</span>`;
     return `
-      <div class="tool-row" title="${Math.round(t.snapChance * 1000) / 10}% snap chance · +${Math.round(t.xpBonus * 100)}% XP · rare finds x${t.rareBonus}">
+      <div class="tool-row" title="${esc(toolStats(t, t.stats, `${t.failWord} chance`))}">
         <span class="tool-icon">${t.icon}</span>
-        <span class="tool-name"><b>${esc(t.name)}</b><small>Tier ${t.tier}/${t.tiers} · +${Math.round(t.xpBonus * 100)}% XP</small></span>
+        <span class="tool-name"><b>${esc(t.name)}</b><small>Tier ${t.tier}/${t.tiers} · ${esc(toolStats(t, t.stats.filter((x) => x !== 'rareBonus'), t.failWord))}</small></span>
         ${status}
       </div>`;
   }
@@ -340,15 +355,27 @@
             )
             .join('')}
         </tbody></table></div>`;
-    const toolTable = (t) => `
-      <h3 style="margin:22px 0 8px">Rods <code>${esc(t.command)}</code></h3>
-      <p class="muted" style="margin-top:0">Everyone starts with a Basic Rod. Each rod unlocks at a Fishing level and costs points. Upgrade one tier at a time.</p>
+    const STAT_HEAD = {
+      failChance: (t) => `<th class="num" title="Chance an action fails">${t.failWord === 'snap' ? 'Snap' : 'Miss'}</th>`,
+      xpBonus: () => '<th class="num" title="Bonus XP">XP</th>',
+      rareBonus: () => '<th class="num" title="Rare-find odds multiplier">Rare</th>',
+      doubleChance: () => '<th class="num" title="Chance to smelt two at once">Double</th>',
+    };
+    const STAT_CELL = {
+      failChance: (r) => pctText(r.failChance),
+      xpBonus: (r) => `+${Math.round(r.xpBonus * 100)}%`,
+      rareBonus: (r) => `x${r.rareBonus}`,
+      doubleChance: (r) => pctText(r.doubleChance),
+    };
+    const toolTable = (t, skill) => `
+      <h3 style="margin:22px 0 8px">${esc(t.name)}s <code>${esc(t.command)}</code></h3>
+      <p class="muted" style="margin-top:0">Everyone starts with a ${esc(t.tiers[0].name)}. A better one unlocks every 50 ${esc(skill.name)} levels and costs points. Upgrade one tier at a time.</p>
       <div class="table-wrap"><table>
-        <thead><tr><th>Level</th><th>Rod</th><th class="num" title="Chance your line snaps">Snap</th><th class="num" title="Bonus Fishing XP">XP</th><th class="num" title="Rare-find odds multiplier">Rare</th><th class="num">Cost</th></tr></thead>
+        <thead><tr><th>Level</th><th>${esc(t.name)}</th>${t.stats.map((st) => STAT_HEAD[st](t)).join('')}<th class="num">Cost</th></tr></thead>
         <tbody>${t.tiers
           .map(
-            (r) => `<tr><td><b>${r.level}</b></td><td>${r.icon} ${esc(r.name)}</td><td class="num">${Math.round(r.snapChance * 1000) / 10}%</td>
-            <td class="num">+${Math.round(r.xpBonus * 100)}%</td><td class="num">x${r.rareBonus}</td><td class="num">${r.cost ? `${fmt(r.cost)} pts` : 'free'}</td></tr>`
+            (r) => `<tr><td><b>${r.level}</b></td><td>${r.icon} ${esc(r.name)}</td>${t.stats.map((st) => `<td class="num">${STAT_CELL[st](r)}</td>`).join('')}
+            <td class="num">${r.cost ? `${fmt(r.cost)} pts` : 'free'}</td></tr>`
           )
           .join('')}</tbody></table></div>`;
     $app.innerHTML = `
@@ -363,7 +390,7 @@
             <li>Mine ores, then <code>!smelt</code> them into <b>ingots</b> (one ore) and <b>alloys</b> (mixed ores, e.g. copper + tin = bronze). The ores come out of your backpack.</li>
             <li>Your backpack holds <b>${g.backpack[0].capacity} items</b> to start. When it's full, <code>!sell</code>, <code>!smelt</code> or <code>!upgrade backpack</code> (up to ${g.backpack[g.backpack.length - 1].capacity} slots).</li>
             <li>Just chatting earns <b>${g.chatPoints} points</b> (once every ${g.chatCooldown}s). <code>!sell</code> loot for even more.</li>
-            <li>Fishing goes all the way to <b>level 500</b>. Every 50 levels, <code>!upgrade rod</code> (costs points) for fewer snapped lines, bonus XP and better rare odds.</li>
+            <li>Every skill goes all the way to <b>level 500</b>. Every 50 levels you can buy a better tool with points: <code>!upgrade rod</code>, <code>pickaxe</code>, <code>axe</code>, <code>shovel</code> or <code>furnace</code>. Better tools fail less, give bonus XP and better rare odds (furnaces can smelt two at once). <code>!gear</code> shows all your tools.</li>
             ${g.xpMultiplier !== 1 ? `<li><b>🔥 ${g.xpMultiplier}× XP event is on right now!</b></li>` : ''}
             <li>Your <b>character level</b> grows with the combined XP of all skills — train them all!</li>
           </ol>
@@ -372,8 +399,9 @@
           <h2>Chat commands</h2>
           <dl class="kv">
             ${g.skills.map((s) => `<dt><code>${esc(s.command)}</code></dt><dd>${s.icon} Train ${esc(s.name)}</dd>`).join('')}
-            <dt><code>!rod</code></dt><dd>Show your fishing rod</dd>
-            <dt><code>!upgrade rod</code></dt><dd>Upgrade your rod (every 50 Fishing levels, costs points)</dd>
+            <dt><code>!gear</code></dt><dd>Show all your tools and backpack</dd>
+            <dt><code>!&lt;tool&gt;</code></dt><dd>Show one tool: <code>!rod</code> <code>!pickaxe</code> <code>!axe</code> <code>!shovel</code> <code>!furnace</code></dd>
+            <dt><code>!upgrade &lt;tool&gt;</code></dt><dd>Upgrade a tool (every 50 levels, costs points)</dd>
             <dt><code>!upgrade backpack</code></dt><dd>More backpack slots (costs points)</dd>
             <dt><code>!stats [name]</code></dt><dd>Show levels and points</dd>
             <dt><code>!inv</code></dt><dd>Show your backpack</dd>
@@ -397,7 +425,7 @@
       <div class="grid grid-guide">
         ${g.skills
           .map(
-            (s) => `<section class="panel"><h2>${s.icon} ${esc(s.name)} <code>${esc(s.command)}</code> <span class="muted" style="font-size:.8rem;font-weight:600">max level ${s.maxLevel}</span></h2>${tierTable(s)}${s.tool ? toolTable(s.tool) : ''}</section>`
+            (s) => `<section class="panel"><h2>${s.icon} ${esc(s.name)} <code>${esc(s.command)}</code> <span class="muted" style="font-size:.8rem;font-weight:600">max level ${s.maxLevel}</span></h2>${tierTable(s)}${s.tool ? toolTable(s.tool, s) : ''}</section>`
           )
           .join('')}
       </div>`;
@@ -622,7 +650,8 @@
       const cols = Object.entries(t.columns);
       return `
       <form class="panel settings-form" data-section="${section}" data-kind="table">
-        <div class="panel-head"><h2>${esc(t.label)}</h2>${resetBtn(section)}</div>
+       <details${isOver(section) ? ' open' : ''}>
+        <summary class="panel-head"><h2>${esc(t.label)}</h2>${resetBtn(section)}</summary>
         <p class="muted">${blurb}</p>
         <div class="table-wrap"><table class="edit-table">
           <thead><tr><th>#</th><th>Name</th>${cols.map(([, c]) => `<th>${esc(c.label)}</th>`).join('')}</tr></thead>
@@ -638,6 +667,7 @@
             .join('')}</tbody>
         </table></div>
         <button class="btn btn-primary" style="margin-top:12px">Save ${esc(t.label.toLowerCase())}</button>
+       </details>
       </form>`;
     };
     const off = d.values.disabledCommands;
@@ -673,7 +703,10 @@
         </div>
       </div>
       <div class="stack" style="margin-top:16px">
-        ${tableSection('rods', 'Fishing level needed, price and stats for each rod. Levels must go up from tier to tier; the first rod is free at level 1.')}
+        ${Object.keys(d.tables)
+          .filter((k) => k !== 'backpack')
+          .map((k) => tableSection(k, `Level needed, price and stats for each tier. Levels must go up from tier to tier; the first tier is free at level 1.`))
+          .join('')}
         ${tableSection('backpack', 'Slots and price for each backpack level. Slots must go up from level to level.')}
       </div>`;
 

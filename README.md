@@ -13,11 +13,11 @@ Viewers type commands in your Kick chat to train skills, collect loot and level 
   | `!dig` | 🏺 Digging | Old bones → Dragon relics |
   | `!smelt` | 🔥 Smelting | Turns ores from your backpack into ingots (one ore) and alloys (mixed ores, e.g. copper + tin → bronze) |
 - Target a specific resource you've unlocked: `!mine iron`, `!chop oak`, `!smelt steel`.
-- **XP and levels**: 1–99 per skill, and **Fishing goes to 500**. An overall **character level** (up to 120) is based on combined XP, with each skill counting up to its level-120 XP, so no single skill can max it alone.
+- **XP and levels**: every skill goes from 1 to **500**, with new resources unlocking along the way (e.g. woods: Logs → Birch → Oak → Pine → Willow → Spruce → Maple → … → Celestial Timber at 500). An overall **character level** (up to 120) is based on combined XP, with each skill counting up to its level-120 XP, so no single skill can max it alone.
 - **Backpack**: holds 10 items to start. When it's full, gathering stops until you `!sell`, `!smelt` (always frees space) or `!upgrade backpack`. There are 10 backpack levels, up to 100 slots, and each costs more points than the last.
-- **Fishing rods**: everyone starts with a Basic Rod. Every 50 Fishing levels, `!upgrade rod` (costs points, rising with each rod) moves you up one tier, through 10 rods up to Poseidon's Rod at level 450. Better rods snap less often, give bonus Fishing XP and improve rare-find odds. `!rod` shows your current rod.
+- **Tools for every skill**: a rod (Fishing), pickaxe (Mining), axe (Woodcutting), shovel (Digging) and furnace (Smelting). Each has 10 tiers. Everyone starts with tier 1, and a new tier unlocks every 50 levels of that skill. `!upgrade rod` / `pickaxe` / `axe` / `shovel` / `furnace` buys the next tier with points (2,000 up to 1,250,000). Better tools fail less often, give bonus XP and improve rare-find odds; better furnaces instead give bonus XP and a chance to smelt two at once. `!gear` shows all your tools; `!rod`, `!axe` and the like show one.
 - **Points**: viewers earn points for chatting (rate-limited), for every action, and by selling loot (`!sell all`).
-- Extra commands: `!rod`, `!upgrade rod`, `!upgrade backpack`, `!stats [name]`, `!inv`, `!sell <item> [amount|all]`, `!points`, `!top [skill|points]`, `!commands`.
+- Extra commands: `!gear`, `!rod`/`!pickaxe`/`!axe`/`!shovel`/`!furnace`, `!upgrade <tool>`, `!upgrade backpack`, `!stats [name]`, `!inv`, `!sell <item> [amount|all]`, `!points`, `!top [skill|points]`, `!commands`.
 - A per-viewer action cooldown (default 30s) that warns only once, so spamming doesn't flood chat.
 - **Website**: home page with live feed and top players, character sheets, per-skill leaderboards, and a "How to play" guide generated from the game data.
 - **Admin page**:
@@ -111,7 +111,7 @@ Kick can only deliver webhooks to a public URL. Run a tunnel (e.g. `cloudflared 
 
 - **Game content**: edit `src/game/skills.js` to change items, XP values, unlock levels, sell prices, rare-drop odds and fail messages. The website's guide page updates automatically.
 - **Pacing and prices**: change them on **Admin → Settings**. They take effect immediately and are stored in the database. The `ACTION_COOLDOWN_SECONDS`, `CHAT_POINTS` and similar variables only set the starting defaults. Change the level curve in `src/game/xp.js`.
-- **Rods**: edit the `tool.tiers` list under `fishing` in `skills.js` to change unlock levels, snap chance, XP bonus and rare odds. Any skill can get an upgradable tool the same way (e.g. a pickaxe for Mining with `id: 'pickaxe'`), and `!upgrade pickaxe` then works automatically.
-- **Level caps**: set `maxLevel` on a skill (Fishing uses `maxLevel: 500`; the default is 99).
+- **Tools**: prices and stats are editable live on **Admin → Settings**. Tool names and icons are in each skill's `tool` block in `skills.js`, and the shared price/stat ladder is `TOOL_LADDER`.
+- **Level caps**: set `maxLevel` on a skill (all current skills use 500; the default is 99).
 - **New skill**: add an entry to `SKILLS` in `skills.js` (with `command`, `resources` and `rares`), add its items to `ITEMS`, and add a color variable `--<skillid>` in `public/styles.css`. Existing players get the new skill automatically.
 - **Quiet mode**: `REPLY_IN_CHAT=false` stops the bot from replying in chat. Progress still tracks and shows on the site and overlay.

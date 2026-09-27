@@ -1,5 +1,5 @@
 const { EventEmitter } = require('node:events');
-const { ITEMS, SKILLS, SKILL_IDS, BACKPACK_TIERS, COMMAND_TO_SKILL, TOOL_TO_SKILL, maxLevel, findItem } = require('./skills');
+const { ITEMS, SKILLS, SKILL_IDS, BACKPACK_TIERS, COMMAND_TO_SKILL, TOOL_TO_SKILL, TOOL_ALIASES, maxLevel, findItem } = require('./skills');
 const { levelForXp, progress, characterProgress } = require('./xp');
 
 const fmt = (n) => Number(n).toLocaleString('en-US');
@@ -15,7 +15,9 @@ const INFO_COMMANDS = {
   sell: ['sell', 'sell'],
   top: ['top', 'top'], leaderboard: ['top', 'top'], lb: ['top', 'top'],
   upgrade: ['upgrade', 'upgrade'],
-  rod: ['toolInfo', 'rod'],
+  gear: ['gear', 'gear'], tools: ['gear', 'gear'], equipment: ['gear', 'gear'],
+  // !rod, !pickaxe, !axe, !shovel, !furnace (and aliases like !pick) show that tool.
+  ...Object.fromEntries(Object.entries(TOOL_ALIASES).map(([word, toolId]) => [word, ['toolInfo', toolId]])),
   commands: ['help', 'commands'], help: ['help', 'commands'], rpg: ['help', 'commands'], mmo: ['help', 'commands'],
 };
 
@@ -61,7 +63,7 @@ class GameEngine extends EventEmitter {
       if (!disabledCommands.includes(cmd)) reply = this.runAction(user, COMMAND_TO_SKILL[cmd], args);
     } else if (INFO_COMMANDS[cmd]) {
       const [handler, name] = INFO_COMMANDS[cmd];
-      if (!disabledCommands.includes(name)) reply = this[handler](user, args);
+      if (!disabledCommands.includes(name)) reply = this[handler](user, args, cmd);
     }
     return { reply: reply ? `@${user.username} ${reply}` : null };
   }
@@ -128,7 +130,7 @@ class GameEngine extends EventEmitter {
     }
 
     // Failure chance: set by your tool if the skill has one, otherwise shrinks as you level.
-    const failChance = tool ? tool.snapChance : Math.max(0.03, 0.15 - level * 0.0015);
+    const failChance = tool ? tool.failChance || 0 : Math.max(0.03, 0.15 - level * 0.0015);
     if (this.rng() < failChance) {
       const msg = skill.failMessages[Math.floor(this.rng() * skill.failMessages.length)];
       const hint = tool && this.canUpgrade(user.id, skillId, level) ? ` (tip: !upgrade ${skill.tool.id})` : '';
@@ -217,8 +219,14 @@ class GameEngine extends EventEmitter {
     const charBefore = characterProgress(SKILL_IDS.map((id) => before[id])).level;
 
     const points = Math.round(Math.max(1, xpGain / 10) * this.cfg.pointsMultiplier);
+    // Better furnaces sometimes make two (only if there's room in the backpack for the extra one).
+    let qty = 1;
+    if (tool?.doubleChance > 0 && this.rng() < tool.doubleChance) {
+      const bagNow = this.backpack(user.id);
+      if (bagNow.used + 1 < bagNow.capacity) qty = 2;
+    }
     this.repo.addXp(user.id, skillId, xpGain);
-    this.repo.addItem(user.id, item, 1);
+    this.repo.addItem(user.id, item, qty);
     if (points > 0) this.repo.addPoints(user.id, points);
 
     const xpAfter = before[skillId] + xpGain;
@@ -226,7 +234,7 @@ class GameEngine extends EventEmitter {
     const charAfter = characterProgress(SKILL_IDS.map((id) => before[id] + (id === skillId ? xpGain : 0))).level;
 
     const bag = this.backpack(user.id);
-    let reply = `${skill.icon} you ${skill.verb} ${rare ? 'a RARE ' : ''}${itemLabel(item)}! +${xpGain} XP, +${points} pts`;
+    let reply = `${skill.icon} you ${skill.verb} ${rare ? 'a RARE ' : ''}${itemLabel(item, qty)}!${qty > 1 ? ' (double!)' : ''} +${xpGain} XP, +${points} pts`;
     const text = `${skill.verb} ${rare ? 'a RARE ' : ''}${ITEMS[item].name}`;
     this.emitActivity(user, { kind: rare ? 'rare' : 'action', skill: skillId, item, xp: xpGain, text });
 
@@ -373,7 +381,8 @@ class GameEngine extends EventEmitter {
     const off = this.cfg.disabledCommands || [];
     const on = (list) => list.filter((c) => !off.includes(c)).map((c) => `${p}${c}`).join(' ');
     const skills = on(SKILL_IDS.map((id) => SKILLS[id].command));
-    return `Skills: ${skills} (add a target, e.g. ${p}mine iron) | Gear: ${p}rod ${p}upgrade rod ${p}upgrade backpack | Info: ${on(['stats', 'inv', 'sell', 'points', 'top'])} | Login & track progress: ${this.siteUrl}`;
+    const tools = Object.keys(TOOL_TO_SKILL).join('/');
+    return `Skills: ${skills} (add a target, e.g. ${p}mine iron) | Gear: ${p}gear, ${p}upgrade ${tools}/backpack | Info: ${on(['stats', 'inv', 'sell', 'points', 'top'])} | Login & track progress: ${this.siteUrl}`;
   }
 
   // ---- Tools & upgrades (!upgrade rod, !upgrade backpack) --------------------
@@ -403,8 +412,15 @@ class GameEngine extends EventEmitter {
     return Boolean(next && level >= next.level);
   }
 
-  describeTool(tool) {
-    return `${tool.icon} ${tool.name}: ${pct(tool.snapChance)} snap chance, +${Math.round(tool.xpBonus * 100)}% XP, rare finds x${tool.rareBonus}`;
+  // "🎣 Oak Rod: 15% snap chance, +10% XP, rare finds x1.1"
+  describeTool(tool, skillId) {
+    const def = SKILLS[skillId].tool;
+    const parts = [];
+    if (def.stats.includes('failChance')) parts.push(`${pct(tool.failChance)} ${def.failWord || 'fail'} chance`);
+    if (def.stats.includes('xpBonus')) parts.push(`+${Math.round(tool.xpBonus * 100)}% XP`);
+    if (def.stats.includes('rareBonus')) parts.push(`rare finds x${tool.rareBonus}`);
+    if (def.stats.includes('doubleChance')) parts.push(`${pct(tool.doubleChance)} chance to smelt two`);
+    return `${tool.icon} ${tool.name}: ${parts.join(', ')}`;
   }
 
   // Deducts the cost if the player can afford it. Returns null on success, or a reply explaining why not.
@@ -420,7 +436,7 @@ class GameEngine extends EventEmitter {
   upgrade(user, args) {
     const which = (args[0] || '').toLowerCase();
     if (['backpack', 'bag', 'pack'].includes(which)) return this.upgradeBackpack(user);
-    const skillId = TOOL_TO_SKILL[which];
+    const skillId = TOOL_TO_SKILL[TOOL_ALIASES[which]];
     const options = [...Object.keys(TOOL_TO_SKILL), 'backpack'].map((t) => `!upgrade ${t}`).join(', ');
     if (!skillId) return which ? `you can't upgrade "${which}" (yet). Try ${options}` : `usage: ${options}`;
     return this.upgradeTool(user, skillId);
@@ -448,7 +464,7 @@ class GameEngine extends EventEmitter {
       const upcoming = after
         ? ` Next: ${after.name} at level ${after.level} for ${fmt(after.cost)} pts.`
         : ` That is the best ${t.name.toLowerCase()} there is! 🏆`;
-      return `🔧 upgraded to ${this.describeTool(next)} for ${fmt(next.cost)} pts!${upcoming}`;
+      return `🔧 upgraded to ${this.describeTool(next, skillId)} for ${fmt(next.cost)} pts!${upcoming}`;
     });
   }
 
@@ -467,9 +483,9 @@ class GameEngine extends EventEmitter {
     });
   }
 
-  // !rod: show your current rod.
-  toolInfo(user) {
-    const skillId = TOOL_TO_SKILL.rod;
+  // !rod / !pickaxe / !axe / !shovel / !furnace: show that tool and what's next.
+  toolInfo(user, args, cmd) {
+    const skillId = TOOL_TO_SKILL[TOOL_ALIASES[cmd]] || TOOL_TO_SKILL.rod;
     const t = SKILLS[skillId].tool;
     const tiers = this.toolTiers(skillId);
     const tier = this.toolTier(user.id, skillId);
@@ -482,7 +498,22 @@ class GameEngine extends EventEmitter {
           ? ` Ready: !upgrade ${t.id} for the ${next.name} (${fmt(next.cost)} pts)!`
           : ` Next: ${next.name} at ${SKILLS[skillId].name} level ${next.level} for ${fmt(next.cost)} pts.`;
     }
-    return `${this.describeTool(tiers[tier])} (tier ${tier + 1}/${tiers.length}).${tail}`;
+    return `${this.describeTool(tiers[tier], skillId)} (tier ${tier + 1}/${tiers.length}).${tail}`;
+  }
+
+  // !gear: every tool plus the backpack in one line, flagging anything ready to upgrade.
+  gear(user) {
+    const xp = this.repo.getSkills(user.id);
+    const parts = SKILL_IDS.filter((id) => SKILLS[id].tool).map((id) => {
+      const tiers = this.toolTiers(id);
+      const tier = this.toolTier(user.id, id);
+      const ready = this.canUpgrade(user.id, id, skillLevel(id, xp[id])) ? ' ⬆️' : '';
+      return `${tiers[tier].icon} ${tiers[tier].name} ${tier + 1}/${tiers.length}${ready}`;
+    });
+    const bag = this.backpack(user.id);
+    parts.push(`${bag.icon} ${bag.name} ${bag.used}/${bag.capacity}`);
+    const anyReady = parts.some((p) => p.endsWith('⬆️'));
+    return `${parts.join(' | ')}${anyReady ? ' — ⬆️ = ready to !upgrade' : ''}`;
   }
 
   // ---- Data for the website ---------------------------------------------
@@ -503,6 +534,9 @@ class GameEngine extends EventEmitter {
         const nextTool = toolTiers[tier + 1];
         tool = {
           id: s.tool.id,
+          kind: s.tool.name,
+          failWord: s.tool.failWord || 'fail',
+          stats: s.tool.stats,
           tier: tier + 1,
           tiers: toolTiers.length,
           ...toolTiers[tier],
@@ -580,7 +614,14 @@ class GameEngine extends EventEmitter {
           })),
           maxLevel: maxLevel(id),
           tool: s.tool
-            ? { id: s.tool.id, command: `${this.cfg.prefix}upgrade ${s.tool.id}`, tiers: this.toolTiers(id) }
+            ? {
+                id: s.tool.id,
+                name: s.tool.name,
+                failWord: s.tool.failWord || 'fail',
+                stats: s.tool.stats,
+                command: `${this.cfg.prefix}upgrade ${s.tool.id}`,
+                tiers: this.toolTiers(id),
+              }
             : null,
           rares: (s.rares || []).map((r) => ({
             item: ITEMS[r.item].name,

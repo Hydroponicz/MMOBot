@@ -4,10 +4,22 @@
 // admin changes is stored in the database as an override and wins over the defaults, so changes apply
 // immediately and survive redeploys. Kick credentials, URLs and paths stay environment-only.
 const { EventEmitter } = require('node:events');
-const { SKILLS, BACKPACK_TIERS, COMMAND_TO_SKILL } = require('./game/skills');
+const { SKILLS, SKILL_IDS, BACKPACK_TIERS, COMMAND_TO_SKILL } = require('./game/skills');
 
 // Every command a viewer can type (without the prefix), for enabling/disabling from the admin page.
-const COMMANDS = [...Object.keys(COMMAND_TO_SKILL), 'upgrade', 'rod', 'stats', 'inv', 'sell', 'points', 'top', 'commands'];
+const TOOL_SKILLS = SKILL_IDS.filter((id) => SKILLS[id].tool);
+const COMMANDS = [
+  ...Object.keys(COMMAND_TO_SKILL),
+  'upgrade',
+  'gear',
+  ...TOOL_SKILLS.map((id) => SKILLS[id].tool.id),
+  'stats',
+  'inv',
+  'sell',
+  'points',
+  'top',
+  'commands',
+];
 
 // Editable scalar fields, grouped into sections. The admin page renders its form from this.
 const FIELDS = {
@@ -27,26 +39,36 @@ const FIELDS = {
 };
 
 // Editable tables: one row per tier. Names/icons come from the game data and aren't editable here.
-const TABLES = {
-  rods: {
-    label: 'Fishing rods',
+// One table per skill tool ("rods", "pickaxes", "axes", "shovels", "furnaces") plus the backpack.
+const cap = (w) => w.charAt(0).toUpperCase() + w.slice(1);
+const STAT_COLUMNS = {
+  failChance: (tool) => ({ type: 'number', label: `${cap(tool.failWord || 'fail')} chance (0-1)`, min: 0, max: 1 }),
+  xpBonus: () => ({ type: 'number', label: 'XP bonus (0.1 = +10%)', min: 0, max: 100 }),
+  rareBonus: () => ({ type: 'number', label: 'Rare odds ×', min: 0, max: 100 }),
+  doubleChance: () => ({ type: 'number', label: 'Double chance (0-1)', min: 0, max: 1 }),
+};
+const TABLES = {};
+for (const id of TOOL_SKILLS) {
+  const skill = SKILLS[id];
+  const tool = skill.tool;
+  TABLES[`${tool.id}s`] = {
+    label: `${skill.name} ${tool.name.toLowerCase()}s`,
+    tool: true,
     columns: {
-      level: { type: 'int', label: 'Fishing level', min: 1, max: 500 },
+      level: { type: 'int', label: `${skill.name} level`, min: 1, max: skill.maxLevel || 99 },
       cost: { type: 'int', label: 'Cost (points)', min: 0, max: 1e12 },
-      snapChance: { type: 'number', label: 'Snap chance (0-1)', min: 0, max: 1 },
-      xpBonus: { type: 'number', label: 'XP bonus (0.1 = +10%)', min: 0, max: 100 },
-      rareBonus: { type: 'number', label: 'Rare odds ×', min: 0, max: 100 },
+      ...Object.fromEntries(tool.stats.map((stat) => [stat, STAT_COLUMNS[stat](tool)])),
     },
-    rows: () => SKILLS.fishing.tool.tiers,
+    rows: () => tool.tiers,
+  };
+}
+TABLES.backpack = {
+  label: 'Backpack',
+  columns: {
+    capacity: { type: 'int', label: 'Slots', min: 1, max: 100000 },
+    cost: { type: 'int', label: 'Cost (points)', min: 0, max: 1e12 },
   },
-  backpack: {
-    label: 'Backpack',
-    columns: {
-      capacity: { type: 'int', label: 'Slots', min: 1, max: 100000 },
-      cost: { type: 'int', label: 'Cost (points)', min: 0, max: 1e12 },
-    },
-    rows: () => BACKPACK_TIERS,
-  },
+  rows: () => BACKPACK_TIERS,
 };
 
 class SettingsError extends Error {}
@@ -97,22 +119,26 @@ class Settings extends EventEmitter {
       },
       economy: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1 },
       disabledCommands: [],
-      rods: TABLES.rods.rows().map(({ level, cost, snapChance, xpBonus, rareBonus }) => ({ level, cost, snapChance, xpBonus, rareBonus })),
-      backpack: TABLES.backpack.rows().map(({ capacity, cost }) => ({ capacity, cost })),
     };
+    for (const [key, t] of Object.entries(TABLES)) {
+      this.defaults[key] = t.rows().map((row) => Object.fromEntries(Object.keys(t.columns).map((c) => [c, row[c]])));
+    }
     this.reload();
   }
 
   reload() {
     const o = this.repo.getSetting('config_overrides') || {};
+    // Rods saved before tools were generalised used "snapChance" for what is now "failChance".
+    if (Array.isArray(o.rods)) {
+      o.rods = o.rods.map(({ snapChance, ...row }) => (snapChance !== undefined && row.failChance === undefined ? { ...row, failChance: snapChance } : row));
+    }
     const d = this.defaults;
     const table = (name) => (Array.isArray(o[name]) && o[name].length === d[name].length ? o[name] : d[name]);
     this.all = {
       general: { ...d.general, ...(o.general || {}) },
       economy: { ...d.economy, ...(o.economy || {}) },
       disabledCommands: Array.isArray(o.disabledCommands) ? o.disabledCommands : d.disabledCommands,
-      rods: table('rods'),
-      backpack: table('backpack'),
+      ...Object.fromEntries(Object.keys(TABLES).map((k) => [k, table(k)])),
     };
     this.overridden = Object.keys(o);
   }
@@ -155,13 +181,13 @@ class Settings extends EventEmitter {
       )
     );
     // Tiers must get strictly better/pricier as they go up.
-    const ascending = section === 'rods' ? 'level' : 'capacity';
+    const ascending = t.tool ? 'level' : 'capacity';
     for (let i = 1; i < out.length; i++) {
       if (out[i][ascending] <= out[i - 1][ascending]) {
         throw new SettingsError(`${t.label}: tier ${i + 1} ${t.columns[ascending].label.toLowerCase()} must be higher than tier ${i}`);
       }
     }
-    if (section === 'rods' && out[0].level !== 1) throw new SettingsError('The first rod must be available at level 1');
+    if (t.tool && out[0].level !== 1) throw new SettingsError(`${t.label}: the first tier must be available at level 1`);
     return out;
   }
 

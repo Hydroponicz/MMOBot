@@ -272,3 +272,8 @@ select { width: auto; }
 .log-warn .log-level { color: var(--gold); }
 .log-error .log-level, .log-error .log-msg { color: var(--danger); }
 .log-info .log-level { color: var(--muted); }
+details > summary.panel-head { cursor: pointer; list-style: none; margin-bottom: 0; }
+details > summary.panel-head::-webkit-details-marker { display: none; }
+details > summary.panel-head h2::before { content: '▸ '; color: var(--muted); }
+details[open] > summary.panel-head { margin-bottom: 14px; }
+details[open] > summary.panel-head h2::before { content: '▾ '; }
