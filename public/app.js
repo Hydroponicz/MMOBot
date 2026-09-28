@@ -1238,7 +1238,7 @@
           <p class="pet-list">${g.pets.map((p) => `<span class="badge" title="${esc(p.skill)}">${p.icon} ${esc(p.name)} <span class="muted">${esc(p.skill)}</span></span>`).join(' ')}</p>`,
       },
       {
-        id: 'prestige', tab: 'rewards', icon: '⭐', title: 'Prestige', summary: `Reset a level ${g.prestigeLevel}+ skill for a star and +5% XP`,
+        id: 'prestige', tab: 'rewards', icon: '⭐', title: 'Prestige', summary: `Reset a level ${g.prestigeLevel} skill for a star and +5% XP`,
         body: list([
           `At level ${g.prestigeLevel} in a skill, ${c('prestige mining')} resets it to level 1 for a permanent ⭐ on your character and <b>+5% XP</b> in that skill (up to 10 times, so +50%).`,
           "You keep your items, tools and gear. It asks you to confirm first.",

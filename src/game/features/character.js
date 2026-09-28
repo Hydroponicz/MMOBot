@@ -199,7 +199,7 @@ module.exports = {
 
   // !prestige <skill> [confirm]
   prestige(user, args = []) {
-    const need = this.cfg.prestigeLevel ?? 100;
+    const need = this.cfg.prestigeLevel ?? 500;
     const max = 10;
     const p = this.cfg.prefix;
     const q = String(args[0] || '').toLowerCase();
@@ -207,7 +207,7 @@ module.exports = {
     const mine = this.prestigeOf(user.id);
     if (!skillId) {
       const list = Object.entries(mine).map(([id, n]) => `${SKILLS[id].icon}${'⭐'.repeat(Math.min(n, 5))}${n > 5 ? `x${n}` : ''}`).join(' ');
-      return `prestige: reset a skill at level ${need}+ back to 1 for a permanent ⭐ and +5% XP in it (up to ${max} times). ${p}prestige mining to start.${list ? ` Yours: ${list}` : ''}`;
+      return `prestige: reset a skill at level ${need} back to 1 for a permanent ⭐ and +5% XP in it (up to ${max} times). ${p}prestige mining to start.${list ? ` Yours: ${list}` : ''}`;
     }
     const skill = SKILLS[skillId];
     const level = skillLevel(skillId, this.repo.getSkills(user.id)[skillId]);

@@ -1840,11 +1840,13 @@ test('pets: rare drop once per skill, follows you, +5% XP in its skill', () => {
   assert.equal(engine.backpack(u.id).used, 3, 'pets take no backpack space (just 2 fish and 1 ore)');
 });
 
-test('prestige: reset a level 100+ skill for a star and +5% XP', () => {
+test('prestige: reset a level 500 (max) skill for a star and +5% XP', () => {
   const { repo, engine, say, u } = extrasSetup();
-  assert.match(say('!prestige mining'), /need ⛏️ Mining level 100/);
-  repo.addXp(u.id, 'mining', xpForLevel(120));
-  assert.match(say('!prestige mining'), /resets ⛏️ Mining from level 120 to 1.*!prestige mining confirm/);
+  assert.match(say('!prestige mining'), /need ⛏️ Mining level 500/);
+  repo.addXp(u.id, 'mining', xpForLevel(499));
+  assert.match(say('!prestige mining confirm'), /need ⛏️ Mining level 500 to prestige \(you are 499\)/, 'level 499 is not enough');
+  repo.addXp(u.id, 'mining', xpForLevel(500) - xpForLevel(499));
+  assert.match(say('!prestige mining'), /resets ⛏️ Mining from level 500 to 1.*!prestige mining confirm/);
   assert.match(say('!prestige mining confirm'), /Mining prestige 1! Back to level 1 with \+5% Mining XP/);
   assert.equal(repo.getSkills(u.id).mining, 0);
   assert.equal(engine.prestigeXp(u.id, 'mining'), 1.05);
