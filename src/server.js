@@ -60,7 +60,7 @@ if (require.main === module) {
   const repo = openDb(config.dbPath);
   const logger = createLogger({ repo });
   config.sessionSecret = resolveSessionSecret(config, repo);
-  const { app, kick } = createApp({ config, repo, logger });
+  const { app, kick, engine } = createApp({ config, repo, logger });
   process.on('unhandledRejection', (err) => logger.error('[server] unhandled promise rejection:', err));
 
   const server = app.listen(config.port, () => {
