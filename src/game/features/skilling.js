@@ -50,7 +50,9 @@ module.exports = {
     // A bare "!smith" just lists what you can make, so it doesn't need (or use) stamina.
     if (SKILLS[skillId].pickBest === false && !args.length) return this.process(user, skillId, args).reply;
     const now = this.now();
-    const tired = this.staminaCheck(user, now);
+    // Cooking is free once a fire is lit: it's limited by the fire's time left and your raw food.
+    const free = !!SKILLS[skillId].needsFire;
+    const tired = free ? null : this.staminaCheck(user, now);
     if (tired !== null) return tired || null;
 
     const skill = SKILLS[skillId];
@@ -65,7 +67,7 @@ module.exports = {
             : this.gather(user, skillId, args);
       if (r.consumed) {
         this.repo.setActionAt(user.id, now);
-        this.spendStamina(user, now);
+        if (!free) this.spendStamina(user, now);
       }
       return r;
     });

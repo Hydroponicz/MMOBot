@@ -782,7 +782,13 @@ test('cooking: better food gives more XP, and the burn chance falls with level',
   const salmon = SKILLS.cooking.recipes.find((r) => r.item === 'cooked_salmon');
   const shrimp = SKILLS.cooking.recipes.find((r) => r.item === 'cooked_shrimp');
   assert.ok(salmon.xp > shrimp.xp);
-  assert.match(engine.handleChat({ kickUserId: '1', username: 'Alice', content: '!cook shrimp' }).reply, /catching your breath/);
+  // Cooking on a lit fire uses no stamina: back-to-back cooks work, and other actions still can.
+  assert.match(say('!cook shrimp'), /Cooked Shrimp!/);
+  assert.equal(engine.stamina(u.id).charges, 1);
+  assert.match(say('!fish'), /you caught/);
+  assert.equal(engine.stamina(u.id).charges, 0);
+  repo.addItem(u.id, 'shrimp', 1);
+  assert.match(say('!cook'), /Cooked Shrimp!/, 'still cooks while out of stamina');
 });
 
 test('skinning gives meat; !eat heals with cooked food', () => {
