@@ -118,6 +118,10 @@ const RATINGS = {
   deadly: { id: 'deadly', icon: '☠️', label: 'Deadly' },
 };
 const CROPS = SKILLS.farming.resources;
+// How much harder a monster hits for being above your level: 1.5x your level hits ~1.13x as hard,
+// 2x ~1.23x, 3x ~1.39x. That's on top of it having more HP and your gear being weaker than it calls
+// for (up to 1.4x), so 1.5x your level costs ~40% HP a fight and 2x ~80%.
+const outlevelFactor = (monsterLevel, level) => Math.pow(Math.min(10, Math.max(0.5, monsterLevel / Math.max(1, level))), 0.3);
 const minutesLeft = (ms) => {
   const m = ms < 3_600_000 ? Math.max(1, Math.ceil(ms / 60_000)) : Math.floor(ms / 60_000); // "23h 59m", not "24h 0m"
   return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
@@ -182,6 +186,7 @@ module.exports = {
   SLOT_ICONS,
   clamp,
   RATINGS,
+  outlevelFactor,
   CROPS,
   minutesLeft,
   GATHER_HINT,

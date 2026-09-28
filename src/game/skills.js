@@ -709,9 +709,10 @@ SKILLS.swords.monsters = MONSTER_LIST.map(([id, name, icon, level, xp, loot, rar
     power: level === 1 ? 3 : Math.round(level + m[5]), // matches your attack (level + sword) at par; chickens are easy
     damage: level <= 5 ? level - 1 : Math.round(fullSetDefence * 0.9), // the armor you need so its hits don't hurt extra
     // Fights are traded blows. At par (your level, gear for that level) you win in about 7 rounds
-    // and lose ~6% of your HP. Far above your level, it hits hard enough to knock you out fast.
+    // and lose ~10% of your HP, so a stamina bar of fights costs about one meal or one !heal.
+    // Far above your level, it hits hard enough to knock you out fast.
     hp: 5 * (level === 1 ? 3 : Math.round(level + m[5])),
-    attack: Math.round((maxHpFor(level) / 75) * 10) / 10,
+    attack: Math.round((maxHpFor(level) / 37.5) * 10) / 10,
     loot,
     rare: rare || null,
   };
@@ -1031,7 +1032,8 @@ for (const [hide, id, animal] of MEATS) {
 
 // Cooking: every fish, vegetable and raw meat, unlocked at the level it takes to get it. Cooked food
 // sells for more and heals with !eat (better food heals more).
-const foodHeal = (level) => Math.round(12 + level * 3.5);
+// (One meal also heals at most a share of your max HP: see eat() and the foodHealCap setting.)
+const foodHeal = (level) => Math.round(10 + level * 2);
 const addFood = (raw, id, name, icon, level, xp, kind, word) => {
   if (ITEMS[id]) throw new Error(`food id ${id} clashes with an existing item`);
   ITEMS[id] = { name, icon, value: Math.round(ITEMS[raw].value * 1.6) + 1, food: { heal: foodHeal(level) } };

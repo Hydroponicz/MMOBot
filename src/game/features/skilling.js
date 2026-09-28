@@ -371,6 +371,8 @@ module.exports = {
     const owned = Object.keys(inv).filter((id) => ITEMS[id]?.food && inv[id] > 0).sort((a, b) => ITEMS[a].food.heal - ITEMS[b].food.heal);
     const vit = this.vitals(user.id, now);
     if (vit.ko) return `${this.knockedOutMessage(user.id, vit, now)} (Food can't get you up.)`;
+    // What a food actually heals you: its heal (halved for Undead), but at most a share of your max HP.
+    const heals = (i) => this.mealHeal(user.id, i, vit.maxHp);
     let id;
     if (args.length) {
       id = findItem(args.join(' '), owned);
@@ -378,16 +380,21 @@ module.exports = {
     } else {
       if (!owned.length) return 'you have no cooked food. !lightfire then !cook fish, vegetables or meat.';
       const missing = vit.maxHp - vit.hp;
-      id = owned.find((i) => ITEMS[i].food.heal >= missing) || owned[owned.length - 1];
+      id = owned.find((i) => heals(i) >= missing) || owned[owned.length - 1];
     }
     if (vit.hp >= vit.maxHp) return `you're already at full health. ${this.vitalsLine(vit)}`;
-    // Undead get less out of food.
-    const hp = Math.min(vit.maxHp, vit.hp + Math.round(ITEMS[id].food.heal * this.perks(user.id).food));
+    const hp = Math.min(vit.maxHp, vit.hp + heals(id));
     this.repo.transaction(() => {
       this.repo.removeItem(user.id, id, 1);
       this.repo.setVitals(user.id, { hp, mana: vit.mana, koUntil: 0 }, now);
     });
     return `${ITEMS[id].icon} you ate ${/^[AEIOU]/.test(ITEMS[id].name) ? 'an' : 'a'} ${ITEMS[id].name} (+${fmt(Math.round(hp - vit.hp))} HP). ${this.vitalsLine(this.vitals(user.id, now))}`;
+  },
+
+  // HP one meal of this food restores for this player.
+  mealHeal(userId, itemId, maxHp = this.vitals(userId).maxHp) {
+    const cap = Math.round(maxHp * (this.cfg.foodHealCap ?? 0.3));
+    return Math.min(cap, Math.round(ITEMS[itemId].food.heal * this.perks(userId).food));
   },
 
   // Uses left on a player's Flint and Steel (null if they don't have one).

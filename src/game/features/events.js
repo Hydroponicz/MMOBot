@@ -10,6 +10,7 @@ const {
   fmt,
   clamp,
   minutesLeft,
+  outlevelFactor,
   itemLabel,
   casino,
 } = require('./shared');
@@ -300,8 +301,8 @@ module.exports = {
     let dealt = 0;
     for (let i = 0; i < 3; i++) dealt += Math.max(1, Math.round(offence * (0.5 + 0.5 * this.rng())));
     dealt = Math.min(dealt, raid.hp);
-    const armor = clamp((monster.damage + 1) / (stats.defence + 1), 0.35, 2);
-    const outlevel = clamp(monster.level / Math.max(1, pick.level), 0.5, 10);
+    const armor = clamp((monster.damage + 1) / (stats.defence + 1), 0.35, 1.4);
+    const outlevel = outlevelFactor(monster.level, pick.level);
     const taken = monster.attack * armor * outlevel * (0.5 + 0.5 * this.rng());
     let hp = Math.max(0, vit.hp - taken);
     let koText = '';

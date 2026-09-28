@@ -37,6 +37,7 @@ const {
   SLOT_ICONS,
   clamp,
   RATINGS,
+  outlevelFactor,
   CROPS,
   minutesLeft,
   GATHER_HINT,
@@ -316,12 +317,13 @@ module.exports = {
 
   // Trade blows until someone drops. Each round you hit for 50-100% of your attack (level + weapon);
   // the monster hits for 50-100% of its attack, more if your armor is weaker than its level calls
-  // for (less if stronger) and more the further it outlevels you. After 100 rounds you back off.
+  // for (up to 1.4x; less if stronger) and more the further it outlevels you. At your level with
+  // matching gear a win costs ~10% HP. After 100 rounds you back off.
   simulateFight(level, stats, monster, hp) {
     const offence = level + stats.attack;
-    const armor = clamp((monster.damage + 1) / (stats.defence + 1), 0.35, 2);
-    // Monsters above your level hit harder the further above they are (2x your level: twice as hard).
-    const outlevel = clamp(monster.level / Math.max(1, level), 0.5, 10);
+    const armor = clamp((monster.damage + 1) / (stats.defence + 1), 0.35, 1.4);
+    // Monsters above your level hit harder the further above they are (see outlevelFactor).
+    const outlevel = outlevelFactor(monster.level, level);
     let monsterHp = monster.hp;
     let dealt = 0;
     let taken = 0;
@@ -340,8 +342,8 @@ module.exports = {
   // rounds to win, expected damage taken, and a difficulty rating.
   assessFight(level, stats, monster, maxHp) {
     const offence = level + stats.attack;
-    const armor = clamp((monster.damage + 1) / (stats.defence + 1), 0.35, 2);
-    const outlevel = clamp(monster.level / Math.max(1, level), 0.5, 10);
+    const armor = clamp((monster.damage + 1) / (stats.defence + 1), 0.35, 1.4);
+    const outlevel = outlevelFactor(monster.level, level);
     const hit = Math.max(1, offence * 0.75);
     const rounds = Math.ceil(monster.hp / hit);
     const canWin = rounds <= 100;

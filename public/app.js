@@ -340,7 +340,7 @@
     if (i.attack) bits.push(`+${i.attack} attack, needs ${i.wieldSkill || 'Swords'} ${i.level}`);
     if (i.defence) bits.push(`+${i.defence} defence, needs Combat ${i.level}`);
     if (i.usesLeft != null) bits.push(`${i.usesLeft}/${i.uses} uses left`);
-    if (i.food) bits.push(`!eat it to heal ${i.food.heal} HP`);
+    if (i.food) bits.push(`!eat it to heal ${i.food.heal} HP (one meal heals at most 30% of your max HP)`);
     if (i.effect) bits.push(`drink for ${i.effect.name} (${i.effect.minutes} min): ${i.effect.text}`);
     return bits.join(' · ');
   }
@@ -362,7 +362,7 @@
         ko
           ? `<p class="bag-warn">Knocked out! Back at full HP in ${left(c.knockedOutUntil - Date.now())}, or drink a health potion (<a href="#/shop">shop</a>, or <code>!brew</code> one) to fight again now.</p>`
           : isMe && c.hp < c.maxHp
-            ? `<p class="muted" style="font-size:.85rem;margin:6px 0 0">HP refills over ${c.hpRegenHours}h. ${c.mana >= Math.ceil(c.maxMana / 2) ? '<button class="mini" data-act="heal">✨ Heal (half your mana)</button>' : '<code>!heal</code> needs half your mana.'}</p>`
+            ? `<p class="muted" style="font-size:.85rem;margin:6px 0 0">HP refills over ${c.hpRegenHours}h. ${c.mana >= Math.ceil(c.maxMana * (c.healCost ?? 0.3)) ? `<button class="mini" data-act="heal">✨ Heal +${Math.round((c.healPercent ?? 0.3) * 100)}% HP (${Math.ceil(c.maxMana * (c.healCost ?? 0.3))} mana)</button>` : `<code>!heal</code> needs ${Math.ceil(c.maxMana * (c.healCost ?? 0.3))} mana.`}</p>`
             : ''
       }`;
   }
@@ -1460,7 +1460,9 @@
         body: list([
           `Fights cost ❤️ HP (better weapons and armor mean less). ${c('hp')} shows your health and mana.`,
           `At 0 HP you're knocked out until you're back at full HP, or ${c('drink')} a health potion to get up now.`,
-          `${c('eat')} cooked food to heal, and ${c('heal')} spends 🔷 mana to restore 25% HP.`,
+          `${c('eat')} cooked food to heal: one meal heals at most ${Math.round((g.foodHealCap ?? 0.3) * 100)}% of your max HP, however good the food.`,
+          `${c('heal')} spends ${Math.round((g.healManaCost ?? 0.3) * 100)}% of your 🔷 mana to restore ${Math.round((g.healBase ?? 0.3) * 100)}% of your HP, plus 0.1% per Magic level (up to +30%). Mana refills in ${g.manaRegenHours ?? 1}h, so mages heal best.`,
+          'At your level with matching gear a fight costs about 10% of your HP; 1.5× your level about 40%; twice your level usually knocks you out.',
         ]),
       },
       {
@@ -1626,7 +1628,7 @@
         ['scout <monster>', 'How a fight would go'],
         ['hp', 'Health and mana'],
         ['drink [potion]', 'Drink a potion'],
-        ['heal', 'Spend mana to restore HP'],
+        ['heal', 'Spend 30% mana to restore 30%+ HP (more with Magic)'],
         ['buffs', 'Active potion effects'],
         ['quiver', 'Your arrows'],
       ]],

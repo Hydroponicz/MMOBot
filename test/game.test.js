@@ -543,8 +543,8 @@ test('fights at your level cost a little HP, which regenerates; armor matters', 
   const bare = run(10, { attack: 4, defence: 0 }, mon('goblin'));
   const armored = run(10, { attack: 4, defence: 15 }, mon('goblin'));
   assert.equal(armored.win, 1);
-  assert.ok(armored.taken < bare.taken / 1.8, `armor: ${armored.taken} vs ${bare.taken}`);
-  assert.ok(armored.taken < 150 * 0.08, `a par fight costs under 8% HP: ${armored.taken}`);
+  assert.ok(armored.taken < bare.taken / 1.3, `armor: ${armored.taken} vs ${bare.taken}`);
+  assert.ok(armored.taken < 150 * 0.13, `a par fight costs about 10% HP: ${armored.taken}`);
   assert.ok(run(5, { attack: 4, defence: 15 }, mon('wolf')).win < 0.2, 'level 5 vs a level 20 wolf usually loses');
   assert.ok(run(40, { attack: 18, defence: 52 }, mon('orc')).win > 0.9, 'a bit above your level is fine with good gear');
 });
@@ -558,22 +558,22 @@ test('fights are rated for you: !scout, !monsters, too-easy tips and a best-matc
     repo.addItem(u.id, `mithril_${piece}`, 1);
     say(`!equip mithril ${piece}`);
   }
-  assert.match(say('!monsters'), /Monsters for you: .*🟢 Skeleton 40 · 🟢 Orc 55 · 🟠 Troll 70 · ☠️ Ogre 85/);
+  assert.match(say('!monsters'), /Monsters for you: .*🟢 Skeleton 40 · 🟠 Orc 55 · 🔴 Troll 70 · ☠️ Ogre 85/);
   assert.match(say('!scout chicken'), /⚪ Too easy: 🐔 Chicken \(level 1, 15 HP\) vs you \(Swords 40, Mithril Sword, \+58 def\): ~1 round,.*Barely worth it/);
-  // (A full mithril set gets +10% defence, which makes the Troll tough rather than hard.)
-  assert.match(say('!scout troll'), /🟠 Tough: 🧌 Troll \(level 70, 490 HP\).*you'd lose ~\d+ HP \(4\d% of max\)/);
+  // (Level 40 in full mithril: the level-55 Orc is a stretch, the level-70 Troll is hard.)
+  assert.match(say('!scout troll'), /🔴 Hard: 🧌 Troll \(level 70, 490 HP\).*you'd lose ~\d+ HP \(\d+% of max\)/);
   assert.match(say('!scout ogre'), /☠️ Deadly/);
   assert.match(say('!scout'), /Monsters for you/);
 
   // Beating something far below you says so and points at a better fight.
-  assert.match(say('!fight chicken'), /you defeated a 🐔 Chicken.* ⚪ Too easy for you, try !fight orc for 105 XP\. !targets shows your best fights\./);
+  assert.match(say('!fight chicken'), /you defeated a 🐔 Chicken.* ⚪ Too easy for you, try !fight skeleton for 75 XP\. !targets shows your best fights\./);
   tick();
   // A bare !fight picks the best safe match.
-  assert.match(say('!fight'), /you defeated a 👹 Orc \(level 55\)/);
+  assert.match(say('!fight'), /you defeated a 💀 Skeleton/);
   tick();
   // A hard fight with little HP left gets a warning first.
   repo.setVitals(u.id, { hp: 30, mana: 0, koUntil: 0 }, 1_000_000 + 62_000);
-  assert.match(say('!fight troll'), /🟠 a 🧌 Troll \(level 70\) will probably knock you out: it would deal ~\d+ damage and you have 30 HP/);
+  assert.match(say('!fight troll'), /🔴 a 🧌 Troll \(level 70\) will probably knock you out: it would deal ~\d+ damage and you have 30 HP/);
   assert.match(say('!fight'), /you defeated a .*(Bandit|Wolf|Goblin|Skeleton)/, 'the default picks something your HP can take');
 });
 
@@ -587,8 +587,8 @@ test('!targets recommends monsters from your level, gear and HP', () => {
     repo.addItem(u.id, `mithril_${piece}`, 1);
     say(`!equip mithril ${piece}`);
   }
-  assert.match(say('!targets'), /🎯 Best fights for you \(Swords 40, Mithril Sword, \+58 def\): 🟢 👹 Orc 55 \(105 XP, ~12% HP\) · 🟢 💀 Skeleton 40 \(75 XP, ~5% HP\) · 🟢 🥷 Bandit 30 \(55 XP, ~1% HP\) · 🟢 🐺 Wolf 20/);
-  assert.match(say('!targets'), /Try !fight orc$/);
+  assert.match(say('!targets'), /🎯 Best fights for you \(Swords 40, Mithril Sword, \+58 def\): 🟢 💀 Skeleton 40 \(75 XP, ~10% HP\) · 🟢 🥷 Bandit 30 \(55 XP, ~3% HP\) · 🟢 🐺 Wolf 20 \(40 XP, ~1% HP\) \| Stretch: 🟠 👹 Orc 55 \(105 XP, ~19% HP\)/);
+  assert.match(say('!targets'), /Try !fight skeleton$/);
   repo.setVitals(u.id, { hp: 20, mana: 0, koUntil: 0 }, 1_000_000);
   assert.match(say('!targets'), /⚠️ You're at 20\/450 HP: !drink a potion or !heal for the tougher ones\. Try !fight bandit$/);
   repo.setVitals(u.id, { hp: 1, mana: 0, koUntil: 0 }, 1_000_000);
@@ -810,7 +810,8 @@ test('skinning gives meat; !eat heals with cooked food', () => {
   repo.setVitals(u.id, { hp: 50, mana: 0, koUntil: 0 }, 1_000_000 + 31_000);
   assert.match(say('!eat'), /🦐 you ate a Cooked Shrimp \(\+10 HP\)\. ❤️ 60\/60 HP/, 'the smallest food that fills you up');
   repo.setVitals(u.id, { hp: 5, mana: 0, koUntil: 0 }, 1_000_000 + 31_000);
-  assert.match(say('!eat salmon'), /ate a Cooked Salmon \(\+55 HP\)/);
+  // One meal heals at most 30% of max HP, however good the food.
+  assert.match(say('!eat salmon'), /ate a Cooked Salmon \(\+18 HP\)\. ❤️ 23\/60 HP/);
   repo.setVitals(u.id, { hp: 0, mana: 0, koUntil: 9_000_000_000 }, 1_000_000);
   assert.match(say('!eat'), /knocked out.*Food can't get you up/);
   assert.match(say('!sellall'), /sold/);
@@ -822,13 +823,13 @@ test('!drink picks the right potion, !heal spends mana, potions can be bought an
   const { repo, engine, say, tick } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
   repo.setVitals(u.id, { hp: 20, mana: 20, koUntil: 0 }, 1_000_000);
-  assert.match(say('!heal'), /✨ you cast Heal \(\+15 HP\)\. ❤️ 35\/70 HP · 🔷 9\/24 mana \+12 XP.*Magic level 2/);
-  assert.match(say('!heal'), /needs 12 mana \(you have 9\)\. Enough in 15m/);
+  // Heal: 30% of max mana for 30% of max HP (+0.1% per Magic level).
+  assert.match(say('!heal'), /✨ you cast Heal \(\+18 HP\)\. ❤️ 38\/70 HP · 🔷 13\/24 mana \+12 XP.*Magic level 2/);
   repo.addItem(u.id, 'minor_health_potion', 2);
   repo.addItem(u.id, 'health_potion', 1);
   repo.addItem(u.id, 'minor_mana_potion', 1);
   assert.match(say('!drink'), /drank a Health Potion! ❤️ 70\/70 HP/, 'the smallest potion that tops you up');
-  assert.match(say('!drink'), /drank a Minor Mana Potion! ❤️ 70\/70 HP · 🔷 18\/24 mana/);
+  assert.match(say('!drink'), /drank a Minor Mana Potion! ❤️ 70\/70 HP · 🔷 22\/24 mana/);
   assert.match(say('!drink'), /already at full health/);
   assert.match(say('!drink minor health'), /no need/);
   assert.match(say('!drink elixir'), /don't have a Elixir of Life\. !buy elixir of life or !brew it/);
@@ -845,7 +846,7 @@ test('!drink picks the right potion, !heal spends mana, potions can be bought an
   tick();
   assert.match(say('!brew health potion'), /need ⚗️ Alchemy level 25/);
   assert.match(say('!brew'), /nothing to brew! a Minor Health Potion \(potion\) needs 2 Carrot\. You're missing 2 Carrot — try !plant carrot/);
-  assert.match(engine.equippedInfo(u), /❤️ 70\/70 HP · 🔷 18\/24 mana/);
+  assert.match(engine.equippedInfo(u), /❤️ 70\/70 HP · 🔷 22\/24 mana/);
 });
 
 test('new skills never lower anyone\'s character level', () => {

@@ -77,7 +77,7 @@ const config = {
     racePerks: bool('RACE_PERKS', true),
     raceChangeDays: int('RACE_CHANGE_DAYS', 30),
     hpRegenHours: int('HP_REGEN_HOURS', 24),
-    manaRegenHours: int('MANA_REGEN_HOURS', 2),
+    manaRegenHours: int('MANA_REGEN_HOURS', 1),
     // Points for chatting: awarded at most once per chatCooldown seconds per user.
     chatPoints: int('CHAT_POINTS', 5),
     chatCooldown: int('CHAT_POINTS_COOLDOWN_SECONDS', 60),

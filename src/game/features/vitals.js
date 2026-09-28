@@ -247,17 +247,28 @@ module.exports = {
   },
 
   // !heal: spend half your max mana to restore a quarter of your max HP. Can't revive you.
+  // Heal: costs a share of max mana (30% by default) and restores 30% of max HP plus 0.1% per Magic
+  // level (up to +30%), so it's never worse than a meal and much better for mages.
+  healCost(vit) {
+    return Math.ceil(vit.maxMana * (this.cfg.healManaCost ?? 0.3));
+  },
+
+  healPercent(userId) {
+    const magic = skillLevel('magic', this.repo.getSkills(userId).magic);
+    return (this.cfg.healBase ?? 0.3) + Math.min(0.3, magic * 0.001);
+  },
+
   healSpell(user) {
     const now = this.now();
     const vit = this.vitals(user.id, now);
     if (vit.ko) return `${this.knockedOutMessage(user.id, vit, now)} (!heal can't revive you.)`;
     if (vit.hp >= vit.maxHp) return `you're already at full health. ${this.vitalsLine(vit)}`;
-    const cost = Math.ceil(vit.maxMana / 2);
+    const cost = this.healCost(vit);
     if (vit.mana < cost) {
       const wait = ((cost - vit.mana) / vit.maxMana) * this.cfg.manaRegenHours * 3_600_000;
       return `✨ !heal needs ${cost} mana (you have ${Math.floor(vit.mana)}). Enough in ${minutesLeft(wait)}, or !drink a mana potion.`;
     }
-    const hp = Math.min(vit.maxHp, vit.hp + vit.maxHp * 0.25);
+    const hp = Math.min(vit.maxHp, vit.hp + vit.maxHp * this.healPercent(user.id));
     this.repo.setVitals(user.id, { hp, mana: vit.mana - cost, koUntil: 0 }, now);
     const gained = this.grantXp(user, 'magic', this.xpFor(10 + Math.round(vit.maxMana / 10)));
     return `✨ you cast Heal (+${fmt(Math.round(hp - vit.hp))} HP). ${this.vitalsLine(this.vitals(user.id, now))} ${gained.text}`;

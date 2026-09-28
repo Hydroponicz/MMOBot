@@ -349,6 +349,8 @@ class GameEngine extends EventEmitter {
           maxMana: vit.maxMana,
           knockedOutUntil: vit.ko ? vit.koUntil : null,
           hpRegenHours: this.cfg.hpRegenHours,
+          healCost: this.cfg.healManaCost ?? 0.3,
+          healPercent: this.healPercent(userId),
           // Timed effects from undead potions.
           buffs: Object.entries(this.activeBuffs(userId)).map(([id, until]) => ({ ...BUFFS[id], until })),
           // What !fight would use, so the ratings below say which weapon they're for.
@@ -392,6 +394,10 @@ class GameEngine extends EventEmitter {
       raceItems: RACE_ITEMS.map((r) => ({ race: RACES[r.race].name, name: ITEMS[r.item].name, icon: ITEMS[r.item].icon, skill: SKILLS[r.skill].name, level: r.level })),
       prestigeLevel: this.cfg.prestigeLevel ?? 500,
       marketFee: this.cfg.marketFee ?? 0.05,
+      foodHealCap: this.cfg.foodHealCap ?? 0.3,
+      healManaCost: this.cfg.healManaCost ?? 0.3,
+      healBase: this.cfg.healBase ?? 0.3,
+      manaRegenHours: this.cfg.manaRegenHours,
       seasonDays: this.cfg.seasonDays ?? 30,
       guildCost: this.guildCost(),
       raceChangeDays: this.cfg.raceChangeDays ?? 30,
@@ -460,7 +466,7 @@ class GameEngine extends EventEmitter {
 // Fixed settings built from config, for tests and scripts that don't need live editing.
 function staticSettings(config) {
   return {
-    game: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, hpRegenHours: 24, manaRegenHours: 2, disabledCommands: [], ...config.game },
+    game: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, hpRegenHours: 24, manaRegenHours: 1, disabledCommands: [], ...config.game },
     all: {},
   };
 }
