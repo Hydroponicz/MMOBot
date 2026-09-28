@@ -812,8 +812,8 @@ test('skinning gives meat; !eat heals with cooked food', () => {
   assert.match(say('!eat salmon'), /ate a Cooked Salmon \(\+55 HP\)/);
   repo.setVitals(u.id, { hp: 0, mana: 0, koUntil: 9_000_000_000 }, 1_000_000);
   assert.match(say('!eat'), /knocked out.*Food can't get you up/);
-  assert.match(say('!sell all'), /sold/);
-  assert.equal(repo.getInventory(u.id).cooked_shrimp, 1, 'cooked food is kept by !sell all');
+  assert.match(say('!sellall'), /sold/);
+  assert.equal(repo.getInventory(u.id).cooked_shrimp, undefined, 'cooked food is sold by !sellall');
   assert.equal(engine.vitals(u.id).ko, true);
 });
 

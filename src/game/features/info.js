@@ -120,6 +120,11 @@ module.exports = {
     return `sold ${what} for ${fmt(total)} pts 💰 Balance: ${fmt(this.repo.getUser(user.id).points)}${keptNote}`;
   },
 
+  // !sellall: same as !sell all.
+  sellAll(user) {
+    return this.sell(user, ['all']);
+  },
+
   top(user, args) {
     const q = (args[0] || 'overall').toLowerCase();
     const kind =

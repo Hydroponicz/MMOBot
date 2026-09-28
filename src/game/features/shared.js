@@ -38,7 +38,7 @@ const INFO_COMMANDS = {
   stats: ['stats', 'stats'], level: ['stats', 'stats'], lvl: ['stats', 'stats'], skills: ['stats', 'stats'], xp: ['stats', 'stats'],
   inv: ['inventory', 'inv'], inventory: ['inventory', 'inv'], bag: ['inventory', 'inv'], backpack: ['inventory', 'inv'],
   points: ['points', 'points'], pts: ['points', 'points'], balance: ['points', 'points'],
-  sell: ['sell', 'sell'],
+  sell: ['sell', 'sell'], sellall: ['sellAll', 'sell'],
   top: ['top', 'top'], leaderboard: ['top', 'top'], lb: ['top', 'top'],
   upgrade: ['upgrade', 'upgrade'],
   gear: ['gear', 'gear'], tools: ['gear', 'gear'], equipment: ['gear', 'gear'],

@@ -945,7 +945,7 @@
             <dt><code>!buy &lt;item&gt;</code></dt><dd>Buy a hammer or sword (<code>!shop</code> lists them)</dd>
             <dt><code>!stats [name]</code></dt><dd>Show levels and points</dd>
             <dt><code>!inv</code></dt><dd>Show your backpack</dd>
-            <dt><code>!sell all</code></dt><dd>Sell everything for points</dd>
+            <dt><code>!sell all</code> / <code>!sellall</code></dt><dd>Sell everything for points (gear, tools, seeds and potions are kept)</dd>
             <dt><code>!sell trout 5</code></dt><dd>Sell a specific item</dd>
             <dt><code>!points</code></dt><dd>Show your points</dd>
             <dt><code>!top [skill]</code></dt><dd>Top 5 players</dd>

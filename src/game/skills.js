@@ -1034,7 +1034,7 @@ for (const [hide, id, animal] of MEATS) {
 const foodHeal = (level) => Math.round(12 + level * 3.5);
 const addFood = (raw, id, name, icon, level, xp, kind, word) => {
   if (ITEMS[id]) throw new Error(`food id ${id} clashes with an existing item`);
-  ITEMS[id] = { name, icon, value: Math.round(ITEMS[raw].value * 1.6) + 1, keep: true, food: { heal: foodHeal(level) } };
+  ITEMS[id] = { name, icon, value: Math.round(ITEMS[raw].value * 1.6) + 1, food: { heal: foodHeal(level) } };
   SKILLS.cooking.recipes.push({ item: id, level, kind, word, xp: Math.round(xp * 1.1), inputs: { [raw]: 1 } });
 };
 for (const r of SKILLS.fishing.resources) addFood(r.item, `cooked_${r.item}`, `Cooked ${ITEMS[r.item].name}`, ITEMS[r.item].icon, r.level, r.xp, 'fish', ITEMS[r.item].name.toLowerCase());
