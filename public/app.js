@@ -39,7 +39,7 @@
   };
   const skillIcon = (id) => state.site?.skills.find((s) => s.id === id)?.icon || '✨';
   const feedIcon = (a) =>
-    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒', jackpot: '🎰', death: '💀', follow: '💚', sub: '⭐', gift: '🎁', raid: '⚔️', duel: '⚔️', event: '📣' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
+    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒', jackpot: '🎰', death: '💀', achievement: '🏆', task: '📋', trade: '🤝', follow: '💚', sub: '⭐', gift: '🎁', raid: '⚔️', duel: '⚔️', event: '📣' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
 
   // ---- live activity (SSE) ----------------------------------------------
   const listeners = new Set();
@@ -212,8 +212,9 @@
         <div class="char-header">
           ${avatar(p.avatarUrl, p.username)}
           <div class="char-title">
-            <h1>${esc(p.username)}</h1>
+            <h1>${esc(p.username)}${p.title ? ` <span class="char-titletext">${esc(p.title)}</span>` : ''}</h1>
             <div class="char-badges">
+              ${p.subscriber ? '<span class="badge gold">⭐ Subscriber</span>' : ''}
               <span class="badge gold">💰 ${fmt(p.points)} points</span>
               <span class="badge">📊 Total level ${fmt(p.totalLevel)}</span>
               <span class="badge">✨ ${fmt(p.totalXp)} xp</span>
@@ -234,6 +235,7 @@
       ${equipmentPanel(p.combat, isMe)}
       ${farmPanel(p.farm, isMe)}
       ${museumPanel(p.museum)}
+      ${progressPanels(p.progression, isMe)}
 
       <div class="grid grid-2" style="margin-top:16px">
         <section class="panel">
@@ -338,6 +340,36 @@
         ${monsterChips(c.monsters, c.ratedWith)}
         <p class="muted" style="margin-bottom:0;font-size:.85rem">Buy a sword or bow in the <a href="#/shop">shop</a>, or <code>!smith</code> / <code>!fletch</code> your own, then <code>!fight</code> (or <code>!shoot</code> with a bow, a quiver and arrows). <code>!targets</code> shows your best fights. Your best weapon is equipped automatically when you fight. Fights cost HP; monsters above your level hit much harder.</p>
       </section>`;
+  }
+
+  // Daily tasks (your own page) and achievements.
+  function progressPanels(pr, isMe) {
+    if (!pr) return '';
+    const got = pr.achievements.filter((a) => a.unlockedAt).length + pr.extra.length;
+    const daily = isMe
+      ? `<section class="panel">
+          <div class="panel-head"><h2>📋 Today's tasks</h2><span class="badge">🔥 ${pr.daily.streak}-day streak</span></div>
+          <ul class="tasks">${pr.daily.tasks
+            .map(
+              (t) => `<li class="${t.done >= t.need ? 'done' : ''}"><span>${t.icon} ${esc(t.text)}</span><span>${Math.min(t.done, t.need)}/${t.need}${t.done >= t.need ? ' ✅' : ''}</span>
+                <div class="task-bar"><span style="width:${Math.min(100, Math.round((t.done / t.need) * 100))}%"></span></div></li>`
+            )
+            .join('')}</ul>
+          <p class="muted" style="margin-bottom:0;font-size:.85rem">+${pr.daily.reward} pts each, +${pr.daily.bonus} for all three. ${
+            pr.daily.claimedToday ? "Today's <code>!daily</code> reward is claimed ✅" : 'Type <code>!daily</code> in chat for your daily reward!'
+          } New tasks every day (UTC).</p>
+        </section>`
+      : '';
+    return `<div class="grid ${isMe ? 'grid-2' : ''}" style="margin-top:16px">
+      ${daily}
+      <section class="panel">
+        <div class="panel-head"><h2>🏆 Achievements</h2><span class="muted">${got}/${pr.achievements.length + pr.extra.length}</span></div>
+        <div class="achievements">${[...pr.extra, ...pr.achievements]
+          .map((a) => `<span class="ach${a.unlockedAt ? ' got' : ''}" title="${esc(a.name)}: ${esc(a.desc || '')}${a.title ? ` · title: ${esc(a.title)}` : ''}">${a.icon}</span>`)
+          .join('')}</div>
+        ${pr.titles.length ? `<p class="muted" style="margin-bottom:0;font-size:.85rem">Titles: ${pr.titles.map(esc).join(', ')}. ${isMe ? 'Show one with <code>!title &lt;name&gt;</code>.' : ''}</p>` : ''}
+      </section>
+    </div>`;
   }
 
   function museumPanel(m) {
@@ -599,6 +631,7 @@
     const tabs = [
       { id: 'overall', label: '🏆 Overall' },
       { id: 'points', label: '💰 Points' },
+      { id: 'season', label: '🏁 Season' },
       ...state.site.skills.map((s) => ({ id: s.id, label: `${s.icon} ${s.name}` })),
     ];
     const data = await api(`/leaderboard/${encodeURIComponent(kind)}?limit=100`);
@@ -741,6 +774,7 @@
             <li><b>Crafting</b>: <code>!craft</code> hides from <code>!skin</code> into leather armor (a coif, chaps and body per hide type). Leather has a bit less defence than metal but adds to your attack when you <code>!shoot</code>. Also bigger quivers (Large 1,000, Huge 2,000 arrows) and Magic Runes (<code>!craft runes</code>: 1 Ashes + 1 Tin Ore makes 10).</li>
             <li><b>Magic</b>: with a staff (shop, or <code>!fletch oak staff</code>), <code>!cast</code> spells at monsters for Magic XP. Each cast uses a Magic Rune and 1 mana; you learn stronger spells as you level (Wind Strike, Water Bolt at 20, Earth Blast at 40, Fire Wave at 60...). <code>!heal</code> also trains Magic.</li>
             <li><b>Museum</b>: <code>!donate</code> your digging finds. Each pays 3x its value, and finishing a collection (coins, relics, fossils, royal treasures...) pays a big reward and a title. <code>!museum</code> shows your progress.</li>
+            <li><b>Every day</b>: <code>!daily</code> for points (more each day in a row, up to 7 days), and 3 daily tasks (<code>!tasks</code>) that pay when you finish them. <b>Achievements</b> unlock titles you can show with <code>!title</code>. <b>Seasons</b>: the Season leaderboard counts XP earned this season; the top 3 at the end win a permanent title. <b>Trading</b>: <code>!give @name iron ore 5</code> or <code>!give @name 500</code> (once you've played a little; points gifts have a daily limit).</li>
             <li><b>Stream events</b>: when a ⚔️ <b>raid boss</b> appears, everyone types <code>!attack</code> to fight it together (<code>!raid</code> shows its HP). Beat it in time and the reward pool is split by damage; the top hitter is MVP. A 👺 treasure goblin (<code>!catch</code>) or 📦 supply drop (<code>!grab</code>) sometimes pops up: be quick! Following or subscribing earns points, and gifted subs start ⚡ double XP for everyone (<code>!boost</code>). Challenge a friend with <code>!duel @name 500</code>: they <code>!accept</code>, and the winner takes the bet (duels don't hurt your real HP).</li>
             <li><b>Undead potions</b>: <code>!brew</code> Ashes with something dead into potions with timed effects, then <code>!drink</code> them. <code>!buffs</code> shows what's active.<ul>${(g.buffs || [])
               .map((b) => `<li>${b.icon} <b>${esc(b.potion)}</b>: ${esc(b.text)} (${b.minutes} min)</li>`)
@@ -780,6 +814,10 @@
             <dt><code>!craft &lt;item&gt;</code></dt><dd>Leather armor, quivers and runes</dd>
             <dt><code>!cast [monster]</code></dt><dd>Fight with magic (staff + runes)</dd>
             <dt><code>!donate &lt;item&gt;</code></dt><dd>Give a digging find to the museum (<code>!museum</code>)</dd>
+            <dt><code>!daily</code> / <code>!tasks</code></dt><dd>Daily reward and today's tasks</dd>
+            <dt><code>!title [name]</code></dt><dd>Show a title you've unlocked (<code>!achievements</code>)</dd>
+            <dt><code>!season</code></dt><dd>This season's leaders and your rank</dd>
+            <dt><code>!give @name &lt;item|points&gt;</code></dt><dd>Give items or points to another player</dd>
             <dt><code>!buffs</code></dt><dd>Your active potion effects</dd>
             <dt><code>!heal</code></dt><dd>Spend half your mana to restore 25% HP</dd>
             <dt><code>!equip &lt;item&gt;</code></dt><dd>Wear gear (<code>!unequip</code>, <code>!equipped</code>)</dd>
@@ -1328,6 +1366,13 @@
           }
         </section>
         <section class="panel">
+          <h2>🏁 Season ${d.season.number}</h2>
+          <p class="muted">Everyone's XP this season makes the Season leaderboard. Ending it gives the top 3 a permanent title (${
+            d.season.leaders.map((l, i) => `${['🥇', '🥈', '🥉'][i]} ${esc(l.username)}`).join(', ') || 'nobody yet'
+          }) and starts the next season from 0. Nobody loses their levels.</p>
+          <button class="btn" id="season-end">End season ${d.season.number}</button>
+        </section>
+        <section class="panel">
           <h2>📣 Random event</h2>
           <p class="muted">Pop one now: a treasure goblin (first to <code>!catch</code>) or a supply drop (first 3 to <code>!grab</code>).</p>
           <div class="form-row"><button class="btn" data-ev="goblin">👺 Goblin</button><button class="btn" data-ev="supply">📦 Supply drop</button></div>
@@ -1348,6 +1393,7 @@
       act('/admin/boost', { kind: $app.querySelector('#boost-kind').value, multiplier: Number($app.querySelector('#boost-mult').value), minutes: Number($app.querySelector('#boost-min').value) })
     );
     $app.querySelector('#boost-stop')?.addEventListener('click', () => act('/admin/boost', {}, 'DELETE'));
+    $app.querySelector('#season-end')?.addEventListener('click', () => confirm(`End season ${d.season.number}? The top 3 get titles and everyone's season XP goes back to 0.`) && act('/admin/season/end', {}));
     $app.querySelectorAll('[data-ev]').forEach((b) => b.addEventListener('click', () => act('/admin/random-event', { kind: b.dataset.ev })));
   };
 

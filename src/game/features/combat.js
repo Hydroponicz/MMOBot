@@ -292,6 +292,7 @@ module.exports = {
       text: `defeated a ${monster.name}${rare ? ` and found a RARE ${ITEMS[loot].name}` : ''}`,
     });
     const gained = this.grantXp(user, pick.skillId, xpGain);
+    this.onFightWon(user, monster);
     const low = hpLeft < vit.maxHp * 0.25 ? ' ⚠️ low HP! !eat, !drink a potion or !heal' : '';
     let easy = '';
     if (rating.id === 'easy') {

@@ -55,7 +55,8 @@ module.exports = {
     const profile = this.profile(target.id);
     const skills = profile.skills.map((s) => `${s.icon}${s.level}`).join(' ');
     const who = target.id === user.id ? 'you are' : `${target.username} is`;
-    return `${who} character level ${profile.character.level} | ${skills} | Total ${profile.totalLevel} | ${fmt(profile.points)} pts | ${this.siteUrl}/#/player/${encodeURIComponent(target.username)}`;
+    const title = target.title ? ` "${target.title}"` : '';
+    return `${who}${title} character level ${profile.character.level} | ${skills} | Total ${profile.totalLevel} | ${fmt(profile.points)} pts | ${this.siteUrl}/#/player/${encodeURIComponent(target.username)}`;
   },
 
   inventory(user) {
@@ -142,6 +143,7 @@ module.exports = {
     const on = (list) => list.filter((c) => !off.includes(c)).map((c) => `${p}${c}`).join(' ');
     const skills = on(SKILL_IDS.flatMap((id) => (SKILLS[id].type === 'farm' ? ['plant', 'harvest'] : [SKILLS[id].command])));
     const tools = Object.keys(TOOL_TO_SKILL).join('/');
-    return `Skills: ${skills} (e.g. ${p}mine iron, ${p}smith bronze sword) | Gear: ${p}gear ${p}equip ${p}equipped ${p}shop ${p}buy, ${p}upgrade ${tools}/backpack | Combat: ${on(['targets', 'hp', 'drink', 'heal', 'monsters'])}${off.includes('monsters') ? '' : ` ${p}scout`} | Info: ${on(['stats', 'inv', 'sell', 'points', 'top'])}${this.cfg.casinoEnabled === false ? '' : ` | Casino: ${p}casino`} | ${this.siteUrl}`;
+    // Kept under Kick's 500 characters: the full list is on the site's guide.
+    return `Skills: ${skills} | Gear: ${p}shop ${p}buy ${p}equip ${p}upgrade | Fight: ${on(['targets', 'hp', 'drink', 'eat'])} | Daily: ${on(['daily', 'tasks', 'title', 'give'].filter((c) => c !== 'tasks' || !off.includes('daily')))} | Info: ${on(['stats', 'inv', 'sell', 'top'])}${this.cfg.casinoEnabled === false ? '' : ` ${p}casino`} | All commands: ${this.siteUrl}/#/guide`;
   },
 };

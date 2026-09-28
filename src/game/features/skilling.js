@@ -391,11 +391,14 @@ module.exports = {
     const charBefore = characterProgress(SKILL_IDS.map((id) => before[id])).level;
     const points = Math.round(Math.max(1, xpGain / 10) * this.cfg.pointsMultiplier);
     this.repo.addXp(user.id, skillId, xpGain);
+    this.repo.addSeasonXp(user.id, xpGain);
     if (points > 0) this.repo.addPoints(user.id, points);
     this.track('actions', points);
 
     const xpAfter = before[skillId] + xpGain;
     const levelAfter = skillLevel(skillId, xpAfter);
+    // (Checked on every gain, so players who levelled before achievements existed still get them.)
+    this.checkLevelAchievements(user);
     const charAfter = characterProgress(SKILL_IDS.map((id) => before[id] + (id === skillId ? xpGain : 0))).level;
 
     let text = `+${xpGain} XP, +${points} pts`;

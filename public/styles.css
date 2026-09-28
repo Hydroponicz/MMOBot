@@ -521,3 +521,14 @@ td.down, b.down { color: var(--danger); }
 .museum-name { font-weight: 700; font-size: 0.9rem; margin-bottom: 6px; }
 .museum-items span { font-size: 1.5rem; margin-right: 4px; opacity: 0.25; filter: grayscale(1); }
 .museum-items span.have { opacity: 1; filter: none; }
+
+/* Titles, achievements, daily tasks */
+.char-titletext { font-size: 1rem; font-weight: 700; color: var(--gold); margin-left: 6px; }
+.achievements { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.ach { font-size: 1.6rem; width: 42px; height: 42px; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--border); opacity: 0.3; filter: grayscale(1); }
+.ach.got { opacity: 1; filter: none; border-color: var(--gold); }
+.tasks { list-style: none; padding: 0; margin: 0 0 10px; display: grid; gap: 10px; }
+.tasks li { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; font-weight: 600; }
+.tasks li.done { color: var(--accent); }
+.task-bar { grid-column: 1 / -1; height: 8px; border-radius: 99px; background: var(--bg-2); overflow: hidden; }
+.task-bar span { display: block; height: 100%; background: var(--accent); }

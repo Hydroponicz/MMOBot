@@ -1345,8 +1345,9 @@ test('big wins go to the live feed', () => {
   const seen = [];
   engine.on('activity', (a) => seen.push(a));
   say('!plinko 100 high');
-  assert.equal(seen.at(-1).kind, 'jackpot');
-  assert.match(seen.at(-1).text, /won 17,000 pts on plinko/);
+  const jackpot = seen.find((a) => a.kind === 'jackpot');
+  assert.match(jackpot.text, /won 17,000 pts on plinko/);
+  assert.match(seen.at(-1).text, /unlocked 🎰 Jackpot \(title: the Lucky\)/, 'and an achievement');
 });
 
 test('return to player is close to a real casino', () => {
@@ -1585,4 +1586,100 @@ test('museum: donate digging finds, finish collections for big rewards', () => {
   assert.equal(repo.getInventory(u.id).rusty_coin, 1);
   assert.match(say('!donate shrimp'), /doesn't collect that/);
   assert.equal(engine.museumProgress(u.id)[0].done, true);
+});
+
+// ---- Dailies, achievements, titles, seasons, trading --------------------------------------
+
+test('!daily: once a day, more for a streak; daily tasks pay when done', () => {
+  const { repo, engine, say, tick } = eventsSetup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!daily'), /📅 daily reward: \+100 pts \(day 1 streak, 200 tomorrow\)\. 📋 Today's tasks/);
+  assert.match(say('!daily'), /already claimed today's reward\. Come back in/);
+  tick(24 * 3600);
+  assert.match(say('!daily'), /\+200 pts \(day 2 streak/);
+  tick(3 * 24 * 3600);
+  assert.match(say('!daily'), /\+100 pts \(day 1 streak/, 'a missed day resets the streak');
+
+  // Force a known task list, then do them.
+  const d = engine.daily(u.id);
+  d.tasks = [{ skill: 'fishing', need: 2, done: 0 }, { skill: 'combat', need: 1, done: 0 }, { skill: 'firemaking', need: 1, done: 0 }];
+  repo.setSetting(`daily:${u.id}`, d);
+  const before = repo.getUser(u.id).points;
+  say('!fish');
+  tick();
+  say('!fish');
+  assert.match(say('!tasks'), /🎣 Catch 2 fish 2\/2 ✅ · ⚔️ Win 1 fights 0\/1/);
+  assert.ok(repo.getUser(u.id).points - before >= 150, 'the task paid');
+  repo.addItem(u.id, 'bronze_sword', 1);
+  repo.addItem(u.id, 'flint_and_steel', 1);
+  repo.addItem(u.id, 'logs', 1);
+  tick();
+  say('!fight chicken');
+  const mid = repo.getUser(u.id).points;
+  tick();
+  say('!lightfire');
+  assert.ok(repo.getUser(u.id).points - mid >= 150 + 300, 'last task + the all-3 bonus');
+});
+
+test('achievements unlock titles; !title shows one', () => {
+  const { repo, engine, say, tick } = eventsSetup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!achievements'), /no achievements yet/);
+  repo.addItem(u.id, 'bronze_sword', 1);
+  say('!fight chicken');
+  assert.ok(engine.achievements(u.id).unlocked.first_blood);
+  // Beat a dragon (with a lot of levels and gear).
+  repo.addXp(u.id, 'swords', xpForLevel(480));
+  repo.addItem(u.id, 'celestial_sword', 1);
+  repo.setVitals(u.id, { hp: null, mana: null, koUntil: 0 }, 1_000_000);
+  tick();
+  say('!fight dragon');
+  assert.ok(engine.achievements(u.id).unlocked.dragonslayer);
+  assert.ok(engine.achievements(u.id).unlocked.skill_200, 'level milestones too');
+  assert.match(say('!title'), /your titles: .*the Dragonslayer/);
+  assert.match(say('!title dragon'), /you're now Alice the Dragonslayer!/);
+  assert.match(say('!stats'), /you are "the Dragonslayer" character level/);
+  assert.match(say('!title king'), /haven't unlocked that title/);
+  assert.match(say('!title none'), /title hidden/);
+  repo.addPoints(u.id, 200_000);
+  say('!points');
+  assert.ok(engine.achievements(u.id).unlocked.rich);
+  const p = engine.profile(u.id).progression;
+  assert.ok(p.achievements.find((a) => a.id === 'first_blood').unlockedAt);
+  assert.equal(p.achievements.find((a) => a.id === 'millionaire').unlockedAt, null);
+});
+
+test('seasons: season XP counts up; ending a season gives the top 3 a title and resets', () => {
+  const { repo, engine, say, said } = eventsSetup();
+  const a = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  const b = repo.upsertUser({ kickUserId: '2', username: 'Bob' });
+  say('!fish', 'Alice', '1');
+  say('!chop', 'Bob', '2');
+  assert.match(say('!season', 'Alice', '1'), /🏁 Season 1: 🥇 .* XP · 🥈 .* XP\. You: \d+ XP \(#\d\)/);
+  const r = engine.endSeason();
+  assert.equal(r.winners.length, 2);
+  assert.match(said.at(-1), /Season 1 is over! 🥇 @\w+ 🥈 @\w+ win a permanent title\. Season 2 starts now/);
+  assert.equal(repo.getUser(a.id).season_xp, 0);
+  assert.equal(engine.season().number, 2);
+  assert.ok(engine.titles(a.id).some((t) => /Season 1 (Champion|Runner-up)/.test(t)));
+  assert.equal(repo.leaderboard('season').length, 0);
+});
+
+test('trading: !give items and points between established players, with a daily points cap', () => {
+  const { repo, settings, say } = eventsSetup();
+  settings.update('events', { tradeMinHours: 0, tradeMinActions: 1 });
+  const a = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  const b = repo.upsertUser({ kickUserId: '2', username: 'Bob' });
+  assert.match(say('!give @Bob 100', 'Alice', '1'), /you can trade once you've played a while/);
+  say('!fish', 'Alice', '1');
+  say('!fish', 'Bob', '2');
+  repo.addPoints(a.id, 20_000);
+  assert.match(say('!give @Bob 500', 'Alice', '1'), /🤝 you gave 500 pts to @Bob/);
+  assert.match(say('!give @Bob 9600 points', 'Alice', '1'), /you can give 9,500 more points today/);
+  assert.match(say('!give @Bob shrimp', 'Alice', '1'), /🤝 you gave 🦐 Shrimp to @Bob/);
+  assert.equal(repo.getInventory(b.id).shrimp, 2);
+  assert.match(say('!give @Bob unobtainium', 'Alice', '1'), /you don't have "unobtainium"/);
+  assert.match(say('!give @Alice 5', 'Alice', '1'), /can't give things to yourself/);
+  settings.update('events', { tradingEnabled: false });
+  assert.match(say('!give @Bob 5', 'Alice', '1'), /trading is switched off/);
 });

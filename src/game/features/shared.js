@@ -68,6 +68,11 @@ const INFO_COMMANDS = {
   duel: ['duel', 'duel'], accept: ['duelAccept', 'duel'], decline: ['duelDecline', 'duel'],
   boost: ['boostInfo', 'boost'],
   museum: ['museumInfo', 'museum'], donate: ['donate', 'museum'],
+  // Dailies, achievements, titles, seasons, trading.
+  daily: ['claimDaily', 'daily'], tasks: ['tasksInfo', 'daily'], quests: ['tasksInfo', 'daily'],
+  achievements: ['achievementsInfo', 'title'], ach: ['achievementsInfo', 'title'], title: ['title', 'title'],
+  season: ['seasonInfo', 'season'],
+  give: ['give', 'give'], gift: ['give', 'give'],
   // Health and mana. Potions and !heal have no cooldown.
   hp: ['vitalsInfo', 'hp'], health: ['vitalsInfo', 'hp'], mana: ['vitalsInfo', 'hp'], vitals: ['vitalsInfo', 'hp'],
   drink: ['drink', 'drink'], quaff: ['drink', 'drink'], potion: ['drink', 'drink'],

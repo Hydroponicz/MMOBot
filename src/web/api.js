@@ -89,7 +89,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
 
   router.get('/leaderboard/:kind', (req, res) => {
     const kind = req.params.kind;
-    if (kind !== 'overall' && kind !== 'points' && !SKILL_IDS.includes(kind)) {
+    if (!['overall', 'points', 'season'].includes(kind) && !SKILL_IDS.includes(kind)) {
       return res.status(400).json({ error: 'unknown leaderboard' });
     }
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 25, 1), 100);
@@ -324,6 +324,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       boost: engine.activeBoost(),
       randomEvent: repo.getSetting('random_event'),
       chatters: engine.activeChatters(10).length,
+      season: { ...engine.season(), leaders: repo.seasonLeaders(3) },
       monsters: SKILLS.swords.monsters.map((m) => ({ id: m.id, name: m.name, icon: m.icon, level: m.level })),
     });
   });
@@ -345,6 +346,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     return { boost };
   }));
   router.delete('/admin/boost', requireAdmin, adminAct(() => engine.stopBoost()));
+  router.post('/admin/season/end', requireAdmin, adminAct(() => engine.endSeason()));
   router.post('/admin/random-event', requireAdmin, adminAct((req) => {
     const ev = engine.spawnRandomEvent(req.body?.kind || null);
     return ev ? { event: ev } : { ok: false, error: 'an event is already running' };

@@ -308,6 +308,7 @@ function createRepo(db) {
     },
     addSeasonXp: (userId, xp) => db.prepare('UPDATE users SET season_xp = season_xp + ? WHERE id = ?').run(xp, userId),
     resetSeason: () => db.prepare('UPDATE users SET season_xp = 0').run(),
+    seasonRank: (xp) => db.prepare('SELECT COUNT(*) + 1 AS r FROM users WHERE season_xp > ? AND banned = 0').get(xp).r,
     seasonLeaders: (limit = 10) =>
       db.prepare('SELECT id, username, avatar_url, season_xp FROM users WHERE season_xp > 0 AND banned = 0 ORDER BY season_xp DESC LIMIT ?').all(limit),
     // Everything a player owns and has done, for admin resets and the economy page.
@@ -342,6 +343,11 @@ function createRepo(db) {
 
     leaderboard(kind, limit = 25, offset = 0) {
       if (kind === 'points') return leaderboardPoints.all(limit, offset);
+      if (kind === 'season') {
+        return db
+          .prepare('SELECT username, avatar_url, season_xp AS xp FROM users WHERE season_xp > 0 AND banned = 0 ORDER BY season_xp DESC LIMIT ? OFFSET ?')
+          .all(limit, offset);
+      }
       if (kind === 'overall') return leaderboardOverall.all(limit, offset);
       if (!SKILL_IDS.includes(kind)) return [];
       return leaderboardBySkill.all(kind, limit, offset);

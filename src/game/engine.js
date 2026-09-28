@@ -96,6 +96,7 @@ class GameEngine extends EventEmitter {
       const [handler, name] = INFO_COMMANDS[cmd];
       if (!disabledCommands.includes(name)) reply = this[handler](user, args, cmd);
     }
+    if (reply) this.checkWealth(user);
     return { reply: reply ? `@${user.username} ${reply}` : null };
   }
 
@@ -207,6 +208,8 @@ class GameEngine extends EventEmitter {
   emitActivity(user, entry) {
     const id = this.repo.logActivity({ userId: user.id, ...entry });
     this.emit('activity', { id, username: user.username, created_at: this.now(), skill: null, item: null, xp: 0, ...entry });
+    // Daily tasks and achievements watch the activity feed.
+    this.onActivity?.(user, entry);
   }
 
   // ---- Data for the website ---------------------------------------------
@@ -266,6 +269,10 @@ class GameEngine extends EventEmitter {
     return {
       id: user.id,
       username: user.username,
+      title: user.title || '',
+      subscriber: Boolean(user.subscriber),
+      seasonXp: user.season_xp || 0,
+      progression: this.progressionFor(userId),
       avatarUrl: user.avatar_url,
       points: user.points,
       lifetimePoints: user.lifetime_points,
@@ -416,7 +423,7 @@ function isChatCommand(word) {
 }
 
 // Feature modules add their methods to the engine.
-for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events', 'museum']) {
+for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events', 'museum', 'progression']) {
   Object.assign(GameEngine.prototype, require(`./features/${mod}`));
 }
 
