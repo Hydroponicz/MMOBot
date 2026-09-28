@@ -196,7 +196,18 @@ module.exports = {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
       .map(([id, xp]) => ({ username: st.names[id], xp, appearance: this.characterView(Number(id)) }));
-    return { startedAt: st.startedAt, actions: st.actions, top, lastRare: st.lastRare, lastPet: st.lastPet, mvp: st.mvp };
+    const lim = this.limitedItem();
+    const bounties = this.bounties().map((b) => ({ poster: b.poster, reward: b.reward, name: ITEMS[b.item].name, icon: ITEMS[b.item].icon }));
+    return {
+      startedAt: st.startedAt,
+      actions: st.actions,
+      top,
+      lastRare: st.lastRare,
+      lastPet: st.lastPet,
+      mvp: st.mvp,
+      limited: { name: lim.name, icon: lim.icon, cost: lim.cost },
+      bounties: bounties.sort((a, b) => b.reward - a.reward).slice(0, 3),
+    };
   },
 
   // Saves and broadcasts the stats (called from tick() and on big moments).

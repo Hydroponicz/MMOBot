@@ -390,6 +390,8 @@ class GameEngine extends EventEmitter {
       raceItems: RACE_ITEMS.map((r) => ({ race: RACES[r.race].name, name: ITEMS[r.item].name, icon: ITEMS[r.item].icon, skill: SKILLS[r.skill].name, level: r.level })),
       prestigeLevel: this.cfg.prestigeLevel ?? 500,
       marketFee: this.cfg.marketFee ?? 0.05,
+      seasonDays: this.cfg.seasonDays ?? 30,
+      guildCost: this.guildCost(),
       raceChangeDays: this.cfg.raceChangeDays ?? 30,
       racePerks: this.cfg.racePerks !== false,
       chatPoints: this.cfg.chatPoints,

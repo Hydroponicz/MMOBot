@@ -259,6 +259,8 @@
         if (stats.lastRare) slides.push(`<span class="lbl">Last rare find</span>💎 <b style="color:#c084fc">${esc(stats.lastRare.username)}</b> ${esc(stats.lastRare.text)}`);
         if (stats.lastPet) slides.push(`<span class="lbl">New pet</span>🐾 <b style="color:#ffc940">${esc(stats.lastPet.username)}</b> ${esc(stats.lastPet.text)}`);
         if (stats.mvp) slides.push(`<span class="lbl">Raid MVP</span>👑 <b style="color:#ff5c7a">${esc(stats.mvp.username)}</b>`);
+        if (stats.bounties && stats.bounties.length) slides.push(`<span class="lbl">Bounties</span>${stats.bounties.map((b) => `🎯 ${b.icon} ${esc(b.name)} <b style="color:#ffc940">${fmtN(b.reward)}</b>`).join(' · ')}`);
+        if (stats.limited) slides.push(`<span class="lbl">Shop · this week only</span>${stats.limited.icon} <b style="color:#ffc940">${esc(stats.limited.name)}</b> ${fmtN(stats.limited.cost)} pts`);
         if (stats.actions) slides.push(`<span class="lbl">This stream</span>⚡ ${fmtN(stats.actions)} actions by chat`);
         if (slides.length) parts.push(`<div class="panel stats"><span class="slide">${slides[slide % slides.length]}</span></div>`);
       }

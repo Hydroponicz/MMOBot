@@ -209,6 +209,34 @@
       out.push('<rect x="30" y="38" width="60" height="7" rx="2" fill="#7a5334"/>');
     } else if (hat === 'halo') {
       out.push('<ellipse cx="60" cy="10" rx="22" ry="6" fill="none" stroke="#ffd84a" stroke-width="7" opacity=".25"/><ellipse cx="60" cy="10" rx="22" ry="6" fill="none" stroke="#ffe27a" stroke-width="3"/>');
+    } else if (hat === 'champion') {
+      out.push('<ellipse cx="60" cy="18" rx="30" ry="14" fill="#ffd84a" opacity=".22"/>');
+      p('M32,33 L32,10 L42,20 L51,4 L60,16 L69,4 L78,20 L88,10 L88,33Z', '#f2c230', 'stroke="#a8801a" stroke-width="1.5"');
+      out.push('<rect x="32" y="27" width="56" height="7" rx="2" fill="#c0392b"/><circle cx="51" cy="6" r="2.5" fill="#fff"/><circle cx="69" cy="6" r="2.5" fill="#fff"/><circle cx="60" cy="24" r="4" fill="#3fb6c9"/>');
+    } else if (hat === 'laurel-silver' || hat === 'laurel-bronze') {
+      const lc = hat === 'laurel-silver' ? '#d9dee5' : '#c9894a';
+      for (let i = 0; i < 6; i++) {
+        const t = i / 5;
+        const [lx2, ly2] = [30 + t * 22, 44 - Math.sin(t * Math.PI * 0.9) * 20];
+        out.push(`<ellipse cx="${lx2.toFixed(1)}" cy="${ly2.toFixed(1)}" rx="6" ry="3" fill="${lc}" transform="rotate(${(-60 + t * 60).toFixed(0)} ${lx2.toFixed(1)} ${ly2.toFixed(1)})"/>`);
+        out.push(`<ellipse cx="${(120 - lx2).toFixed(1)}" cy="${ly2.toFixed(1)}" rx="6" ry="3" fill="${lc}" transform="rotate(${(60 - t * 60).toFixed(0)} ${(120 - lx2).toFixed(1)} ${ly2.toFixed(1)})"/>`);
+      }
+    } else if (hat === 'pumpkin') {
+      out.push('<ellipse cx="60" cy="24" rx="26" ry="16" fill="#f07b1d"/><ellipse cx="60" cy="24" rx="10" ry="16" fill="#e46a10"/><path d="M47,10 Q60,6 73,10" stroke="#c75a0c" stroke-width="2" fill="none"/><rect x="57" y="2" width="6" height="9" rx="2" fill="#4d7a2a"/>');
+    } else if (hat === 'antlers') {
+      line('M40,34 Q34,18 26,8 M31,16 L22,16 M34,24 L26,28 M80,34 Q86,18 94,8 M89,16 L98,16 M86,24 L94,28', '#8a5a35', 4);
+    } else if (hat === 'flowers') {
+      const cols = ['#ff6ad5', '#ffd84a', '#7fd8ff', '#ff8a3a', '#b58cf0', '#ff6ad5', '#ffd84a'];
+      cols.forEach((c, i) => {
+        const x = 32 + i * 9.3;
+        const y = 30 - Math.sin((i / 6) * Math.PI) * 10;
+        out.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5" fill="${c}"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.8" fill="#fff6c2"/>`);
+      });
+    } else if (hat === 'samurai') {
+      p('M26,44 Q26,14 60,14 Q94,14 94,44 L100,50 L84,46 L84,40 Q60,32 36,40 L36,46 L20,50Z', '#2a2d33', 'stroke="#111" stroke-width="1.5"');
+      p('M48,16 Q40,0 30,2 Q42,6 54,18Z', '#e8c34a');
+      p('M72,16 Q80,0 90,2 Q78,6 66,18Z', '#e8c34a');
+      out.push('<circle cx="60" cy="20" r="4" fill="#c0392b"/>');
     } else if (hat === 'crown') {
       p('M36,32 L36,12 L47,22 L60,5 L73,22 L84,12 L84,32Z', '#e8c34a', 'stroke="#b8922a" stroke-width="1.5"');
       out.push('<circle cx="60" cy="25" r="3.5" fill="#c0392b"/><circle cx="46" cy="27" r="2.5" fill="#3a64b8"/><circle cx="74" cy="27" r="2.5" fill="#3f8a4a"/>');
@@ -233,7 +261,7 @@
   function svg(appearance, { size = 120, title = '', head = false } = {}) {
     const box = head ? '14 8 92 92' : '0 0 120 140';
     const height = head ? size : Math.round((size * 140) / 120);
-    return `<svg class="char-svg" viewBox="${box}" width="${size}" height="${height}" role="img" aria-label="${title.replace(/"/g, '&quot;')}">${title ? `<title>${title.replace(/</g, '&lt;')}</title>` : ''}${parts(appearance)}</svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" class="char-svg" viewBox="${box}" width="${size}" height="${height}" role="img" aria-label="${title.replace(/"/g, '&quot;')}">${title ? `<title>${title.replace(/</g, '&lt;')}</title>` : ''}${parts(appearance)}</svg>`;
   }
 
   // Skin and outfit colors of a look, for drawing arms next to the character.

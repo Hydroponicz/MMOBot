@@ -182,7 +182,8 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       level:
         kind === 'points' ? null : kind === 'overall' ? progress(r.char_xp / CHARACTER_SKILL_COUNT, CHARACTER_MAX_LEVEL).level : levelForXp(r.xp, maxLevel(kind)),
     }));
-    res.json({ kind, rows });
+    const season = kind === 'season' ? { ...engine.season(), endsAt: engine.seasonEndsAt() } : undefined;
+    res.json({ kind, rows, season });
   });
 
   // Each row gets the player's character look, for the faces in the feed.

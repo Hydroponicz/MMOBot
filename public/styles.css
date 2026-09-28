@@ -629,3 +629,23 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 @media (max-width: 600px) {
   .bell-menu { position: fixed; left: 12px; right: 12px; top: 58px; width: auto; }
 }
+
+.limited-banner { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-bottom: 16px; border-color: var(--gold); }
+.limited-banner > div:first-child { flex: 1 1 260px; }
+
+.hall-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.hall-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); gap: 10px; }
+.hall-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px; text-align: center; font-size: 0.9rem; opacity: 0.6; }
+.hall-card.got { opacity: 1; border-color: var(--gold); }
+.hall-card .ic { font-size: 1.6rem; }
+.guild-members { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); gap: 8px; }
+.guild-member { display: flex; gap: 8px; align-items: center; color: var(--text); background: var(--panel-2); border-radius: 10px; padding: 6px 8px; }
+.guild-member:hover { text-decoration: none; background: var(--border); }
+
+.set-bonus { margin: 0 0 10px; color: var(--gold); font-size: 0.9rem; }
+.ench { color: #b58cf0; font-weight: 800; }
+
+.econ-alert { border-left: 4px solid var(--gold); background: var(--panel-2); border-radius: 8px; padding: 10px 14px; margin-top: 8px; }
+.econ-alert.bad { border-left-color: var(--danger); }
+.econ-alert ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 0.9rem; }
+.grid > * { min-width: 0; }

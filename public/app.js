@@ -291,13 +291,19 @@
               <span class="badge">✨ ${fmt(p.totalXp)} xp</span>
               ${p.overallRank ? `<span class="badge">🏆 Rank #${fmt(p.overallRank)}</span>` : ''}
               <span class="badge">💬 ${fmt(p.messages)} messages</span>
+              ${p.guild ? `<a class="badge" href="#/guilds">🛡️ [${esc(p.guild.tag)}] ${esc(p.guild.name)}</a>` : ''}
+              ${p.streamStreak?.streak > 1 ? `<span class="badge" title="Best: ${p.streamStreak.best}">🔥 ${p.streamStreak.streak} ${esc(p.streamStreak.unit)} in a row</span>` : ''}
+              ${p.lastSeen && !isMe ? `<span class="badge">👀 Seen ${ago(p.lastSeen)}</span>` : ''}
             </div>
           </div>
           <div class="level-ring" style="--p:${c.percent}" title="${charNext}">
             <div class="level-ring-inner"><div><b>${c.level}</b><small>Character</small></div></div>
           </div>
         </div>
-        ${isMe ? `<p class="muted" style="margin:14px 0 0">${staminaText(p)} · ${charNext}</p>` : ''}
+        <div class="form-row" style="margin-top:14px;justify-content:space-between;flex-wrap:wrap">
+          ${isMe ? `<p class="muted" style="margin:0">${staminaText(p)} · ${charNext}</p>` : '<span></span>'}
+          <button class="btn btn-sm" id="share-card">📸 Share card</button>
+        </div>
       </section>
 
       <h2 style="margin:28px 0 12px">Skills</h2>
@@ -398,12 +404,13 @@
                 .join('')}</div>`
             : ''
         }
+        ${c.set ? `<p class="set-bonus">🛡️ <b>${esc(c.set.name)} set</b>: +${c.set.defence}% defence, +${c.set.attack}% attack</p>` : ''}
         <div class="gear-grid">${c.worn
           .map(
             (w) => `<div class="gear-slot${w.item ? ' filled' : ''}" title="${w.item ? esc(itemTitle(w.item)) : ''}">
               <div class="gear-label">${SLOT_LABEL[w.slot]}</div>
               <div class="ic">${w.item ? w.item.icon : `<span class="ghost">${SLOT_EMPTY[w.slot]}</span>`}</div>
-              <div class="nm">${w.item ? esc(w.item.name) : 'Empty'}</div>
+              <div class="nm">${w.item ? `${esc(w.item.name)}${w.item.enchant ? ` <span class="ench">+${w.item.enchant}</span>` : ''}` : 'Empty'}</div>
               <div class="gear-stat">${w.item ? (w.item.attack ? `+${w.item.attack} attack` : `+${w.item.defence} defence`) : '&nbsp;'}</div>
               ${isMe && w.item ? `<button class="mini" data-act="unequip" data-slot="${w.slot}">Unequip</button>` : ''}
             </div>`
@@ -412,6 +419,73 @@
         ${monsterChips(c.monsters, c.ratedWith)}
         <p class="muted" style="margin-bottom:0;font-size:.85rem">Buy a sword or bow in the <a href="#/shop">shop</a>, or <code>!smith</code> / <code>!fletch</code> your own, then <code>!fight</code> (or <code>!shoot</code> with a bow, a quiver and arrows). <code>!targets</code> shows your best fights. Your best weapon is equipped automatically when you fight. Fights cost HP; monsters above your level hit much harder.</p>
       </section>`;
+  }
+
+  // A 1200×630 PNG of a character (portrait, levels, best skills) to post on Discord or X.
+  async function shareCard(p) {
+    const W = 1200;
+    const H = 630;
+    const cv = document.createElement('canvas');
+    cv.width = W;
+    cv.height = H;
+    const g = cv.getContext('2d');
+    const bg = g.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0, '#0b0e11');
+    bg.addColorStop(1, '#1c232c');
+    g.fillStyle = bg;
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = '#53fc18';
+    g.fillRect(0, 0, W, 8);
+    // Portrait
+    if (p.appearance) {
+      const svg = window.MMOAvatar.svg(p.appearance, { size: 420 });
+      const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+      const img = new Image();
+      await new Promise((ok) => {
+        img.onload = ok;
+        img.onerror = ok;
+        img.src = url;
+      });
+      g.fillStyle = '#161b22';
+      g.beginPath();
+      g.roundRect(50, 60, 440, 510, 28);
+      g.fill();
+      try {
+        g.drawImage(img, 60, 70, 420, 490);
+      } catch {
+        // (Some browsers refuse SVG images on canvas; the card still has the stats.)
+      }
+      URL.revokeObjectURL(url);
+    }
+    const text = (t, x, y, size, color = '#e8edf2', weight = 800) => {
+      g.font = `${weight} ${size}px Inter, system-ui, sans-serif`;
+      g.fillStyle = color;
+      g.fillText(t, x, y);
+    };
+    const x = 540;
+    text(p.username, x, 140, 68);
+    text([p.appearance ? `${p.appearance.raceName}` : '', p.title, p.guild ? `[${p.guild.tag}] ${p.guild.name}` : ''].filter(Boolean).join(' · '), x, 190, 30, '#8b98a8', 600);
+    text(`Character level ${p.character.level}`, x, 270, 44, '#53fc18');
+    text(`Total level ${fmt(p.totalLevel)} · ${fmt(p.totalXp)} XP${p.overallRank ? ` · Rank #${fmt(p.overallRank)}` : ''}`, x, 320, 28, '#e8edf2', 600);
+    const best = [...p.skills].sort((a, b) => b.xp - a.xp).slice(0, 3);
+    best.forEach((s, i) => text(`${s.icon} ${s.name} ${s.level}`, x, 400 + i * 50, 34, '#ffc940', 700));
+    text(`${state.site?.channel ? `${state.site.channel} MMO · ` : ''}${location.host}`, x, 575, 24, '#8b98a8', 600);
+    const blob = await new Promise((ok) => cv.toBlob(ok, 'image/png'));
+    const file = new File([blob], `${p.username}-character.png`, { type: 'image/png' });
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: `${p.username}'s character` });
+        return;
+      } catch {
+        // Cancelled: fall through to downloading it.
+      }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = file.name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    toast('Card saved! Post it anywhere.');
   }
 
   // Quest chains: the active one in full, the rest as a checklist.
@@ -662,6 +736,7 @@
     const potions = items.filter((i) => i.category === 'potions');
     const arrows = items.filter((i) => i.category === 'arrows');
     const cosmetics = items.filter((i) => i.category === 'cosmetics');
+    const limited = items.find((i) => i.category === 'limited');
     $app.innerHTML = `
       <div class="panel-head" style="margin-bottom:6px"><h1 style="margin:0">🛒 Shop</h1>${
         loggedIn
@@ -671,6 +746,16 @@
             : ''
       }</div>
       <p class="muted">Spend the points you earn in chat. You can also buy in chat, e.g. <code>!buy hammer</code> or <code>!buy carrot seeds 5</code>.</p>
+      ${
+        limited
+          ? `<section class="panel limited-banner">
+              <div><span class="badge gold">⏳ This week only</span><h2 style="margin:8px 0 4px">${limited.icon} ${esc(limited.name)}</h2>
+              <p class="muted" style="margin:0">A limited ${esc(limited.cosmetic.slot)} that leaves the shop in <b>${Math.max(1, Math.ceil((limited.endsAt - Date.now()) / 86_400_000))} day(s)</b>. Next week brings a different one.</p></div>
+              <span class="shop-preview">${preview(limited)}</span>
+              <div class="shop-buy"><span class="shop-price">${fmt(limited.cost)} pts</span>${buyBtn(limited, false)}</div>
+            </section>`
+          : ''
+      }
       <div class="shop-grid">${top.map(card).join('')}</div>
 
       <h2 style="margin:28px 0 6px">🎩 Cosmetics</h2>
@@ -745,11 +830,20 @@
       ...state.site.skills.map((s) => ({ id: s.id, label: `${s.icon} ${s.name}` })),
     ];
     const data = await api(`/leaderboard/${encodeURIComponent(kind)}?limit=100`);
+    const s = data.season;
+    const left = s?.endsAt ? Math.max(0, s.endsAt - Date.now()) : null;
     $app.innerHTML = `
-      <h1>Leaderboards</h1>
+      <div class="panel-head" style="margin-bottom:12px"><h1 style="margin:0">Leaderboards</h1><div class="form-row"><a class="btn btn-sm" href="#/guilds">🛡️ Guilds</a><a class="btn btn-sm" href="#/hall">🏛️ Hall of fame</a></div></div>
       <div class="tabs">${tabs
         .map((t) => `<a class="tab ${t.id === kind ? 'active' : ''}" href="#/leaderboards?board=${t.id}">${t.label}</a>`)
         .join('')}</div>
+      ${
+        s
+          ? `<p class="muted">🏁 <b>Season ${s.number}</b> counts XP earned this season.${
+              left !== null ? ` Ends in <b>${left > 172_800_000 ? `${Math.ceil(left / 86_400_000)} days` : `${Math.ceil(left / 3_600_000)} hours`}</b>.` : ''
+            } The top 3 win a permanent title and a season-only cosmetic (🥇 Champion's Crown + Victor Aura, 🥈 Silver Laurel, 🥉 Bronze Laurel).</p>`
+          : ''
+      }
       <section class="panel">${leaderboardTable(data)}</section>`;
   };
 
@@ -762,6 +856,7 @@
     const isMe = state.me && state.me.id === data.profile.id;
     $app.innerHTML = characterSheet(data.profile, data.activity, isMe);
     if (isMe) bindSheetActions();
+    document.getElementById('share-card')?.addEventListener('click', () => shareCard(data.profile));
     return liveFeed(document.getElementById('player-feed'), {
       filter: (a) => a.username === data.profile.username,
       max: 25,
@@ -782,9 +877,123 @@
     return pages.player([state.me.username]);
   };
 
+  // ---- Hall of fame ---------------------------------------------------------------------------
+  pages.hall = async () => {
+    const h = await api('/hall');
+    const when = (t) => (t ? new Date(t).toLocaleDateString() : '');
+    $app.innerHTML = `
+      <h1>🏛️ Hall of fame</h1>
+      <p class="muted">The channel's legends: season champions, the first to reach level 500 in each skill, the first to find each pet, and the biggest casino wins.</p>
+      <div class="grid grid-2">
+        <section class="panel">
+          <h2>🏁 Season winners</h2>
+          ${
+            h.seasons.length
+              ? `<ul class="hall-list">${h.seasons
+                  .map(
+                    (x) => `<li><b>Season ${x.number}</b> <span class="muted">${when(x.endedAt)}</span><div>${x.winners
+                      .map((w, i) => `${['🥇', '🥈', '🥉'][i]} <a href="${playerLink(w.username)}">${esc(w.username)}</a> <span class="muted">${fmt(w.xp)} XP</span>`)
+                      .join(' · ') || '<span class="muted">nobody</span>'}</div></li>`
+                  )
+                  .join('')}</ul>`
+              : '<p class="muted">No season has ended yet.</p>'
+          }
+        </section>
+        <section class="panel">
+          <h2>🎰 Biggest casino wins</h2>
+          ${
+            h.casino.length
+              ? `<div class="table-wrap"><table><tbody>${h.casino
+                  .map((c, i) => `<tr><td>${i + 1}</td><td><a href="${playerLink(c.username)}">${esc(c.username)}</a></td><td class="num"><b>${fmt(c.amount)}</b> pts</td><td class="muted">${esc(c.text.replace(/^won [\d,]+ pts |^cashed out [\d,]+ pts /, ''))}</td></tr>`)
+                  .join('')}</tbody></table></div>`
+              : '<p class="muted">No big wins yet.</p>'
+          }
+        </section>
+      </div>
+      <section class="panel" style="margin-top:16px">
+        <h2>⭐ First to level 500</h2>
+        <div class="hall-grid">${h.max
+          .map((m) => `<div class="hall-card${m.first ? ' got' : ''}"><div class="ic">${m.icon}</div><b>${esc(m.name)}</b><div>${m.first ? `<a href="${playerLink(m.first.username)}">${esc(m.first.username)}</a> <span class="muted">${when(m.first.at)}</span>` : '<span class="muted">Nobody yet</span>'}</div></div>`)
+          .join('')}</div>
+      </section>
+      <section class="panel" style="margin-top:16px">
+        <h2>🐾 First pet finders</h2>
+        ${
+          h.pets.length
+            ? `<div class="hall-grid">${h.pets.map((p) => `<div class="hall-card got"><div class="ic">${p.icon}</div><b>${esc(p.name)}</b><div><a href="${playerLink(p.username)}">${esc(p.username)}</a> <span class="muted">${when(p.at)}</span></div></div>`).join('')}</div>`
+            : '<p class="muted">No pets found yet. Every action has a tiny chance!</p>'
+        }
+      </section>`;
+  };
+
+  // ---- Guilds ---------------------------------------------------------------------------------
+  pages.guilds = async () => {
+    const d = await api('/guilds');
+    const loggedIn = d.points !== null;
+    const g = d.mine;
+    const isLeader = g && state.me && g.owner === state.me.username;
+    const pct = g ? Math.min(100, Math.round((g.week.actions / g.week.target) * 100)) : 0;
+    $app.innerHTML = `
+      <div class="panel-head" style="margin-bottom:6px"><h1 style="margin:0">🛡️ Guilds</h1>${loggedIn ? `<span class="badge gold" style="font-size:1rem">💰 ${fmt(d.points)} points</span>` : ''}</div>
+      <p class="muted">Team up: a guild has a shared bank, a leaderboard, and a weekly goal (100 actions per member) that pays into the bank. In chat: <code>!guild</code>, <code>!guild join &lt;name&gt;</code>, <code>!guild deposit 500</code>.</p>
+      ${
+        g
+          ? `<section class="panel">
+              <div class="panel-head"><h2>[${esc(g.tag)}] ${esc(g.name)}</h2><span class="badge gold">🏦 ${fmt(g.bank)} pts</span></div>
+              <p class="muted" style="margin-top:0">Led by ${esc(g.owner || '?')} · ${g.members} member${g.members === 1 ? '' : 's'} · ${fmt(g.xp)} XP</p>
+              <div class="task-bar" style="height:10px"><span style="width:${pct}%"></span></div>
+              <p style="margin:6px 0 14px">Weekly goal: <b>${fmt(g.week.actions)} / ${fmt(g.week.target)}</b> actions ${g.week.done ? '✅ done! Paid into the bank.' : `→ +${fmt(g.week.reward)} pts to the bank`}</p>
+              <div class="guild-members">${g.list
+                .map((m) => `<a class="guild-member" href="${playerLink(m.username)}"><span class="lb-portrait">${window.MMOAvatar.svg(m.appearance, { size: 34, head: true })}</span><span><b>${esc(m.username)}</b>${m.role === 'owner' ? ' 👑' : ''}<br><small class="muted">${fmt(m.xp)} XP</small></span></a>`)
+                .join('')}</div>
+              <div class="form-row" style="margin-top:14px;flex-wrap:wrap">
+                <form id="g-deposit" class="form-row"><input type="number" name="amount" min="1" placeholder="Points" style="max-width:120px" aria-label="Points to deposit"><button class="btn">Deposit</button></form>
+                ${isLeader ? `<form id="g-pay" class="form-row"><input type="text" name="username" placeholder="Member" style="max-width:130px" aria-label="Member"><input type="number" name="amount" min="1" placeholder="Points" style="max-width:110px" aria-label="Points"><button class="btn">Pay from bank</button></form>` : ''}
+                <button class="btn btn-danger" id="g-leave">Leave guild</button>
+              </div>
+            </section>`
+          : loggedIn
+            ? `<section class="panel"><h2 style="margin-top:0">Start a guild</h2>
+                <form id="g-create" class="form-row" style="flex-wrap:wrap"><input type="text" name="name" placeholder="Guild name" maxlength="24" required aria-label="Guild name"><input type="text" name="tag" placeholder="TAG" maxlength="4" style="max-width:80px;text-transform:uppercase" aria-label="Tag"><button class="btn btn-primary">Create (${fmt(d.cost)} pts)</button></form>
+                <p class="muted" style="margin-bottom:0;font-size:.85rem">Or join one below.</p></section>`
+            : ''
+      }
+      <section class="panel" style="margin-top:16px">
+        <h2 style="margin-top:0">🏆 Guild leaderboard</h2>
+        ${
+          d.guilds.length
+            ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Guild</th><th class="num">Members</th><th class="num">XP</th><th class="num">Season XP</th><th class="num">Bank</th><th></th></tr></thead><tbody>${d.guilds
+                .map(
+                  (x) => `<tr class="${g && g.id === x.id ? 'me' : ''}"><td>${x.rank}</td><td><b>[${esc(x.tag)}]</b> ${esc(x.name)}</td><td class="num">${x.members}</td><td class="num">${fmt(x.xp)}</td><td class="num">${fmt(x.seasonXp)}</td><td class="num">${fmt(x.bank)}</td>
+                  <td>${loggedIn && !g ? `<button class="btn btn-sm btn-primary" data-join="${x.id}">Join</button>` : ''}</td></tr>`
+                )
+                .join('')}</tbody></table></div>`
+            : '<div class="empty"><span class="ic">🛡️</span>No guilds yet. Start the first one!</div>'
+        }
+      </section>`;
+    const post = async (path, body) => {
+      try {
+        const r = await api(path, { method: 'POST', body });
+        toast(r.message);
+        route();
+      } catch (err) {
+        toast(err.message);
+      }
+    };
+    const on = (id, fn) => {
+      const f = document.getElementById(id);
+      if (f) f.onsubmit = (e) => (e.preventDefault(), fn(f));
+    };
+    on('g-create', (f) => post('/guilds', { name: f.name.value, tag: f.tag.value }));
+    on('g-deposit', (f) => post('/guild/deposit', { amount: Number(f.amount.value) }));
+    on('g-pay', (f) => post('/guild/pay', { username: f.username.value, amount: Number(f.amount.value) }));
+    document.getElementById('g-leave')?.addEventListener('click', () => confirm('Leave the guild?') && post('/guild/leave', {}));
+    $app.querySelectorAll('[data-join]').forEach((b) => b.addEventListener('click', () => post(`/guilds/${b.dataset.join}/join`, {})));
+  };
+
   // ---- Player market ------------------------------------------------------------------------
   pages.market = async (_, query) => {
-    const d = await api('/market');
+    const [d, bq] = await Promise.all([api('/market'), api('/bounties')]);
     const loggedIn = d.points !== null;
     let q = (query?.get('q') || '').toLowerCase();
     const mine = (l) => state.me && l.seller === state.me.username;
@@ -830,6 +1039,17 @@
               </section>`
           : ''
       }
+      <section class="panel" style="margin-top:16px">
+        <div class="panel-head"><h2>🎯 Bounties</h2><span class="muted">${bq.bounties.length}/10</span></div>
+        ${
+          bq.bounties.length
+            ? `<ul class="hall-list">${bq.bounties
+                .map((b) => `<li>${b.icon} <b>${esc(b.name)}</b>: <b style="color:var(--gold)">${fmt(b.reward)} pts</b> to the first to get one from an action <span class="muted">(posted by ${esc(b.poster)}, ends ${new Date(b.expiresAt).toLocaleDateString()})</span></li>`)
+                .join('')}</ul>`
+            : '<p class="muted" style="margin:0">No bounties right now.</p>'
+        }
+        <p class="muted" style="margin:10px 0 0;font-size:.85rem">Post one in chat: <code>!bounty goblin crown 5000</code>. Your points are held until someone finds one (or refunded after 7 days / <code>!bounty cancel</code>).</p>
+      </section>
       <section class="panel" style="margin-top:16px">
         <div class="panel-head"><h2>For sale</h2><input type="search" id="market-q" class="guide-search" placeholder="Search items or sellers" value="${esc(q)}" style="max-width:260px"></div>
         <div id="market-rows">${rows()}</div>
@@ -1220,6 +1440,21 @@
         ]),
       },
       {
+        id: 'dungeons', tab: 'combat', icon: '🏰', title: 'Dungeons', summary: 'Parties of 2-5 fight through rooms to a boss',
+        body: list([
+          `${c('dungeon')} gathers a party (anyone can type ${c('dungeon')} to join within a minute, up to 5). It costs a stamina charge and you need a weapon.`,
+          'The party fights three rooms and a boss picked for its level. Bigger, stronger parties do better. Every room cleared gives XP and loot.',
+          'Beat the boss for points and a dungeon-only treasure: 🔷 Rune Shards, 🗝️ Dungeon Relics, 💠 Shadow Gems, and rarely a 🦇 Delver\'s Cape. A failed run costs some HP.',
+        ]),
+      },
+      {
+        id: 'sets-enchanting', tab: 'combat', icon: '✨', title: 'Armor sets & enchanting', summary: 'Matching armor and +1 to +5 gear',
+        body: list([
+          'Wearing a helmet, body and legs of the same material (e.g. all Mithril, or all Bear leather) gives a set bonus: +10% defence and +5% attack.',
+          `${c('enchant mithril sword')} adds +4% attack or defence per level, up to +5. It costs 🌫️ Ashes and points (and a 💠 Shadow Gem for +4 and +5), and can fail: 90% for +1 down to 30% for +5.`,
+        ]),
+      },
+      {
         id: 'potions', tab: 'combat', icon: '🧪', title: 'Undead potions', summary: 'Timed buffs brewed from Ashes',
         body: `<p>${c('brew')} Ashes with something dead, then ${c('drink')} it. ${c('buffs')} shows what's active.</p>${list(
           (g.buffs || []).map((b) => `${b.icon} <b>${esc(b.potion)}</b>: ${esc(b.text)} (${b.minutes} min)`)
@@ -1248,6 +1483,7 @@
         id: 'cosmetics', tab: 'rewards', icon: '🎩', title: 'Cosmetics & gear looks', summary: 'Hats, capes and auras; your gear shows too',
         body: list([
           'Buy hats, capes and auras in the <a href="#/shop">shop</a> and wear them on the <a href="#/customize">Customize</a> page. They are looks only and take no backpack space.',
+          'Each week the shop has one limited cosmetic (pumpkin head, antlers, samurai helm...) that disappears when the week ends.',
           'The helmet, armor, shield and weapon you have equipped are drawn on your character, in the color of their metal.',
           'Your character shows on your page, the leaderboards, the live feed and the stream overlay.',
         ]),
@@ -1269,8 +1505,35 @@
         body: list([`Achievements unlock titles. ${c('achievements')} lists them, ${c('title')} picks the one you show.`]),
       },
       {
-        id: 'seasons', tab: 'rewards', icon: '🗓️', title: 'Seasons', summary: 'Top 3 each season win a permanent title',
-        body: list([`The Season leaderboard counts XP earned this season. ${c('season')} shows the leaders and your rank.`, 'The top 3 at the end of a season win a permanent title.']),
+        id: 'seasons', tab: 'rewards', icon: '🗓️', title: 'Seasons', summary: g.seasonDays ? `Every ${g.seasonDays} days; the top 3 win a title and a cosmetic` : 'Top 3 each season win a title and a cosmetic',
+        body: list([
+          `The Season leaderboard counts XP earned this season. ${c('season')} shows the leaders, your rank${g.seasonDays ? ' and when it ends' : ''}.`,
+          `${g.seasonDays ? `A season lasts ${g.seasonDays} days. ` : ''}The top 3 win a permanent title and a season-only cosmetic that can't be bought or traded: 🥇 Champion's Crown and Victor Aura, 🥈 Silver Laurel, 🥉 Bronze Laurel.`,
+          'Past winners are on the <a href="#/hall">Hall of fame</a>.',
+        ]),
+      },
+      {
+        id: 'streaks', tab: 'rewards', icon: '🔥', title: 'Stream streaks', summary: 'Come back stream after stream for bonus points',
+        body: list(['Chatting in streams in a row builds your streak (shown on your character page).', 'At 5, 10 and 25 in a row you get 500, 1,500 and 5,000 pts.']),
+      },
+      {
+        id: 'guilds', tab: 'rewards', icon: '🛡️', title: 'Guilds', summary: 'Team up with a shared bank and weekly goal',
+        body: list([
+          `${c('guild create Iron Wolves')} starts a guild (${fmt(g.guildCost)} pts), ${c('guild join iron wolves')} joins one, or use the <a href="#/guilds">Guilds</a> page.`,
+          `Every member's actions count toward a weekly goal (100 per member). Reach it and the guild bank gets 5,000 pts + 500 per member.`,
+          `${c('guild deposit 500')} adds to the bank; the leader can ${c('guild pay @name 500')} members from it. Guilds have their own leaderboard.`,
+        ]),
+      },
+      {
+        id: 'bounties', tab: 'rewards', icon: '🎯', title: 'Bounties', summary: 'Put up points for a rare find',
+        body: list([
+          `${c('bounty goblin crown 5000')} offers points to the first player (not you) who gets that item from an action.`,
+          `Your points are held until then, or refunded after 7 days or with ${c('bounty cancel')}. ${c('bounties')} lists them; they're also on the <a href="#/market">Market</a> page and the overlay.`,
+        ]),
+      },
+      {
+        id: 'hall', tab: 'rewards', icon: '🏛️', title: 'Hall of fame', summary: 'Season champions, first to 500, biggest wins',
+        body: list(['The <a href="#/hall">Hall of fame</a> remembers season winners, the first player to reach level 500 in each skill, the first to find each pet, and the biggest casino wins.', `${c('hall')} shows the highlights in chat.`]),
       },
       {
         id: 'museum', tab: 'rewards', icon: '🏛️', title: 'Museum', summary: 'Donate digging finds for 3× value and titles',
@@ -1330,6 +1593,8 @@
       ]],
       ['Combat', [
         ['fight [monster]', 'Fight with your best combat skill'],
+        ['dungeon', 'Start or join a dungeon party'],
+        ['enchant <item>', 'Enchant gear (+1 to +5)'],
         ['shoot [monster]', 'Fight with a bow (1 arrow)'],
         ['cast [monster]', 'Fight with magic (staff + rune)'],
         ['targets', 'Best monsters for you right now'],
@@ -1350,6 +1615,9 @@
         ['points', 'Your points'],
         ['give @name <item|points>', 'Give to another player'],
         ['market', 'Player market link'],
+        ['bounty <item> <points>', 'Post a bounty (bounty cancel)'],
+        ['bounties', 'Open bounties'],
+        ['guild', 'Your guild (guild create / join / leave / deposit / top)'],
       ]],
       ['You & rankings', [
         ['stats [name]', 'Levels and points'],
@@ -1362,7 +1630,8 @@
         ['daily', 'Daily reward'],
         ['tasks', "Today's tasks"],
         ['title [name]', 'Show a title (achievements lists them)'],
-        ['season', "This season's leaders"],
+        ['season', "This season's leaders and when it ends"],
+        ['hall', 'Hall of fame highlights'],
         ['museum', 'Museum progress (donate <item>)'],
       ]],
       ['Events', [
@@ -2063,8 +2332,19 @@
     const f = e.flows;
     const row = (label, v, cls = '') => `<tr><td>${label}</td><td class="num ${cls}">${fmt(v || 0)}</td></tr>`;
     const casinoNet = (f.casinoWagered || 0) - (f.casinoPaid || 0);
+    const hl = e.health || { alerts: [], week: { days: 0 } };
     $app.innerHTML = `
       ${header}
+      <section class="panel" style="margin-bottom:16px">
+        <h2 style="margin-top:0">🩺 Economy health <span class="muted" style="font-size:.85rem;font-weight:600">last ${hl.week.days || 0} day(s): ${fmt(hl.week.earned || 0)} earned, ${fmt(hl.week.spent || 0)} spent</span></h2>
+        ${
+          hl.alerts.length
+            ? hl.alerts
+                .map((a) => `<div class="econ-alert ${a.level}"><b>${a.level === 'bad' ? '🔴' : '🟠'} ${esc(a.title)}</b><ul>${a.tips.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></div>`)
+                .join('')
+            : `<p class="muted" style="margin:0">✅ ${hl.week.days >= 2 ? 'Points in and out look balanced.' : 'Not enough data yet: this fills in over the next few days.'}</p>`
+        }
+      </section>
       <div class="stat-row" style="margin-bottom:16px">
         <div class="stat"><div class="v">${fmt(e.totals.points)}</div><div class="k">points held now</div></div>
         <div class="stat"><div class="v">${fmt(e.totals.lifetime)}</div><div class="k">points ever earned</div></div>
@@ -2074,7 +2354,7 @@
         <section class="panel">
           <h2>Where points come from and go</h2>
           <p class="muted" style="font-size:.85rem">Counted since ${e.since ? new Date(e.since).toLocaleDateString() : 'this was added'}.</p>
-          <table><tbody>
+          <div class="table-wrap"><table><tbody>
             ${row('💬 Earned chatting', f.chat, 'up')}
             ${row('⛏️ Earned from actions', f.actions, 'up')}
             ${row('💰 Earned selling items', f.sold, 'up')}
@@ -2084,7 +2364,7 @@
             ${row('🎰 Paid out by the casino', f.casinoPaid)}
             <tr><td><b>Casino result</b> (positive = players lost points)</td><td class="num"><b class="${casinoNet >= 0 ? 'down' : 'up'}">${casinoNet >= 0 ? '' : '+'}${fmt(-casinoNet)}</b></td></tr>
             ${row('🤝 Traded between players', f.traded)}
-          </tbody></table>
+          </tbody></table></div>
         </section>
         <section class="panel">
           <h2>Biggest earners</h2>
