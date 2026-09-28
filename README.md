@@ -64,6 +64,8 @@ Viewers type commands in your Kick chat to train skills, collect loot and level 
 - **Weekly limited cosmetic**: one limited hat, cape or aura in the shop each week (UTC), gone when the week ends; shown on the shop page and the overlay.
 - **Economy health** (Admin → Economy): tracks points earned and spent per day and flags when points pile up, drain too fast, the casino is paying out more than it takes, or a few players hold most of the points, with suggested fixes.
 - **Share cards**: a Share card button on character pages makes a PNG with the portrait, levels and best skills (or opens the phone's share sheet).
+- **Automatic backups**: a backup of the database is made every day and the newest 7 are kept next to it (on the Railway volume). **Admin → Tools** lists them, downloads them and restores one (the server restarts). `BACKUP_DIR` and `BACKUP_KEEP` change where and how many. A backup on the same volume protects against mistakes and bad updates, not against losing the volume, so download one now and then too.
+- **Admin audit log** (Admin → Audit): every admin change is recorded with who made it. Points and items given or taken, bans, player resets and settings changes can be undone with one click.
 - **Notifications**: a 🔔 on the site shows market sales, pets and finished quests, plus reminders (crops ready, daily reward waiting, stamina full, raid or goal running).
 - **Stamina**: every viewer has 3 charges (`STAMINA_MAX`). Every game action (skilling, fighting, farming, raid `!attack`) uses one, except `!cook` on a lit fire; using the first charge from a full bar starts a 5-minute timer (`STAMINA_MINUTES`), and when it runs out the bar is back to full. Out of stamina warns once per refill, so spamming doesn't flood chat. Settings can switch it to refill one charge at a time instead. `!cook all` cooks every raw food on one fire in one message. `!stamina` shows your bar, and the character page shows it too. Both numbers are editable on Admin → Settings.
 - **Website**: home page with live feed and top players, character sheets, per-skill leaderboards, and a "How to play" guide generated from the game data.
@@ -109,6 +111,12 @@ npm start
 ```
 
 Open http://localhost:3000 and use **Test chat** to try `!fish`, `!mine copper`, `!mine tin`, `!smelt`, `!stats`, `!sell all`. Run `npm test` to run the test suite.
+
+### Checking the game
+
+- `npm test` includes a **fuzz test**: players typing random commands (and using the market, guilds and bounties) over weeks of game time, checking that points and items always stay valid. `FUZZ_SEEDS=40 FUZZ_STEPS=6000 node --test test/fuzz.test.js` runs a much longer hunt.
+- `npm run balance -- --players 40 --days 28 --streams 4 --hours 3` is a **balance simulator**: simulated viewers with different play styles (gatherers, crafters, fighters, farmers, gamblers; casual to grinder) play weeks of streams with the real game rules and your current settings (set env variables like `STAMINA_MAX=5` to try changes first). It reports levels and points per week and style, rare finds, pets, and where points come from and go. `--out report.md` saves it.
+- `npm run loadtest -- --chatters 200 --seconds 60 --rate 6 --viewers 30` is a **load test**: hundreds of chatters sending commands while overlay and site viewers stay connected and browse. It reports time per message, website response times, event-loop delay and memory, using a throwaway database.
 
 ## Deploying on Railway (one service)
 

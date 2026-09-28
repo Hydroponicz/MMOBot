@@ -53,6 +53,8 @@ class GameEngine extends EventEmitter {
     this.settings = settings || staticSettings(config);
     this.siteUrl = config.baseUrl;
     this.rng = rng;
+    // Every open website tab and overlay listens for live events, so there can be many listeners.
+    this.setMaxListeners(0);
     // Pet drops use their own dice, so they never shift the game's other rolls.
     this.petRng = petRng;
     this.now = now;

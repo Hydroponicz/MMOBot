@@ -12,6 +12,8 @@
     "start": "node --disable-warning=ExperimentalWarning src/server.js",
     "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
     "simulate": "node --disable-warning=ExperimentalWarning scripts/simulate.js",
+    "balance": "node --disable-warning=ExperimentalWarning scripts/balance.js",
+    "loadtest": "node --disable-warning=ExperimentalWarning scripts/loadtest.js",
     "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.js\""
   },
   "dependencies": {
