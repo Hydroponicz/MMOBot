@@ -1053,7 +1053,7 @@
             <h2>Environment <span class="muted" style="font-size:.8rem">(read-only)</span></h2>
             <dl class="kv">
               <dt>Channel</dt><dd>${esc(env.channel || '—')}</dd>
-              <dt>Site URL</dt><dd>${esc(env.baseUrl)}</dd>
+              <dt>Site URL</dt><dd>${esc(env.baseUrl)}${env.baseUrlSource ? ` <span class="muted">(from ${esc(env.baseUrlSource === 'default' ? 'default: set PUBLIC_URL' : env.baseUrlSource)})</span>` : ''}</dd>
               <dt>Kick client ID</dt><dd>${esc(env.kickClientId)}</dd>
               <dt>Database</dt><dd>${esc(env.dbPath)}</dd>
               <dt>Dev mode</dt><dd>${env.devMode ? 'on' : 'off'}</dd>

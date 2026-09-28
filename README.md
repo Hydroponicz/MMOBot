@@ -96,8 +96,9 @@ In the service's **Variables** tab:
 | `KICK_CLIENT_ID` | from your Kick app |
 | `KICK_CLIENT_SECRET` | from your Kick app |
 | `KICK_CHANNEL` | your channel name (the part after `kick.com/`) |
+| `PUBLIC_URL` | *(optional)* your own domain, e.g. `https://mmo.yourchannel.com` (a bare `mmo.yourchannel.com` works too). Without it, Railway's generated domain is used |
 
-Everything else is optional (see `.env.example`). `BASE_URL`, `DB_PATH` and `SESSION_SECRET` are worked out automatically. Railway redeploys when you save.
+Everything else is optional (see `.env.example`). `PUBLIC_URL`, `DB_PATH` and `SESSION_SECRET` are worked out automatically. Railway redeploys when you save.
 
 ### 4. Go live
 1. On startup, the app uses an **app access token** to look up your channel and **subscribe to its chat** (`chat.message.sent`). It re-checks every 30 minutes, because Kick drops subscriptions whose webhook fails for over a day. Chat commands start working straight away and progress is tracked.
@@ -114,11 +115,18 @@ The admin page shows the chat subscription, message and reply counts, storage st
 
 Webhook requests are verified against Kick's signature (RSA-SHA256 over `message-id.timestamp.body`). The public key is fetched from the API, with the published key built in as a fallback. Duplicate deliveries are ignored.
 
+### Using your own domain
+1. In Railway, open the service → **Settings → Networking → Custom Domain**, add your domain (e.g. `mmo.yourchannel.com`) and create the DNS record it shows you at your domain provider.
+2. Set `PUBLIC_URL` to that domain in the service's **Variables** tab. The Kick login redirect, the webhook URL, the links the bot posts in chat and the overlay link all use it. **Admin → Settings** shows the site URL in use and where it came from.
+3. On kick.com → Settings → Developer, change your app's **Redirect URL** to `https://<your-domain>/auth/callback` and **Webhook URL** to `https://<your-domain>/webhooks/kick`. Kick only accepts the URLs registered there, so login and chat stop working until they match.
+
+The older `BASE_URL` variable still works; `PUBLIC_URL` wins if both are set.
+
 ### 5. Add the overlay (optional)
 In OBS, go to **Sources → + → Browser** and paste `https://<your-domain>/overlay.html`, with width 400 and height 600. It shows "MMOBot overlay connected" for a few seconds when it loads, then every action as it happens, with level-ups, rare finds and upgrades highlighted. **Admin → Overview → OBS overlay** builds the link for you: every action or only the big moments (`?events=big`), how long each stays on screen and how many show at once. Its **Send test event** button pops a sample message onto every open overlay, so you can check your OBS setup without anyone playing.
 
 ### Testing with real Kick chat on your computer
-Kick can only deliver webhooks to a public URL. Run a tunnel (e.g. `cloudflared tunnel --url http://localhost:3000`), set `BASE_URL` to the tunnel URL in `.env`, and point a second Kick app's redirect and webhook URLs at it. Or just deploy to Railway and test there.
+Kick can only deliver webhooks to a public URL. Run a tunnel (e.g. `cloudflared tunnel --url http://localhost:3000`), set `PUBLIC_URL` to the tunnel URL in `.env`, and point a second Kick app's redirect and webhook URLs at it. Or just deploy to Railway and test there.
 
 ## Customizing
 

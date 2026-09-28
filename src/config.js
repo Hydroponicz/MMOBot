@@ -14,14 +14,40 @@ const bool = (name, fallback) => ['1', 'true', 'yes', 'on'].includes(String(env(
 
 // Railway injects these automatically: RAILWAY_PUBLIC_DOMAIN once you generate a domain,
 // RAILWAY_VOLUME_MOUNT_PATH once you attach a volume.
-const railwayDomain = env('RAILWAY_PUBLIC_DOMAIN', '');
 const volumePath = env('RAILWAY_VOLUME_MOUNT_PATH', '');
 const onRailway = Boolean(env('RAILWAY_ENVIRONMENT', '') || env('RAILWAY_PROJECT_ID', ''));
 
+// The site's public address. PUBLIC_URL wins (set it to your own domain), then the older BASE_URL,
+// then Railway's generated domain, then localhost. A bare domain gets https:// (http:// for localhost).
+function normalizePublicUrl(value) {
+  let url = String(value || '').trim();
+  if (!url) return null;
+  if (!/^https?:\/\//i.test(url)) url = `${/^(localhost|127\.0\.0\.1)(:|$)/i.test(url) ? 'http' : 'https'}://${url}`;
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}${u.pathname}`.replace(/\/+$/, '');
+  } catch {
+    return null;
+  }
+}
+function resolvePublicUrl(vars) {
+  for (const name of ['PUBLIC_URL', 'BASE_URL']) {
+    if (!vars[name]) continue;
+    const url = normalizePublicUrl(vars[name]);
+    if (url) return { url, source: name };
+    console.warn(`[config] ${name}="${vars[name]}" isn't a valid URL, ignoring it`);
+  }
+  if (vars.RAILWAY_PUBLIC_DOMAIN) return { url: `https://${vars.RAILWAY_PUBLIC_DOMAIN}`, source: 'RAILWAY_PUBLIC_DOMAIN' };
+  return { url: `http://localhost:${vars.PORT || 3000}`, source: 'default' };
+}
+const publicUrl = resolvePublicUrl(process.env);
+
 const config = {
   port: int('PORT', 3000),
-  // Public URL of the site, no trailing slash. Used to build OAuth redirect and webhook URLs.
-  baseUrl: env('BASE_URL', railwayDomain ? `https://${railwayDomain}` : 'http://localhost:3000').replace(/\/+$/, ''),
+  // Public URL of the site, no trailing slash. Used for the Kick login redirect, webhook URL and
+  // every link the bot posts. Set PUBLIC_URL to use your own domain.
+  baseUrl: publicUrl.url,
+  baseUrlSource: publicUrl.source,
   // Optional: when empty a random secret is generated once and stored in the database.
   sessionSecret: env('SESSION_SECRET', ''),
   dbPath: env('DB_PATH', path.join(volumePath || path.join(__dirname, '..', 'data'), 'mmobot.db')),
@@ -74,3 +100,5 @@ const config = {
 };
 
 module.exports = config;
+module.exports.normalizePublicUrl = normalizePublicUrl;
+module.exports.resolvePublicUrl = resolvePublicUrl;

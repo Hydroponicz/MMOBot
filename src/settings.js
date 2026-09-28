@@ -283,6 +283,7 @@ class Settings extends EventEmitter {
       environment: {
         channel: this.config.kick.channel,
         baseUrl: this.config.baseUrl,
+        baseUrlSource: this.config.baseUrlSource,
         dbPath: this.config.dbPath,
         kickClientId: this.config.kick.clientId ? `${this.config.kick.clientId.slice(0, 4)}…` : '(not set)',
         devMode: this.config.devMode,

@@ -64,14 +64,14 @@ if (require.main === module) {
   process.on('unhandledRejection', (err) => logger.error('[server] unhandled promise rejection:', err));
 
   const server = app.listen(config.port, () => {
-    logger.info(`[server] MMOBot started at ${config.baseUrl} (port ${config.port})`);
+    logger.info(`[server] MMOBot started at ${config.baseUrl} (port ${config.port}, URL from ${config.baseUrlSource})`);
     logger.info(`  database: ${config.dbPath}`);
     logger.info(`  webhook URL for your Kick app: ${config.baseUrl}/webhooks/kick`);
     logger.info(`  redirect URL for your Kick app: ${config.baseUrl}/auth/callback`);
     if (config.devMode) logger.info('  DEV_MODE on: test chat page enabled (turn off for public sites)');
     if (!kick.configured) logger.info('  ! KICK_CLIENT_ID / KICK_CLIENT_SECRET not set — Kick login and chat are disabled');
     if (config.onRailway && config.baseUrl.startsWith('http://localhost')) {
-      logger.warn('  ! No public URL: in Railway open this service → Settings → Networking → Generate Domain, then redeploy.');
+      logger.warn('  ! No public URL: set PUBLIC_URL to your domain, or in Railway open this service → Settings → Networking → Generate Domain, then redeploy.');
     }
     if (!config.persistentStorage) {
       logger.warn('  ! No Railway volume attached: player progress will be LOST on every redeploy. Attach a volume to this service.');
