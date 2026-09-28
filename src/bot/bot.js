@@ -10,6 +10,7 @@ class ChatBot {
     this.sending = false;
     this.minGapMs = 1200; // stay well under Kick's chat rate limits
     this.stats = { received: 0, commands: 0, sent: 0, sendErrors: 0, lastMessageAt: null, lastError: null };
+    this.recentReplies = new Map(); // reply text -> when we queued it
   }
 
   // msg: { kickUserId, username, avatarUrl?, content }
@@ -19,6 +20,9 @@ class ChatBot {
     // Ignore the bot account's own messages (never the streamer's).
     const botAccount = this.kick.botAccount();
     if (botAccount && String(msg.kickUserId) === String(botAccount.user_id)) return null;
+    // Our own replies coming back through the webhook (when they're posted by Kick's app bot, whose
+    // account we don't know) aren't chat: they can quote what a viewer typed, emote names included.
+    if (this.isOwnReply(msg.content)) return null;
     let reply = null;
     try {
       reply = this.engine.handleChat(msg).reply;
@@ -34,7 +38,15 @@ class ChatBot {
     return reply;
   }
 
+  isOwnReply(content) {
+    const at = this.recentReplies.get(String(content || '').trim());
+    return at !== undefined && Date.now() - at < 5 * 60_000;
+  }
+
   say(text) {
+    const now = Date.now();
+    this.recentReplies.set(text.slice(0, 500).trim(), now);
+    for (const [t, at] of this.recentReplies) if (now - at > 5 * 60_000 || this.recentReplies.size > 200) this.recentReplies.delete(t);
     this.queue.push(text);
     if (this.queue.length > 50) this.queue.splice(0, this.queue.length - 50); // drop backlog under heavy load
     this.drain();

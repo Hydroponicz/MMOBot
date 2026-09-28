@@ -21,6 +21,7 @@ const {
 const weaponWords = { archery: /^(bows?|archery|shoot|arrows?|ranged)$/, swords: /^(swords?|fight|melee)$/ };
 const { levelForXp, progress, characterProgress } = require('./xp');
 const casino = require('./casino');
+const emotes = require('./emotes');
 
 const fmt = (n) => Number(n).toLocaleString('en-US');
 // bet x multiplier, rounded down, without float noise (100 x 2.01 = 201, not 200).
@@ -140,8 +141,10 @@ class GameEngine extends EventEmitter {
     this.awardChatPoints(user);
 
     const { prefix, disabledCommands = [] } = this.cfg;
+    // Emotes in a command are decoration: "!mine [emote:1:KEKW] iron" is "!mine iron".
+    const clean = emotes.stripEmotes(content);
     // Emote shortcuts (admin setting): a message with e.g. the hydroponiczcobble emote counts as !mine.
-    const text = content.trim().startsWith(prefix) ? content.trim() : this.emoteCommand(content);
+    const text = clean.startsWith(prefix) ? clean : this.emoteCommand(content);
     if (!text) return { reply: null };
     const [rawCmd, ...args] = text.slice(prefix.length).split(/\s+/);
     const cmd = (rawCmd || '').toLowerCase();
@@ -156,16 +159,63 @@ class GameEngine extends EventEmitter {
     return { reply: reply ? `@${user.username} ${reply}` : null };
   }
 
-  // Kick sends emotes as "[emote:12345:name]"; people may also type ":name:" or just the name.
+  // The emote shortcuts in effect, parsed from the setting (bad entries are skipped).
+  emoteShortcuts() {
+    const list = this.cfg.emoteCommands || [];
+    if (this._emoteCache?.list !== list) this._emoteCache = { list, shortcuts: emotes.parseEmoteCommands(list, isChatCommand).shortcuts };
+    return this._emoteCache.shortcuts;
+  }
+
+  // Turns a message with a shortcut emote into a command: "[emote:1:hydroponiczcobble] iron" ->
+  // "!mine iron". Kick sends emotes as "[emote:12345:name]"; people may also type ":name:" or start
+  // the message with the name.
   emoteCommand(content) {
-    for (const pair of this.cfg.emoteCommands || []) {
-      const [name, command] = pair.split('=');
-      if (!name || !command) continue;
-      const n = name.replace(/[^a-z0-9_]/gi, '');
-      const re = new RegExp(`\\[emote:\\d+:${n}\\]|:${n}:|(^|[^a-z0-9_])${n}([^a-z0-9_]|$)`, 'i');
-      if (re.test(content)) return `${this.cfg.prefix}${command}`;
+    const found = emotes.findShortcut(content, this.emoteShortcuts());
+    if (!found) return null;
+    const { shortcut, words, atStart } = found;
+    const args = shortcut.args.length ? shortcut.args : this.emoteArgs(shortcut.command, words, atStart);
+    return `${this.cfg.prefix}${[shortcut.command, ...args].join(' ')}`;
+  }
+
+  // Words after a shortcut emote become the command's target only if they are one: "[cobble] iron"
+  // mines iron, "[cobble] giant rat" (mapped to fight) fights a Giant Rat, but "[cobble] this is fun"
+  // just mines. Other commands take the words as they are when the emote starts the message.
+  emoteArgs(command, words, atStart) {
+    if (!words.length) return [];
+    const targets = this.targetPhrases(command);
+    if (!targets) return atStart ? words : [];
+    for (let n = Math.min(4, words.length); n > 0; n--) {
+      if (targets.has(words.slice(0, n).join(' ').toLowerCase())) return words.slice(0, n);
     }
-    return null;
+    return [];
+  }
+
+  // Everything a player can name as the target of a skill command, lowercased: full names, first
+  // and last words ("iron", "oak", "rat"), ids and groups ("arrows"). null for other commands.
+  targetPhrases(command) {
+    this._targetCache ??= {};
+    if (command in this._targetCache) return this._targetCache[command];
+    const skillId = command === 'plant' ? 'farming' : COMMAND_TO_SKILL[command];
+    const skill = SKILLS[skillId];
+    let set = null;
+    if (skill && command !== 'harvest') {
+      set = new Set();
+      const add = (name) => {
+        const n = name.toLowerCase();
+        const parts = n.split(' ');
+        for (const p of [n, n.replace(/_/g, ' '), parts[0], parts[parts.length - 1]]) set.add(p);
+      };
+      for (const r of skill.resources || skill.recipes || []) {
+        add(ITEMS[r.item].name);
+        add(r.item);
+        if (r.group) [r.group, `${r.group}s`].forEach((g) => set.add(g));
+      }
+      for (const m of skill.monsters || []) {
+        add(m.name);
+        add(m.id);
+      }
+    }
+    return (this._targetCache[command] = set);
   }
 
   awardChatPoints(user) {
@@ -2118,4 +2168,9 @@ function staticSettings(config) {
   };
 }
 
-module.exports = { GameEngine };
+// Is this a chat command (without the prefix)? Used to check emote shortcuts.
+function isChatCommand(word) {
+  return Boolean(COMMAND_TO_SKILL[word] || INFO_COMMANDS[word]);
+}
+
+module.exports = { GameEngine, isChatCommand };

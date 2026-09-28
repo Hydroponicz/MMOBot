@@ -731,25 +731,89 @@ test('the buy route for the knife works too', () => {
   assert.match(say('!skin'), /skinned/);
 });
 
-test('emote shortcuts: the hydroponiczcobble emote works like !mine', () => {
+test('emote shortcuts: an emote then a space and a target runs that command on that target', () => {
   const { repo, settings, say, tick } = withLiveSettings();
-  assert.deepEqual(settings.all.general.emoteCommands, []);
-  settings.update('general', { emoteCommands: 'hydroponiczcobble=mine' });
-  assert.match(say('[emote:4148074:hydroponiczcobble]'), /⛏️ you mined/, 'how Kick sends emotes');
+  settings.update('general', { emoteCommands: 'hydroponiczcobble=mine, swordz=fight' });
+  const u = repo.getUserByName('alice') || repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  const cob = '[emote:4148074:hydroponiczcobble]';
+  assert.match(say(`${cob} copper`), /you mined 🟠 Copper Ore/);
   tick();
-  assert.match(say('lets go :hydroponiczcobble: :hydroponiczcobble:'), /you mined/);
+  assert.match(say(`${cob}  iron ore`), /Mining level 15 for Iron Ore/, 'the target is used (and checked)');
+  assert.match(say(`hydroponiczcobble tin`), /you mined ⚪ Tin Ore/, 'typed name as the first word');
   tick();
-  assert.match(say('hydroponiczcobble'), /you mined/);
+  assert.match(say(`:hydroponiczcobble: copper [emote:1:KEKW]`), /you mined 🟠 Copper Ore/, 'other emotes are ignored');
   tick();
-  assert.equal(say('hydroponiczcobblestone is cool'), null, 'only the exact emote name');
-  assert.equal(say('!points').includes('points'), true, 'normal commands still work');
-  assert.equal(repo.getUserByName('alice').actions_count, 3);
+  assert.match(say(`lets go ${cob} copper`), /you mined 🟠 Copper Ore/, 'emote mid-message still takes its target');
+  tick();
+  // Words that aren't a target are just chat: it mines as usual instead of replying "unknown target".
+  assert.match(say(`${cob} this is fun`), /you mined/);
+  tick();
+  assert.match(say(`${cob} i love it`), /you mined/);
 
-  const { SettingsError } = require('../src/settings');
+  // A fight emote followed by a monster fights that monster.
+  repo.addItem(u.id, 'bronze_sword', 1);
+  tick();
+  assert.match(say('[emote:9:swordz] chicken gg'), /you defeated a 🐔 Chicken/);
+  tick();
+  assert.match(say('[emote:9:swordz] giant rat'), /Giant Rat \(level 5\) will probably knock you out|defeated a 🐀 Giant Rat/);
+});
+
+test('emote shortcuts only fire on the emote, :name: or the first word, never mid-sentence or in links', () => {
+  const { settings, say, tick } = withLiveSettings();
+  settings.update('general', { emoteCommands: 'hydroponiczcobble=mine' });
+  assert.equal(say('hello hydroponiczcobble'), null);
+  assert.equal(say('check https://kick.com/hydroponiczcobble'), null);
+  assert.equal(say('no adventurer named hydroponiczcobble yet.'), null, 'a bot reply quoting a viewer');
+  assert.equal(say('hydroponiczcobblestone is cool'), null);
+  assert.equal(say('[emote:4148074:someotheremote]'), null);
+  assert.match(say('HYDROPONICZCOBBLE'), /you mined/);
+  tick();
+  // Two shortcuts in one message: the first one in the message wins.
+  settings.update('general', { emoteCommands: 'cobble=mine, fishy=fish' });
+  assert.match(say('[emote:1:fishy] then [emote:2:cobble]'), /you caught/);
+});
+
+test('emotes after a normal command are ignored instead of breaking it', () => {
+  const { repo, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!mine [emote:39261:KEKW]'), /you mined/);
+  tick();
+  assert.match(say('!mine [emote:39261:KEKW] copper'), /you mined 🟠 Copper Ore/);
+  assert.match(say('!sell all [emote:1:PogU]'), /sold/);
+  repo.addPoints(u.id, 1000);
+  assert.match(say('!buy quiver [emote:1:PogU]'), /bought 🧺 Quiver/);
+  assert.match(say('[emote:1:PogU] !buy arrows 20'), /bought 🎯 20x Iron Arrows/, 'an emote before the command too');
+});
+
+test('emote settings: EMOTE_COMMANDS is cleaned up like the admin page; bad entries are skipped', () => {
+  const { Settings, SettingsError } = require('../src/settings');
+  const repo = openDb(':memory:');
+  const warn = console.warn;
+  const warnings = [];
+  console.warn = (m) => warnings.push(m);
+  const emoteCommands = ['hydroponiczcobble = mine', 'fishy=!Fish', ':chop:=chop oak', '🪨=mine', '4128=mine', 'cobble=mien'];
+  const settings = new Settings({ config: { ...baseConfig, game: { ...baseConfig.game, emoteCommands }, adminUsers: [], kick: { channel: 's' } }, repo });
+  console.warn = warn;
+  assert.deepEqual(settings.all.general.emoteCommands, ['hydroponiczcobble=mine', 'fishy=fish', 'chop=chop oak']);
+  assert.equal(warnings.length, 3);
+  assert.match(warnings.join('\n'), /🪨=mine[\s\S]*4128=mine[\s\S]*"mien" isn't a command/);
+
+  // The admin page uses the same rules (and still refuses bad entries outright).
   assert.throws(() => settings.update('general', { emoteCommands: 'cobble=dance' }), SettingsError);
   assert.throws(() => settings.update('general', { emoteCommands: 'bad name=mine' }), /should look like/);
-  settings.update('general', { emoteCommands: ':Cobble:=!mine, fishy=fish' });
-  assert.deepEqual(settings.all.general.emoteCommands, ['cobble=mine', 'fishy=fish']);
+  assert.throws(() => settings.update('general', { emoteCommands: '🪨=mine' }), /should look like/);
+  settings.update('general', { emoteCommands: ':Cobble:=!mine, [emote:77:Fishy]=fish, axe=chop oak' });
+  assert.deepEqual(settings.all.general.emoteCommands, ['cobble=mine', 'fishy=fish', 'axe=chop oak']);
+});
+
+test('the bot ignores its own replies when they come back through chat', () => {
+  const { ChatBot } = require('../src/bot/bot');
+  const { engine } = setup();
+  engine.settings.game.emoteCommands = ['hydroponiczcobble=mine'];
+  const bot = new ChatBot({ engine, kick: { botAccount: () => null, sendChat: async () => true }, logger: { info() {}, error() {} } });
+  const reply = bot.handleMessage({ kickUserId: '1', username: 'Alice', content: '!stats hydroponiczcobble' });
+  assert.match(reply, /no adventurer named hydroponiczcobble/);
+  assert.equal(bot.handleMessage({ kickUserId: '999', username: 'KickBot', content: reply }), null);
 });
 
 test('saved shop prices survive new shop items being added', () => {

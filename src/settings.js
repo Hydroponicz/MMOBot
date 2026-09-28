@@ -5,6 +5,8 @@
 // immediately and survive redeploys. Kick credentials, URLs and paths stay environment-only.
 const { EventEmitter } = require('node:events');
 const { ITEMS, SKILLS, SKILL_IDS, BACKPACK_TIERS, SHOP, COMMAND_TO_SKILL } = require('./game/skills');
+const { isChatCommand } = require('./game/engine');
+const { parseEmoteCommands, formatShortcut } = require('./game/emotes');
 
 // Every command a viewer can type (without the prefix), for enabling/disabling from the admin page.
 const TOOL_SKILLS = SKILL_IDS.filter((id) => SKILLS[id].tool);
@@ -55,7 +57,7 @@ const FIELDS = {
     emoteCommands: {
       type: 'emotes',
       label: 'Emote shortcuts',
-      help: 'emote=command pairs, comma separated. A chat message with that emote runs the command, e.g. hydroponiczcobble=mine makes the emote work like !mine.',
+      help: 'emote=command pairs, comma separated, e.g. hydroponiczcobble=mine makes the emote work like !mine. Viewers can add a target after the emote (the emote then "iron" mines iron), or fix one here: cobble=mine iron.',
     },
     adminUsers: { type: 'list', label: 'Extra admins', help: 'Kick usernames (comma separated) allowed on this page. The channel owner is always admin.' },
   },
@@ -133,15 +135,10 @@ function coerce(spec, value, label) {
       return [...new Set(arr.map((x) => String(x).trim().toLowerCase().replace(/^@/, '')).filter(Boolean))];
     }
     case 'emotes': {
-      const arr = Array.isArray(value) ? value : String(value ?? '').split(',');
-      const out = [];
-      for (const raw of arr.map((x) => String(x).trim()).filter(Boolean)) {
-        const [name, command] = raw.split('=').map((x) => (x || '').trim().replace(/^[:!]+|:+$/g, '').toLowerCase());
-        if (!/^[a-z0-9_]+$/.test(name || '') || !command) throw new SettingsError(`${label}: "${raw}" should look like emotename=mine`);
-        if (!COMMANDS.includes(command)) throw new SettingsError(`${label}: "${command}" isn't a command (try ${Object.keys(COMMAND_TO_SKILL).join(', ')})`);
-        out.push(`${name}=${command}`);
-      }
-      return out;
+      // Same rules as EMOTE_COMMANDS: "name=command", optionally with a fixed target ("cobble=mine iron").
+      const { shortcuts, errors } = parseEmoteCommands(value, isChatCommand);
+      if (errors.length) throw new SettingsError(`${label}: ${errors[0]} (commands: ${Object.keys(COMMAND_TO_SKILL).join(', ')}, …)`);
+      return shortcuts.map(formatShortcut);
     }
     case 'int':
     case 'number': {
@@ -154,6 +151,14 @@ function coerce(spec, value, label) {
     default:
       throw new SettingsError(`unknown setting type for ${label}`);
   }
+}
+
+// EMOTE_COMMANDS, cleaned up like the admin page does. Bad entries are skipped with a warning
+// instead of silently never matching (or matching everything).
+function envEmotes(list) {
+  const { shortcuts, errors } = parseEmoteCommands(list || [], isChatCommand);
+  for (const e of errors) console.warn(`[settings] EMOTE_COMMANDS: skipping ${e}`);
+  return shortcuts.map(formatShortcut);
 }
 
 class Settings extends EventEmitter {
@@ -171,7 +176,7 @@ class Settings extends EventEmitter {
         chatPoints: config.game.chatPoints,
         chatCooldown: config.game.chatCooldown,
         replyInChat: config.game.replyInChat,
-        emoteCommands: config.game.emoteCommands || [],
+        emoteCommands: envEmotes(config.game.emoteCommands),
         adminUsers: config.adminUsers || [],
       },
       casino: {
