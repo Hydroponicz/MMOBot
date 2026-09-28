@@ -2461,7 +2461,13 @@
     const f = e.flows;
     const row = (label, v, cls = '') => `<tr><td>${label}</td><td class="num ${cls}">${fmt(v || 0)}</td></tr>`;
     const casinoNet = (f.casinoWagered || 0) - (f.casinoPaid || 0);
+    const cardsNet = (f.cardPacks || 0) + (f.cardGrading || 0) - (f.cardBuyback || 0);
+    const relicsNet = (f.relicCases || 0) - (f.relicBuyback || 0);
+    // A game's result for players: minus = they lost points to it (a sink), plus = it paid out more.
+    const netRow = (label, net) =>
+      `<tr><td><b>${label}</b> <span class="muted">(for players: minus = points lost, plus = points won)</span></td><td class="num"><b class="${net >= 0 ? 'down' : 'up'}">${net >= 0 ? '' : '+'}${fmt(-net)}</b></td></tr>`;
     const hl = e.health || { alerts: [], week: { days: 0 } };
+    const held = e.held || { cards: { count: 0, value: 0, buyback: 0 }, relics: { count: 0, value: 0, buyback: 0 } };
     $app.innerHTML = `
       ${header}
       <section class="panel" style="margin-bottom:16px">
@@ -2479,6 +2485,24 @@
         <div class="stat"><div class="v">${fmt(e.totals.lifetime)}</div><div class="k">points ever earned</div></div>
         <div class="stat"><div class="v">${fmt(e.totals.players)}</div><div class="k">players</div></div>
       </div>
+      ${
+        hl.week.games?.length
+          ? `<section class="panel" style="margin-bottom:16px">
+              <h2 style="margin-top:0">🎲 Games of chance <span class="muted" style="font-size:.85rem;font-weight:600">last ${hl.week.days || 0} day(s)</span></h2>
+              <div class="table-wrap"><table><thead><tr><th>Game</th><th class="num">Players put in</th><th class="num">Paid back out</th><th class="num">Players' net</th><th class="num">Payout rate</th></tr></thead><tbody>
+                ${hl.week.games
+                  .map((g) => `<tr><td>${g.name}</td><td class="num">${fmt(g.in)}</td><td class="num">${fmt(g.out)}</td><td class="num"><b class="${g.net >= 0 ? 'down' : 'up'}">${g.net >= 0 ? '' : '+'}${fmt(-g.net)}</b></td><td class="num">${g.in ? `${Math.round((g.out / g.in) * 100)}%` : '–'}</td></tr>`)
+                  .join('')}
+              </tbody></table></div>
+              <p class="muted" style="font-size:.85rem;margin-bottom:0"><b>Players' net</b>: red minus = points the game removed from the economy (healthy), green plus = the game paid out more than it took (points created). For cards and relics, players keep most of what they open, so the payout rate stays low until they sell to the bank: see the value held below.</p>
+            </section>`
+          : ''
+      }
+      <div class="stat-row" style="margin-bottom:16px">
+        <div class="stat"><div class="v">${fmt(held.cards.buyback)}</div><div class="k">points in cards (${fmt(held.cards.count)} cards, bank buyback)</div></div>
+        <div class="stat"><div class="v">${fmt(held.relics.buyback)}</div><div class="k">points in relics (${fmt(held.relics.count)} relics, bank buyback)</div></div>
+        <div class="stat"><div class="v">${fmt(e.totals.points + held.cards.buyback + held.relics.buyback)}</div><div class="k">total players could cash out</div></div>
+      </div>
       <div class="grid grid-2">
         <section class="panel">
           <h2>Where points come from and go</h2>
@@ -2491,7 +2515,15 @@
             ${row('🛒 Spent in the shop and on upgrades', f.shop, 'down')}
             ${row('🎰 Bet in the casino', f.casinoWagered)}
             ${row('🎰 Paid out by the casino', f.casinoPaid)}
-            <tr><td><b>Casino result</b> (positive = players lost points)</td><td class="num"><b class="${casinoNet >= 0 ? 'down' : 'up'}">${casinoNet >= 0 ? '' : '+'}${fmt(-casinoNet)}</b></td></tr>
+            ${netRow('Casino result', casinoNet)}
+            ${row('🃏 Spent on card packs', f.cardPacks)}
+            ${row('🃏 Spent grading cards', f.cardGrading)}
+            ${row('🃏 Paid for cards sold back to the bank', f.cardBuyback)}
+            ${netRow('Cards result', cardsNet)}
+            ${row('🧰 Spent on relic cases', f.relicCases)}
+            ${row('🧰 Paid for relics sold back to the bank', f.relicBuyback)}
+            ${netRow('Relic cases result', relicsNet)}
+            ${row('🏪 Market fees (removed from the game)', f.fees, 'down')}
             ${row('🤝 Traded between players', f.traded)}
           </tbody></table></div>
         </section>

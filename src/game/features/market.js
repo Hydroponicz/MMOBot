@@ -160,10 +160,19 @@ module.exports = {
       .slice(0, 7)
       .map(([, v]) => v);
     const sum = (k) => days.reduce((s, d) => s + (d[k] || 0), 0);
-    const earned = sum('chat') + sum('actions') + sum('sold') + sum('rewards');
-    const spent = sum('shop') + sum('fees') + Math.max(0, sum('casinoWagered') - sum('casinoPaid')) + sum('cardGrading') + Math.max(0, sum('cardPacks') - sum('cardBuyback')) + Math.max(0, sum('relicCases') - sum('relicBuyback'));
+    // Games of chance: points in (bets, packs, cases, grading) against points paid back out. A game
+    // that took more than it paid is a sink; one that paid out more created points.
+    const games = [
+      { id: 'casino', name: '🎰 Casino', in: sum('casinoWagered'), out: sum('casinoPaid') },
+      { id: 'cards', name: '🃏 Creature cards', in: sum('cardPacks') + sum('cardGrading'), out: sum('cardBuyback') },
+      { id: 'relics', name: '🧰 Relic cases', in: sum('relicCases'), out: sum('relicBuyback') },
+    ].map((g) => ({ ...g, net: g.in - g.out }));
+    const gamesTook = games.reduce((s, g) => s + Math.max(0, g.net), 0);
+    const gamesGave = games.reduce((s, g) => s + Math.max(0, -g.net), 0);
+    const earned = sum('chat') + sum('actions') + sum('sold') + sum('rewards') + gamesGave;
+    const spent = sum('shop') + sum('fees') + gamesTook;
     const alerts = [];
-    const week = { days: days.length, earned, spent };
+    const week = { days: days.length, earned, spent, games };
     if (days.length >= 2 && earned > 1000 && earned > spent * 1.5) {
       alerts.push({
         level: earned > spent * 3 ? 'bad' : 'warn',
@@ -182,9 +191,15 @@ module.exports = {
         tips: ['Run an XP or chat-points boost, or a channel goal.', 'Raise the points multiplier a little, or lower shop prices.'],
       });
     }
-    const wagered = sum('casinoWagered');
-    if (wagered > 10_000 && sum('casinoPaid') > wagered) {
-      alerts.push({ level: 'warn', title: `The casino paid out ${fmt(sum('casinoPaid') - wagered)} pts more than it took this week.`, tips: ['That happens with a few lucky wins; if it keeps up, lower the max bet (Settings → Casino).'] });
+    const TIPS = {
+      casino: ['That happens with a few lucky wins; if it keeps up, lower the max bet (Settings → Casino).'],
+      cards: ['A lucky mythic or a PRISTINE 10 sold back can do this. If it keeps up, lower the card buyback rate or raise pack prices (Settings → Casino).'],
+      relics: ['A ★ relic or a rare pattern sold back can do this. If it keeps up, lower the relic buyback rate or raise case prices (Settings → Casino).'],
+    };
+    for (const g of games) {
+      if (g.in > 10_000 && g.out > g.in) {
+        alerts.push({ level: 'warn', title: `${g.name} paid out ${fmt(g.out - g.in)} pts more than players put in over the last ${days.length} days.`, tips: TIPS[g.id] });
+      }
     }
     const top = this.repo.topEarners(100).sort((a, b) => b.points - a.points);
     const totals = this.repo.economyTotals();
@@ -198,6 +213,25 @@ module.exports = {
       });
     }
     return { week, alerts };
+  },
+
+  // Points that cards and relics could be sold back to the bank for right now (the market value of
+  // everything players hold, times the buyback rate). Cached for a minute.
+  collectiblesHeld() {
+    const now = this.now();
+    if (this.heldCache && now - this.heldCache.at < 60_000) return this.heldCache.value;
+    const C = require('../cards');
+    const R = require('../relics');
+    const cards = this.repo.cardsActive();
+    const relics = this.repo.relicsActive();
+    const cardValue = cards.reduce((s, r) => s + C.valueOf({ card: r.card, finish: r.finish, wear: r.wear, grade: r.grade, black: !!r.black }), 0);
+    const relicValue = relics.reduce((s, r) => s + R.valueOf({ skin: r.skin, float: r.float, seed: r.seed, soul: !!r.soul }), 0);
+    const value = {
+      cards: { count: cards.length, value: cardValue, buyback: Math.floor(cardValue * (this.cfg.cardBuyback ?? 0.6)) },
+      relics: { count: relics.length, value: relicValue, buyback: Math.floor(relicValue * (this.cfg.relicBuyback ?? 0.6)) },
+    };
+    this.heldCache = { at: now, value };
+    return value;
   },
 
   // ---- Notifications ------------------------------------------------------------------------

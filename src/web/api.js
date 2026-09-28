@@ -624,7 +624,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   router.get('/admin/economy', requireAdmin, (req, res) => {
     engine.flushEconomy?.();
     const flows = repo.getSetting('economy_stats') || {};
-    res.json({ totals: repo.economyTotals(), flows, since: flows.since || null, topEarners: repo.topEarners(10), health: engine.economyAlerts() });
+    res.json({ totals: repo.economyTotals(), flows, since: flows.since || null, topEarners: repo.topEarners(10), health: engine.economyAlerts(), held: engine.collectiblesHeld() });
   });
 
   // ---- Admin: backup and restore -------------------------------------------

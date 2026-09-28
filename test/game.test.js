@@ -2175,6 +2175,30 @@ test('economy alerts flag points piling up', () => {
   assert.match(alerts[0].title, /Points are piling up/);
 });
 
+test('economy health counts cards and relic cases, both ways', () => {
+  const { engine, repo, u } = extrasSetup();
+  engine.track('chat', 1_000);
+  // Cases kept 9,000: a sink.
+  engine.track('relicCases', 10_000);
+  engine.track('relicBuyback', 1_000);
+  // Cards paid out 40,000 more than they took (a jackpot sold back): points created.
+  engine.track('cardPacks', 20_000);
+  engine.track('cardBuyback', 60_000);
+  engine.econ.days['2000-01-01'] = { traded: 1 };
+  const { week, alerts } = engine.economyAlerts();
+  const g = Object.fromEntries(week.games.map((x) => [x.id, x]));
+  assert.equal(g.relics.net, 9_000);
+  assert.equal(g.cards.net, -40_000);
+  assert.equal(week.spent, 9_000);
+  assert.equal(week.earned, 1_000 + 40_000, 'a game that paid out more counts as points earned');
+  assert.ok(alerts.some((a) => /Creature cards paid out 40,000 pts more/.test(a.title)));
+  // What players could cash in from cards and relics right now.
+  repo.relicInsert(u.id, { skin: 'dragonfire-1', float: 0.2, seed: 1, soul: false }, 'case', 1);
+  const held = engine.collectiblesHeld();
+  assert.equal(held.relics.count, 1);
+  assert.ok(held.relics.buyback > 0 && held.relics.buyback < held.relics.value);
+});
+
 test('regression: selling your last spare copy on the market keeps the one you wear', () => {
   const { repo, engine, say, u } = extrasSetup({ tradeMinHours: 0, tradeMinActions: 0 });
   repo.addItem(u.id, 'bronze_sword', 2);
