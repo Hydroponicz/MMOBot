@@ -601,3 +601,7 @@ a.badge:hover { text-decoration: none; color: var(--text); }
   .cmd-group .kv { grid-template-columns: 1fr; gap: 2px; }
   .cmd-group .kv dd { margin-bottom: 8px; }
 }
+
+/* Character faces on leaderboards */
+.lb-portrait { width: 34px; height: 34px; border-radius: 50%; overflow: hidden; flex: none; background: var(--panel-2); border: 1px solid var(--border); display: inline-flex; }
+.lb-portrait svg { display: block; }

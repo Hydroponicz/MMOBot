@@ -356,7 +356,7 @@ function createRepo(db) {
       if (kind === 'points') return leaderboardPoints.all(limit, offset);
       if (kind === 'season') {
         return db
-          .prepare('SELECT username, avatar_url, season_xp AS xp FROM users WHERE season_xp > 0 AND banned = 0 ORDER BY season_xp DESC LIMIT ? OFFSET ?')
+          .prepare('SELECT id, username, avatar_url, season_xp AS xp FROM users WHERE season_xp > 0 AND banned = 0 ORDER BY season_xp DESC LIMIT ? OFFSET ?')
           .all(limit, offset);
       }
       if (kind === 'overall') return leaderboardOverall.all(limit, offset);

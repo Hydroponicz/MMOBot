@@ -206,7 +206,19 @@ class GameEngine extends EventEmitter {
 
   emitActivity(user, entry) {
     const id = this.repo.logActivity({ userId: user.id, ...entry });
-    this.emit('activity', { id, username: user.username, created_at: this.now(), skill: null, item: null, xp: 0, ...entry });
+    // The overlay draws the player's character doing the action, so it gets their look and the item's icon.
+    const look = this.appearance(user.id);
+    this.emit('activity', {
+      id,
+      username: user.username,
+      created_at: this.now(),
+      skill: null,
+      item: null,
+      xp: 0,
+      icon: entry.item ? ITEMS[entry.item]?.icon : undefined,
+      appearance: look ? { race: look.race, look: look.look } : undefined,
+      ...entry,
+    });
     // Daily tasks and achievements watch the activity feed.
     this.onActivity?.(user, entry);
   }

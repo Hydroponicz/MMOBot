@@ -528,7 +528,7 @@
         .map(
           (r) => `<tr class="${state.me && state.me.username === r.username ? 'me' : ''}">
           <td class="rank rank-${r.rank}">${r.rank <= 3 ? ['🥇', '🥈', '🥉'][r.rank - 1] : r.rank}</td>
-          <td><a class="player-cell" href="${playerLink(r.username)}">${avatar(r.avatarUrl, r.username, 'sm')}${esc(r.username)}</a></td>
+          <td><a class="player-cell" href="${playerLink(r.username)}">${r.appearance ? `<span class="lb-portrait">${window.MMOAvatar.svg(r.appearance, { size: 34, head: true })}</span>` : avatar(r.avatarUrl, r.username, 'sm')}${esc(r.username)}</a></td>
           ${showLevel ? `<td class="num"><b>${r.level}</b></td>` : ''}
           ${showValue ? `<td class="num">${fmt(kind === 'points' ? r.points : r.xp)}</td>` : ''}
         </tr>`
@@ -1316,6 +1316,12 @@
               </label>
               <label>for <input type="number" name="seconds" value="10" min="2" max="120" style="width:70px"> seconds</label>
               <label>max <input type="number" name="max" value="6" min="1" max="30" style="width:64px"> at once</label>
+              <label>as
+                <select name="scenes">
+                  <option value="1">characters doing the action</option>
+                  <option value="0">text only</option>
+                </select>
+              </label>
             </form>
             <div class="form-row" style="margin-top:10px">
               <input type="text" id="overlay-url" readonly style="max-width:none" aria-label="Overlay link">
@@ -1337,6 +1343,7 @@
       if (f.events.value === 'big') q.set('events', 'big');
       if (Number(f.seconds.value) !== 10) q.set('seconds', f.seconds.value);
       if (Number(f.max.value) !== 6) q.set('max', f.max.value);
+      if (f.scenes.value === '0') q.set('scenes', '0');
       return `${location.origin}/overlay.html${q.toString() ? `?${q}` : ''}`;
     };
     const syncOverlay = () => {

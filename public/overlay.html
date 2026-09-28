@@ -11,7 +11,8 @@
          ?events=all      every action (default)       ?events=big   only level-ups, rare finds, upgrades
          &seconds=10      how long each event stays    &max=6        how many can be on screen at once
          &quiet=1         don't show the "connected" message when the overlay loads
-         &raid=0          hide the raid boss health bar and channel boost banner at the top */
+         &raid=0          hide the raid boss health bar and channel boost banner at the top
+         &scenes=0        plain text rows instead of animated characters doing the action */
     html, body { margin: 0; background: transparent; overflow: hidden; }
     body { font-family: Inter, system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; justify-content: flex-end; padding: 12px; box-sizing: border-box; gap: 8px; }
     .ev {
@@ -49,18 +50,117 @@
     .bar span { display: block; height: 100%; background: linear-gradient(90deg, #dc2626, #f87171); transition: width 0.4s; }
     .boss .top { margin-top: 6px; font-size: 13px; font-weight: 600; color: #8b98a8; }
     .boost { border: 2px solid #53fc18; color: #53fc18; text-align: center; font-size: 16px; }
+    /* Animated scene: the player's character doing the action. */
+    .ev.scene { padding: 4px 14px 4px 4px; gap: 6px; }
+    .ev.scene svg.stage { flex: none; width: 160px; height: 88px; overflow: visible; }
+    .ev .txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .ev .who { color: #53fc18; font-weight: 800; }
+    .ev .what { color: #e8edf2; }
+    .ev .xp { color: #8b98a8; font-size: 13px; }
+    .ev.rare .who, .ev.rare .rare-tag { color: #c084fc; }
+    .rare-tag { font-size: 12px; font-weight: 800; letter-spacing: 0.08em; }
+    .face { width: 30px; height: 30px; border-radius: 50%; overflow: hidden; background: #1c232c; flex: none; }
+    .face svg { display: block; }
+    .stage .arm { transform-box: view-box; transform-origin: 82px 99px; animation: swing 0.6s ease-in-out infinite; }
+    .stage.m-stir .arm { animation: stir 0.8s ease-in-out infinite; }
+    .stage.m-cast .arm { animation: cast 1.2s ease-in-out infinite; }
+    .stage.m-stab .arm { animation: stab 0.6s ease-in-out infinite; }
+    .stage.m-plant .arm { animation: plant 0.9s ease-in-out infinite; }
+    .stage.m-shoot .arm { animation: recoil 0.9s ease-out infinite; }
+    .stage .target { transform-box: fill-box; transform-origin: 50% 100%; animation: hit 0.6s ease-out infinite; }
+    .stage.m-cast .target { animation: bob 1.2s ease-in-out infinite; }
+    .stage.m-stir .target { animation: bob 0.8s ease-in-out infinite; }
+    .stage.m-shoot .target, .stage.m-plant .target { animation: hit 0.9s ease-out infinite; }
+    .stage .fx { animation: burst 0.6s ease-out infinite; opacity: 0; }
+    .stage.m-shoot .fx, .stage.m-plant .fx { animation-duration: 0.9s; }
+    .stage.m-cast .fx { animation-duration: 1.2s; }
+    .stage.m-stir .fx { animation: rise 0.8s ease-out infinite; }
+    .stage .shot { animation: fly 0.9s ease-in infinite; }
+    .stage .loot { transform-box: fill-box; transform-origin: 50% 50%; animation: pop 0.6s cubic-bezier(.2, 1.6, .5, 1) 1.4s both, float 1.6s ease-in-out 2s infinite; }
+    @keyframes swing { 0%, 100% { transform: rotate(-40deg); } 55% { transform: rotate(28deg); } }
+    @keyframes stir { 0%, 100% { transform: rotate(-12deg); } 50% { transform: rotate(10deg); } }
+    @keyframes cast { 0%, 100% { transform: rotate(-35deg); } 40% { transform: rotate(12deg); } }
+    @keyframes stab { 0%, 100% { transform: translate(-6px, 0); } 55% { transform: translate(14px, -2px); } }
+    @keyframes plant { 0%, 100% { transform: translate(0, -6px); } 55% { transform: translate(8px, 6px); } }
+    @keyframes recoil { 0%, 30%, 100% { transform: none; } 38% { transform: translate(-5px, 0); } }
+    @keyframes hit { 0%, 50% { transform: none; } 60% { transform: rotate(-7deg) scale(0.94); } 75% { transform: rotate(4deg); } 100% { transform: none; } }
+    @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+    @keyframes burst { 0%, 52% { opacity: 0; transform: none; } 58% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)); } }
+    @keyframes rise { 0% { opacity: 0; transform: none; } 30% { opacity: 0.9; } 100% { opacity: 0; transform: translate(var(--dx), -22px); } }
+    @keyframes fly { 0%, 30% { opacity: 0; transform: none; } 35% { opacity: 1; } 60% { opacity: 1; transform: translateX(52px); } 61%, 100% { opacity: 0; transform: translateX(52px); } }
+    @keyframes pop { from { opacity: 0; transform: translateY(14px) scale(0.2); } to { opacity: 1; transform: none; } }
+    @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
     @keyframes in { from { transform: translateX(-110%); opacity: 0; } to { transform: none; opacity: 1; } }
     @keyframes out { to { opacity: 0; transform: translateY(-10px); } }
   </style>
 </head>
 <body>
   <div id="top"></div>
+  <script src="/avatar.js"></script>
   <script>
     const params = new URLSearchParams(location.search);
     const onlyBig = params.get('events') === 'big' || params.has('big');
     const seconds = Math.min(Math.max(Number(params.get('seconds')) || 10, 2), 120);
     const max = Math.min(Math.max(Number(params.get('max')) || 6, 1), 30);
     const quiet = params.has('quiet');
+    const scenes = params.get('scenes') !== '0' && !!window.MMOAvatar;
+
+    // What each skill looks like: the tool in the character's hand, what they work on, how the arm
+    // moves, and the color of the bits that fly off.
+    const SCENES = {
+      fishing: { tool: '🎣', target: '🌊', move: 'cast', fx: '#5ab8f0' },
+      mining: { tool: '⛏️', target: '🪨', move: 'swing', fx: '#a8a29e' },
+      woodcutting: { tool: '🪓', target: '🌳', move: 'swing', fx: '#b07b4f' },
+      digging: { tool: '🥄', target: '🟫', move: 'stab', fx: '#8d5a3b' },
+      skinning: { tool: '🔪', target: '🦌', move: 'stab', fx: '#d0d0d0' },
+      farming: { tool: '🌱', target: '🟫', move: 'plant', fx: '#6bc46b' },
+      harvest: { tool: '🧺', target: '🌾', move: 'plant', fx: '#e3c16f' },
+      firemaking: { tool: '🪨', target: '🪵', move: 'swing', fx: '#ffb03a' },
+      cooking: { tool: '🍳', target: '🔥', move: 'stir', fx: '#dddddd' },
+      smelting: { tool: '🪨', target: '🧱', move: 'stab', fx: '#ff8a3a' },
+      smithing: { tool: '🔨', target: '🧱', move: 'swing', fx: '#ffcf4a' },
+      fletching: { tool: '🔪', target: '🪵', move: 'stab', fx: '#c9a06a' },
+      crafting: { tool: '🧵', target: '🟤', move: 'stab', fx: '#c9a06a' },
+      alchemy: { tool: '🥄', target: '⚗️', move: 'stir', fx: '#b58cf0' },
+      swords: { tool: '🗡️', target: '👹', move: 'swing', fx: '#ff5c7a' },
+      archery: { tool: '🏹', target: '👹', move: 'shoot', fx: '#ff5c7a', shot: '➳' },
+      magic: { tool: '🪄', target: '👹', move: 'shoot', fx: '#b58cf0', shot: '✦' },
+    };
+
+    // Emoji tools are drawn pointing different ways. Mirror the ones that point left, then place the
+    // emoji so its handle sits in the character's hand.
+    const FLIP = ['🎣', '⛏️', '🪓', '🥄', '🔨', '🍳'];
+    const HELD = ['🏹', '🌱', '🧺', '🪨', '🧵'];
+    function toolIn(tool, hx, hy) {
+      const [dx, dy] = HELD.includes(tool) ? [5, -9] : tool === '🔪' ? [11, 11] : [12, -12];
+      return `<g transform="translate(${hx + dx} ${hy + dy})${FLIP.includes(tool) ? ' scale(-1 1)' : ''}"><text font-size="30" text-anchor="middle" dominant-baseline="central">${tool}</text></g>`;
+    }
+
+    function stage(a) {
+      const sc = SCENES[a.skill === 'farming' && /^harvested/.test(a.text) ? 'harvest' : a.skill];
+      if (!sc || !a.appearance) return '';
+      const { skin, outfit } = MMOAvatar.colorsOf(a.appearance);
+      const target = a.target || sc.target;
+      const fx = [[-18, -22], [-10, -30], [8, -26], [14, -14]]
+        .map(([dx, dy], i) => `<circle class="fx" cx="150" cy="${76 + i * 3}" r="${2.4 - i * 0.3}" fill="${sc.fx}" style="--dx:${dx}px;--dy:${dy}px;animation-delay:${i * 0.03}s"/>`)
+        .join('');
+      const shot = sc.shot ? `<text class="shot" x="108" y="80" font-size="18" fill="${sc.fx}" text-anchor="middle" dominant-baseline="central">${sc.shot}</text>` : '';
+      return `<svg class="stage m-${sc.move}" viewBox="0 0 220 120">
+        <ellipse cx="54" cy="116" rx="44" ry="5" fill="#000" opacity=".35"/>
+        <ellipse cx="172" cy="114" rx="30" ry="5" fill="#000" opacity=".35"/>
+        <g transform="translate(6,6) scale(.8)">${MMOAvatar.parts(a.appearance)}</g>
+        <g class="arm">
+          <path d="M80,100 L102,86" stroke="${outfit}" stroke-width="11" stroke-linecap="round"/>
+          ${toolIn(sc.tool, 105, 85)}
+          <circle cx="105" cy="85" r="5.5" fill="${skin}"/>
+        </g>
+        ${shot}
+        <text class="target" x="172" y="86" font-size="50" text-anchor="middle" dominant-baseline="central">${esc(target)}</text>
+        ${fx}
+        ${a.icon ? `<text class="loot" x="172" y="30" font-size="26" text-anchor="middle" dominant-baseline="central">${esc(a.icon)}</text>` : ''}
+      </svg>`;
+    }
+    const face = (a) => (scenes && a.appearance ? `<span class="face">${MMOAvatar.svg(a.appearance, { size: 30, head: true })}</span>` : '');
 
     const BIG = ['levelup', 'charlevel', 'rare', 'upgrade', 'jackpot', 'follow', 'sub', 'gift', 'raid', 'duel', 'event'];
     const icons = { levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', buy: '🛒', action: '✨', test: '🧪', jackpot: '🎰', death: '💀', achievement: '🏆', task: '📋', trade: '🤝', follow: '💚', sub: '⭐', gift: '🎁', raid: '⚔️', duel: '⚔️', event: '📣' };
@@ -135,9 +235,19 @@
       const a = JSON.parse(e.data);
       const big = BIG.includes(a.kind) || a.kind === 'test';
       if (onlyBig && !big) return;
+      const scene = scenes && ['action', 'rare', 'test'].includes(a.kind) ? stage(a) : '';
+      if (scene) {
+        const xpLine = a.xp ? `<span class="xp">+${Number(a.xp).toLocaleString()} xp</span>` : '';
+        show(
+          `${scene}<span class="txt">${a.kind === 'rare' ? '<span class="rare-tag">✨ RARE FIND</span>' : ''}<span class="who">${esc(a.username)}</span><span class="what">${esc(a.text)}</span>${xpLine}</span>`,
+          `scene ${esc(a.kind)}${a.kind === 'rare' ? ' big' : ''}`,
+          a.kind === 'rare' ? seconds + 3 : seconds
+        );
+        return;
+      }
       const icon = a.kind === 'action' ? skillIcons[a.skill] || icons.action : icons[a.kind] || '✨';
       const xp = a.xp && !big ? `<small>+${Number(a.xp).toLocaleString()} xp</small>` : '';
-      show(`<span class="ic">${icon}</span><span>${a.username ? `<b>${esc(a.username)}</b> ` : ''}${esc(a.text)}${xp}</span>`, `${esc(a.kind)}${big ? ' big' : ''}`, big ? seconds + 3 : seconds);
+      show(`${face(a)}<span class="ic">${icon}</span><span>${a.username ? `<b>${esc(a.username)}</b> ` : ''}${esc(a.text)}${xp}</span>`, `${esc(a.kind)}${big ? ' big' : ''}`, big ? seconds + 3 : seconds);
     });
   </script>
 </body>

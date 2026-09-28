@@ -289,6 +289,7 @@ module.exports = {
       kind: rare ? 'rare' : 'action',
       skill: pick.skillId,
       item: loot,
+      target: monster.icon,
       xp: xpGain,
       text: `defeated a ${monster.name}${rare ? ` and found a RARE ${ITEMS[loot].name}` : ''}`,
     });

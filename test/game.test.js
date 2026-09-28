@@ -1778,3 +1778,15 @@ test('races: everyone starts with a random race and look; perks change XP, HP, s
   assert.equal(engine.raceXp(u.id, 'swords'), 1);
   assert.equal(engine.sellValue('shrimp', u.id), engine.sellValue('shrimp'));
 });
+
+test('activity events carry the player look and item icon for the overlay', () => {
+  const { engine, say } = setup();
+  const seen = [];
+  engine.on('activity', (a) => seen.push(a));
+  say('!mine');
+  const a = seen.find((x) => x.kind === 'action');
+  assert.equal(a.skill, 'mining');
+  assert.ok(a.icon);
+  assert.ok(a.appearance.race);
+  assert.ok(a.appearance.look.skin);
+});

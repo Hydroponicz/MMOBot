@@ -16,7 +16,8 @@
     return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
   }
 
-  function svg(appearance, { size = 120, title = '' } = {}) {
+  // The drawing itself (0 0 120 140 coordinates), for embedding in bigger scenes like the overlay.
+  function parts(appearance) {
     const race = appearance?.race || 'human';
     const L = appearance?.look || {};
     const S = COLORS.skin[L.skin] || COLORS.skin.light;
@@ -144,8 +145,21 @@
     // ---- earring
     if (L.extra === 'earring') out.push(`<circle cx="${lx}" cy="${race === 'elf' || race === 'orc' ? 73 : 74}" r="2.6" fill="none" stroke="#e8c34a" stroke-width="1.8"/>`);
 
-    return `<svg class="char-svg" viewBox="0 0 120 140" width="${size}" height="${Math.round((size * 140) / 120)}" role="img" aria-label="${title.replace(/"/g, '&quot;')}">${title ? `<title>${title.replace(/</g, '&lt;')}</title>` : ''}${out.join('')}</svg>`;
+    return out.join('');
   }
 
-  window.MMOAvatar = { svg, COLORS };
+  // head: crop to just the face (for small spots like leaderboards).
+  function svg(appearance, { size = 120, title = '', head = false } = {}) {
+    const box = head ? '14 8 92 92' : '0 0 120 140';
+    const height = head ? size : Math.round((size * 140) / 120);
+    return `<svg class="char-svg" viewBox="${box}" width="${size}" height="${height}" role="img" aria-label="${title.replace(/"/g, '&quot;')}">${title ? `<title>${title.replace(/</g, '&lt;')}</title>` : ''}${parts(appearance)}</svg>`;
+  }
+
+  // Skin and outfit colors of a look, for drawing arms next to the character.
+  const colorsOf = (appearance) => ({
+    skin: COLORS.skin[appearance?.look?.skin] || COLORS.skin.light,
+    outfit: COLORS.outfit[appearance?.look?.outfit] || COLORS.outfit.blue,
+  });
+
+  window.MMOAvatar = { svg, parts, colorsOf, COLORS };
 })();

@@ -109,6 +109,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       rank: offset + i + 1,
       username: r.username,
       avatarUrl: r.avatar_url,
+      appearance: (({ race, look } = {}) => (race ? { race, look } : null))(engine.appearance(r.id) || {}),
       xp: r.xp ?? null,
       points: r.points ?? null,
       level:
@@ -407,8 +408,11 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       kind: 'test',
       username: req.user.username,
       text: 'is testing the overlay — it works! 🎉',
-      skill: null,
+      // Shows the admin's character mining, so the animated scene can be checked too.
+      skill: 'mining',
       item: null,
+      icon: '💎',
+      appearance: (({ race, look } = {}) => ({ race, look }))(engine.appearance(req.user.id) || {}),
       xp: 0,
       created_at: Date.now(),
     });

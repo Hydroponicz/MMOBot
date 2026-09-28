@@ -50,6 +50,8 @@ test('dev chat -> player profile -> leaderboard', async (t) => {
 
   const lb = await fetch(`${s.url}/api/leaderboard/points`).then((r) => r.json());
   assert.equal(lb.rows[0].username, 'Viewer1');
+  assert.ok(lb.rows[0].appearance.race, 'leaderboard rows carry the character look');
+  assert.equal(typeof lb.rows[0].appearance.look.hair, 'string');
 
   assert.equal((await fetch(`${s.url}/api/leaderboard/bogus`)).status, 400);
   assert.equal((await fetch(`${s.url}/api/admin/status`)).status, 403);
