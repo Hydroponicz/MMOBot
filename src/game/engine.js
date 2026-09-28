@@ -16,6 +16,7 @@ const {
   maxLevel,
   maxHpFor,
   maxManaFor,
+  BUFFS,
   findItem,
 } = require('./skills');
 const weaponWords = { archery: /^(bows?|archery|shoot|arrows?|ranged)$/, swords: /^(swords?|fight|melee)$/ };
@@ -63,6 +64,7 @@ const INFO_COMMANDS = {
   hp: ['vitalsInfo', 'hp'], health: ['vitalsInfo', 'hp'], mana: ['vitalsInfo', 'hp'], vitals: ['vitalsInfo', 'hp'],
   drink: ['drink', 'drink'], quaff: ['drink', 'drink'], potion: ['drink', 'drink'],
   heal: ['healSpell', 'heal'],
+  buffs: ['buffsInfo', 'hp'], effects: ['buffsInfo', 'hp'],
   monsters: ['monstersInfo', 'monsters'], mobs: ['monstersInfo', 'monsters'],
   targets: ['targets', 'targets'], target: ['targets', 'targets'],
   quiver: ['quiverInfo', 'targets'], arrows: ['quiverInfo', 'targets'],
@@ -110,6 +112,8 @@ for (const id of SKILL_IDS) {
     for (const item of m.loot) GATHER_HINT[item] ??= `!${SKILLS[id].command} ${m.name.toLowerCase()}`;
   }
 }
+// Firemaking leaves ashes.
+GATHER_HINT.ashes = '!lightfire';
 // Name of anything in a skill's unlock list (items, recipes or monsters).
 const unlockName = (r) => (r.item ? ITEMS[r.item].name : r.name);
 
@@ -232,7 +236,7 @@ class GameEngine extends EventEmitter {
     if (SKILLS[skillId].pickBest === false && !args.length) return this.process(user, skillId, args).reply;
     const now = this.now();
     const fresh = this.repo.getUser(user.id);
-    const readyAt = fresh.last_action_at + this.cfg.actionCooldown * 1000;
+    const readyAt = fresh.last_action_at + this.actionCooldownMs(user.id, now);
     if (now < readyAt) {
       // Warn once per cooldown window so spamming doesn't flood chat.
       if (this.cooldownWarned.get(user.id) === fresh.last_action_at) return null;
@@ -245,6 +249,8 @@ class GameEngine extends EventEmitter {
       const r =
         skill.type === 'combat'
           ? this.fight(user, args, skill.command === 'fight' ? null : skillId) // !fight picks, !shoot means archery
+          : skill.type === 'burn'
+            ? this.burn(user, args)
           : skill.type === 'process'
             ? this.process(user, skillId, args)
             : this.gather(user, skillId, args);
@@ -298,7 +304,7 @@ class GameEngine extends EventEmitter {
     let drop = null;
     let rare = false;
     for (const r of skill.rares || []) {
-      if (this.rng() < r.chance * (tool ? tool.rareBonus : 1)) {
+      if (this.rng() < r.chance * (tool ? tool.rareBonus : 1) * this.luck(user.id)) {
         drop = r;
         rare = true;
         break;
@@ -410,6 +416,64 @@ class GameEngine extends EventEmitter {
     return this.reward(user, skillId, recipe.item, recipe.xp, { rare: false, qty: recipe.yield || 1 });
   }
 
+  // !lightfire [log]: burn a log from your backpack with your Flint and Steel. Uses the best log you
+  // can burn unless you name one. A small chance the fire won't catch (nothing is used up then);
+  // a lit fire uses one log and one of the flint's uses, and leaves Ashes.
+  burn(user, args) {
+    const skill = SKILLS.firemaking;
+    const level = skillLevel('firemaking', this.repo.getSkills(user.id).firemaking);
+    const inv = this.repo.getInventory(user.id);
+    const flint = this.shopItems().find((x) => x.item === 'flint_and_steel');
+    if (!inv.flint_and_steel) {
+      return { consumed: false, reply: `you need a 🪨 Flint and Steel in your backpack to light a fire! !buy flint${flint ? ` (${fmt(flint.cost)} pts)` : ''}.` };
+    }
+    const logs = skill.resources.filter((r) => inv[r.item]);
+    let log;
+    if (args.length) {
+      const id = findItem(args.join(' '), skill.resources.map((r) => r.item));
+      if (!id) return { consumed: false, reply: `unknown log. You can burn: ${skill.resources.filter((r) => r.level <= level).map((r) => ITEMS[r.item].name).join(', ')}` };
+      log = skill.resources.find((r) => r.item === id);
+      if (log.level > level) return { consumed: false, reply: `you need 🔥 Firemaking level ${log.level} to burn ${ITEMS[id].name} (you are ${level}).` };
+      if (!inv[id]) return { consumed: false, reply: `you don't have any ${ITEMS[id].name}. Try !chop ${ITEMS[id].name.split(' ')[0].toLowerCase()}.` };
+    } else {
+      log = [...logs].reverse().find((r) => r.level <= level);
+      if (!log) {
+        return {
+          consumed: false,
+          reply: logs.length
+            ? `you need 🔥 Firemaking level ${logs[0].level} to burn ${ITEMS[logs[0].item].name} (you are ${level}). !chop some plain Logs to start.`
+            : 'no logs in your backpack! !chop some first.',
+        };
+      }
+    }
+    const failChance = Math.max(0.03, 0.1 - level * 0.0015);
+    if (this.rng() < failChance) {
+      const msg = skill.failMessages[Math.floor(this.rng() * skill.failMessages.length)];
+      return { consumed: true, reply: `🔥 ${msg}... try again!` };
+    }
+    // Use up the log and one of the flint's uses; it's gone after its last one.
+    const maxUses = ITEMS.flint_and_steel.uses;
+    const used = (this.repo.getEquipment(user.id).flint_used || 0) + 1;
+    const wornOut = used >= maxUses;
+    this.repo.removeItem(user.id, log.item, 1);
+    this.repo.addItem(user.id, 'ashes', 1);
+    if (wornOut) this.repo.removeItem(user.id, 'flint_and_steel', 1);
+    this.repo.setEquipment(user.id, 'flint_used', wornOut ? 0 : used);
+    const xpGain = this.xpFor(log.xp);
+    this.emitActivity(user, { kind: 'action', skill: 'firemaking', item: log.item, xp: xpGain, text: `burned ${ITEMS[log.item].name}` });
+    const gained = this.grantXp(user, 'firemaking', xpGain);
+    const flintNote = wornOut
+      ? ` 🪨 Your Flint and Steel wore out! !buy flint${flint ? ` (${fmt(flint.cost)} pts)` : ''} for another.`
+      : ` 🪨 ${maxUses - used}/${maxUses} uses left.`;
+    return { consumed: true, reply: `🔥 you lit a fire with ${itemLabel(log.item)} and got ${itemLabel('ashes')}! ${gained.text}${flintNote}` };
+  }
+
+  // Uses left on a player's Flint and Steel (null if they don't have one).
+  flintUses(userId) {
+    if (!this.repo.getInventory(userId).flint_and_steel) return null;
+    return ITEMS.flint_and_steel.uses - (this.repo.getEquipment(userId).flint_used || 0);
+  }
+
   reward(user, skillId, item, baseXp, { rare, qty: baseQty = 1 }) {
     const skill = SKILLS[skillId];
     const tool = this.currentTool(user.id, skillId);
@@ -435,6 +499,8 @@ class GameEngine extends EventEmitter {
   // Adds XP and action points; returns "+X XP, +Y pts" plus level-up / progress text for the reply.
   grantXp(user, skillId, xpGain) {
     const skill = SKILLS[skillId];
+    // Bone Brew: +20% XP while it lasts.
+    if (this.hasBuff(user.id, 'focus')) xpGain = Math.round(xpGain * 1.2);
     const before = this.repo.getSkills(user.id);
     const levelBefore = skillLevel(skillId, before[skillId]);
     const charBefore = characterProgress(SKILL_IDS.map((id) => before[id])).level;
@@ -526,8 +592,10 @@ class GameEngine extends EventEmitter {
 
   // Attack and defence for a fight with this weapon pick (bow attack includes the arrows).
   fightStats(userId, pick) {
+    const attack = ITEMS[pick.weapon].attack + (pick.arrow ? ITEMS[pick.arrow].attack : 0);
     return {
-      attack: ITEMS[pick.weapon].attack + (pick.arrow ? ITEMS[pick.arrow].attack : 0),
+      // Banshee Fury: +25% attack.
+      attack: this.hasBuff(userId, 'fury') ? Math.round(attack * 1.25) : attack,
       defence: this.combatStats(userId).defence,
     };
   }
@@ -625,9 +693,19 @@ class GameEngine extends EventEmitter {
       ammoNote = left <= 10 ? ` 🎯 ${left ? `${left} ${ITEMS[pick.arrow].name} left` : `that was your last ${ITEMS[pick.arrow].name.replace(/s$/, '')}`}!` : '';
     }
     const f = this.simulateFight(pick.level, stats, monster, vit.hp);
-    const hpLeft = Math.max(0, vit.hp - f.taken);
+    let hpLeft = Math.max(0, vit.hp - f.taken);
     const tag = `${monster.icon} ${monster.name}${monster.level > pick.level ? ` (level ${monster.level})` : ''}`;
 
+    if (f.outcome === 'died' && this.hasBuff(user.id, 'deathless')) {
+      // Lich's Elixir: cheat the knockout once, on 1 HP.
+      this.removeBuff(user.id, 'deathless');
+      this.repo.setVitals(user.id, { hp: 1, mana: vit.mana, koUntil: 0 }, now);
+      const gained = this.grantXp(user, pick.skillId, this.xpFor(monster.xp * 0.5 * (f.dealt / monster.hp)));
+      return {
+        consumed: true,
+        reply: `💀 the ${tag} should have knocked you out, but your Lich's Elixir dragged you back on 1 HP!${swapped} ${gained.text} !drink a potion or !heal before your next fight.${ammoNote}`,
+      };
+    }
     if (f.outcome === 'died') {
       this.repo.setVitals(user.id, { hp: 0, mana: vit.mana, koUntil: now + this.cfg.hpRegenHours * 3_600_000 }, now);
       // A little XP for the damage you did before going down.
@@ -647,9 +725,19 @@ class GameEngine extends EventEmitter {
       return { consumed: true, reply: `${monster.icon} you couldn't beat the ${tag} and backed off.${swapped} ${gained.text} | ${hpText()}${ammoNote}` };
     }
 
+    // Vampire Draught: heal after every win.
+    let drained = '';
+    if (this.hasBuff(user.id, 'vampiric')) {
+      const healed = Math.min(vit.maxHp - hpLeft, vit.maxHp * 0.15);
+      if (healed >= 0.5) {
+        hpLeft += healed;
+        this.repo.setVitals(user.id, { hp: hpLeft, mana: vit.mana, koUntil: 0 }, now);
+        drained = ` 🧛 +${fmt(Math.round(healed))} HP`;
+      }
+    }
     let loot;
     let rare = false;
-    if (monster.rare && this.rng() < monster.rare.chance) {
+    if (monster.rare && this.rng() < monster.rare.chance * this.luck(user.id)) {
       loot = monster.rare.item;
       rare = true;
     } else {
@@ -675,7 +763,7 @@ class GameEngine extends EventEmitter {
     }
     return {
       consumed: true,
-      reply: `${weapon.icon} you defeated a ${tag}${swapped} and looted ${rare ? 'a RARE ' : ''}${itemLabel(loot)}! ${gained.text} | ${hpText()}${f.taken >= 0.5 ? ` (-${fmt(Math.round(f.taken))})` : ''}${low}${easy}${ammoNote}${this.fullBagNote(user.id)}`,
+      reply: `${weapon.icon} you defeated a ${tag}${swapped} and looted ${rare ? 'a RARE ' : ''}${itemLabel(loot)}! ${gained.text} | ${hpText()}${f.taken >= 0.5 ? ` (-${fmt(Math.round(f.taken))})` : ''}${drained}${low}${easy}${ammoNote}${this.fullBagNote(user.id)}`,
     };
   }
 
@@ -839,7 +927,68 @@ class GameEngine extends EventEmitter {
       : vit.hp < vit.maxHp
         ? ` Full in ${minutesLeft(((vit.maxHp - vit.hp) / vit.maxHp) * this.cfg.hpRegenHours * 3_600_000)}. !heal (mana) or !drink a potion to heal now.`
         : '';
-    return `${this.vitalsLine(vit)}.${extra}`;
+    const buffs = this.buffLine(user.id, now);
+    return `${this.vitalsLine(vit)}.${extra}${buffs ? ` | ${buffs}` : ''}`;
+  }
+
+  // ---- Timed effects from undead potions ("buffs") -----------------------------
+  // Stored as { buffId: expiresAt } per player.
+  buffKey(userId) {
+    return `buffs:${userId}`;
+  }
+
+  activeBuffs(userId, now = this.now()) {
+    const all = this.repo.getSetting(this.buffKey(userId)) || {};
+    return Object.fromEntries(Object.entries(all).filter(([id, until]) => until > now && BUFFS[id]));
+  }
+
+  hasBuff(userId, id) {
+    return Boolean(this.activeBuffs(userId)[id]);
+  }
+
+  addBuff(userId, id, now = this.now()) {
+    const buffs = { ...this.activeBuffs(userId, now), [id]: now + BUFFS[id].minutes * 60_000 };
+    this.repo.setSetting(this.buffKey(userId), buffs);
+    return buffs[id];
+  }
+
+  removeBuff(userId, id) {
+    const { [id]: _gone, ...rest } = this.activeBuffs(userId);
+    this.repo.setSetting(this.buffKey(userId), rest);
+  }
+
+  // Grave Luck doubles rare chances.
+  luck(userId) {
+    return this.hasBuff(userId, 'luck') ? 2 : 1;
+  }
+
+  // Wraithwalk halves the action cooldown.
+  actionCooldownMs(userId, now = this.now()) {
+    const ms = this.cfg.actionCooldown * 1000;
+    return this.activeBuffs(userId, now).haste ? ms / 2 : ms;
+  }
+
+  // "🦴 Bone-Deep Focus 24m · 💀 Deathless 58m"
+  buffLine(userId, now = this.now()) {
+    return Object.entries(this.activeBuffs(userId, now))
+      .map(([id, until]) => `${BUFFS[id].icon} ${BUFFS[id].name} ${minutesLeft(until - now)}`)
+      .join(' · ');
+  }
+
+  // !buffs
+  buffsInfo(user) {
+    const line = this.buffLine(user.id);
+    return line ? `active effects: ${line}` : 'no active effects. Brew undead potions with !brew (Ashes from !lightfire + something dead) and !drink them.';
+  }
+
+  drinkBuff(user, id, now) {
+    const buff = BUFFS[ITEMS[id].potion.buff];
+    const had = this.hasBuff(user.id, buff.id);
+    this.repo.transaction(() => {
+      this.repo.removeItem(user.id, id, 1);
+      this.addBuff(user.id, buff.id, now);
+    });
+    return `${ITEMS[id].icon} you drank a ${ITEMS[id].name}: ${buff.icon} ${buff.name} for ${buff.minutes} min${had ? ' (timer restarted)' : ''}: ${buff.text}.`;
   }
 
   // !drink [potion]: with no name, drinks what you need most — the weakest health potion that tops
@@ -867,6 +1016,7 @@ class GameEngine extends EventEmitter {
       } else return `you're already at full health${manaPots.length ? ' and mana' : ''}. ${this.vitalsLine(vit)}`;
     }
     const p = ITEMS[id].potion;
+    if (p.buff) return this.drinkBuff(user, id, now);
     const heals = p.hp && (vit.ko || vit.hp < vit.maxHp);
     const mana = p.mana && vit.mana < vit.maxMana;
     if (!heals && !mana) return `no need — ${this.vitalsLine(vit)}.`;
@@ -1021,6 +1171,8 @@ class GameEngine extends EventEmitter {
       const refused = this.pay(user, total, qty > 1 ? `${qty}x ${found.name}` : found.name);
       if (refused) return refused;
       this.repo.addItem(user.id, found.item, qty);
+      // A new flint starts with all its uses.
+      if (found.item === 'flint_and_steel') this.repo.setEquipment(user.id, 'flint_used', 0);
       this.emitActivity(user, { kind: 'buy', item: found.item, text: `bought ${qty > 1 ? `${qty}x ${found.name}` : `a ${found.name}`}` });
       const tip =
         found.item === 'smithing_hammer'
@@ -1033,6 +1185,8 @@ class GameEngine extends EventEmitter {
               ? ' Now !fletch arrows or !buy arrows.'
             : found.ammo
               ? ` 🧺 Quiver: ${fmt(this.quiver(user.id).arrows)}/${fmt(ITEMS.quiver.quiverCapacity)}. !shoot away!`
+            : found.item === 'flint_and_steel'
+              ? ` Good for ${ITEMS.flint_and_steel.uses} fires: !lightfire.`
             : found.item === 'skinning_knife'
               ? ' Now try !skin.'
               : found.seedFor
@@ -2036,7 +2190,15 @@ class GameEngine extends EventEmitter {
     const totalXp = SKILL_IDS.reduce((s, id) => s + xp[id], 0);
     const inventory = Object.entries(this.repo.getInventory(userId))
       .filter(([id]) => ITEMS[id])
-      .map(([id, qty]) => ({ id, qty, ...ITEMS[id], value: this.sellValue(id), rare: !!ITEMS[id].rare }))
+      .map(([id, qty]) => ({
+        id,
+        qty,
+        ...ITEMS[id],
+        value: this.sellValue(id),
+        rare: !!ITEMS[id].rare,
+        ...(id === 'flint_and_steel' ? { usesLeft: this.flintUses(userId) } : {}),
+        ...(ITEMS[id].potion?.buff ? { effect: BUFFS[ITEMS[id].potion.buff] } : {}),
+      }))
       .sort((a, b) => b.value * b.qty - a.value * a.qty);
     return {
       id: user.id,
@@ -2077,6 +2239,8 @@ class GameEngine extends EventEmitter {
           maxMana: vit.maxMana,
           knockedOutUntil: vit.ko ? vit.koUntil : null,
           hpRegenHours: this.cfg.hpRegenHours,
+          // Timed effects from undead potions.
+          buffs: Object.entries(this.activeBuffs(userId)).map(([id, until]) => ({ ...BUFFS[id], until })),
           // What !fight would use, so the ratings below say which weapon they're for.
           ratedWith: (() => {
             const pick = this.chooseWeapon(userId);
@@ -2096,7 +2260,7 @@ class GameEngine extends EventEmitter {
           worn: GEAR_SLOTS.map((slot) => ({ slot, item: st.worn[slot] ? { id: st.worn[slot], ...ITEMS[st.worn[slot]] } : null })),
         };
       })(),
-      cooldownEndsAt: user.last_action_at + this.cfg.actionCooldown * 1000,
+      cooldownEndsAt: user.last_action_at + this.actionCooldownMs(userId),
     };
   }
 
@@ -2111,6 +2275,10 @@ class GameEngine extends EventEmitter {
       disabledCommands: this.cfg.disabledCommands || [],
       backpack: this.backpackTiers().map((t, i) => ({ level: i + 1, ...t })),
       shop: this.shopItems(),
+      // Undead potions and what they do.
+      buffs: Object.values(ITEMS)
+        .filter((i) => i.potion?.buff)
+        .map((i) => ({ potion: i.name, icon: i.icon, ...BUFFS[i.potion.buff] })),
       skills: SKILL_IDS.map((id) => {
         const s = SKILLS[id];
         return {

@@ -128,7 +128,7 @@ test('!stats, !inv, !top, !points and !commands respond', () => {
   assert.match(say('!top'), /1\. Alice/);
   assert.match(say('!top fishing'), /Fishing: 1\. Alice Lv2/);
   assert.match(say('!points'), /points/);
-  assert.match(say('!commands'), /!fish !mine !chop !dig !skin !plant !harvest !smelt !smith !fletch !brew !fight !shoot/);
+  assert.match(say('!commands'), /!fish !mine !chop !dig !skin !plant !harvest !lightfire !smelt !smith !fletch !brew !fight !shoot/);
   assert.equal(say('!unknowncommand'), null);
 });
 
@@ -136,7 +136,7 @@ test('profile exposes everything the website needs', () => {
   const { repo, engine, say } = setup();
   say('!fish');
   const p = engine.profile(repo.getUserByName('alice').id);
-  assert.equal(p.skills.length, 12);
+  assert.equal(p.skills.length, 13);
   assert.equal(p.skills[0].id, 'fishing');
   assert.equal(p.skills[0].level, 2);
   assert.equal(p.skills[0].rank, 1);
@@ -408,7 +408,7 @@ test('rod prices saved before the tool rework still apply', () => {
 test('the shop sells a smithing hammer (500) and a sword (1,000) via !buy', () => {
   const { repo, say } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
-  assert.match(say('!shop'), /🔨 Smithing Hammer 500, 🗡️ Bronze Sword 1,000, 🔪 Skinning Knife 500, 🟫 Farm Plot 750, 🏹 Oak Shortbow 500, 🧺 Quiver 250 pts, potions from 150 \(!buy minor health potion\), arrows from 6 each \(!buy arrows 50\), plus seeds/);
+  assert.match(say('!shop'), /🔨 Smithing Hammer 500, 🗡️ Bronze Sword 1,000, 🔪 Skinning Knife 500, 🟫 Farm Plot 750, 🏹 Oak Shortbow 500, 🧺 Quiver 250, 🪨 Flint and Steel 50 pts, potions from 150 \(!buy minor health potion\), arrows from 6 each \(!buy arrows 50\), plus seeds/);
   assert.match(say('!buy hammer'), /Smithing Hammer costs 500 pts, you have 5/);
   repo.addPoints(u.id, 2000);
   assert.match(say('!buy hammer'), /bought 🔨 Smithing Hammer for 500 pts! Now try !smith bronze sword/);
@@ -639,6 +639,100 @@ test('fletching: arrows (oak + feather + iron ingot), bows and a quiver; archery
   repo.addItem(u.id, 'bronze_sword', 1);
   assert.match(say('!fight chicken'), /🗡️ you defeated a 🐔 Chicken \(equipped your Bronze Sword\)/);
   assert.match(say('!targets bow'), /your quiver is empty/);
+});
+
+test('firemaking: !lightfire needs flint and logs, burns the best log for XP and leaves ashes', () => {
+  const { repo, engine, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!lightfire'), /you need a 🪨 Flint and Steel in your backpack to light a fire! !buy flint \(50 pts\)/);
+  repo.addPoints(u.id, 100);
+  assert.match(say('!buy flint'), /bought 🪨 Flint and Steel for 50 pts! Good for 250 fires: !lightfire\./);
+  assert.match(say('!buy flint'), /already have a 🪨 Flint and Steel/);
+  assert.match(say('!lightfire'), /no logs in your backpack! !chop some first/);
+  repo.addItem(u.id, 'logs', 2);
+  repo.addItem(u.id, 'oak_logs', 1);
+  assert.match(say('!lightfire'), /🔥 you lit a fire with 🪵 Logs and got 🌫️ Ashes! \+13 XP.* 🪨 249\/250 uses left\./, 'burns the best log it can');
+  tick();
+  assert.match(say('!lightfire oak'), /Firemaking level 15 to burn Oak Logs/);
+  const inv = repo.getInventory(u.id);
+  assert.equal(inv.logs, 1);
+  assert.equal(inv.ashes, 1);
+  assert.equal(engine.flintUses(u.id), 249);
+
+  // Better logs give more XP (at the level to burn them).
+  repo.addXp(u.id, 'firemaking', xpForLevel(15));
+  tick();
+  assert.match(say('!lightfire'), /lit a fire with 🌳 Oak Logs.*\+31 XP/);
+  assert.match(say('!sell ashes all'), /sold 🌫️ 2x Ashes for 6 pts/);
+});
+
+test('firemaking: a failed light uses nothing; the flint wears out after 250 fires', () => {
+  const { repo, engine, say, tick } = setup({ rolls: [0.01, 0.0] });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addItem(u.id, 'flint_and_steel', 1);
+  repo.addItem(u.id, 'logs', 2);
+  assert.match(say('!lightfire'), /🔥 the sparks didn't catch\.\.\. try again!/);
+  assert.equal(repo.getInventory(u.id).logs, 2);
+  assert.equal(engine.flintUses(u.id), 250);
+  assert.match(say('!lightfire'), /catching your breath/, 'a failed attempt still uses the cooldown');
+  repo.setEquipment(u.id, 'flint_used', 249);
+  tick();
+  assert.match(say('!lightfire'), /lit a fire.*🪨 Your Flint and Steel wore out! !buy flint \(50 pts\) for another\./);
+  assert.equal(repo.getInventory(u.id).flint_and_steel, undefined);
+  assert.equal(engine.flintUses(u.id), null);
+  repo.addPoints(u.id, 100);
+  say('!buy flint');
+  assert.equal(engine.flintUses(u.id), 250, 'a new flint has all its uses');
+});
+
+test('undead potions: brewed from ashes, give timed effects', () => {
+  const { repo, engine, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addXp(u.id, 'alchemy', xpForLevel(100));
+  repo.addItem(u.id, 'ashes', 2);
+  repo.addItem(u.id, 'old_bone', 1);
+  assert.match(say('!brew bone brew'), /⚗️ you brewed 🥣 Bone Brew!/);
+  tick();
+  assert.match(say('!brew vampire draught'), /needs 3 Ashes \+ 1 Rat Tail\. You're missing 3 Ashes \+ 1 Rat Tail — try !lightfire \/ !fight giant rat/);
+  assert.match(say('!buffs'), /no active effects/);
+
+  // Bone Brew: +20% XP for 30 minutes.
+  assert.match(say('!drink bone brew'), /you drank a Bone Brew: 🦴 Bone-Deep Focus for 30 min: \+20% XP in every skill\./);
+  assert.match(say('!fish'), /\+12 XP/, '10 XP shrimp + 20%');
+  assert.match(say('!hp'), /🦴 Bone-Deep Focus 30m/);
+  tick(31 * 60);
+  assert.match(say('!fish'), /\+10 XP/, 'worn off');
+
+  // Wraithwalk halves the cooldown; Grave Luck doubles rare chances; Banshee Fury adds attack.
+  engine.addBuff(u.id, 'haste');
+  tick(16);
+  assert.match(say('!fish'), /you caught/, '15s is enough with the cooldown halved');
+  assert.equal(engine.luck(u.id), 1);
+  engine.addBuff(u.id, 'luck');
+  assert.equal(engine.luck(u.id), 2);
+  repo.addItem(u.id, 'bronze_sword', 1);
+  const pick = engine.chooseWeapon(u.id);
+  assert.equal(engine.fightStats(u.id, pick).attack, 4);
+  engine.addBuff(u.id, 'fury');
+  assert.equal(engine.fightStats(u.id, pick).attack, 5);
+  assert.match(engine.buffsInfo(u), /Wraithwalk .*Grave Luck .*Banshee Fury/);
+});
+
+test("undead potions: Vampire Draught heals after wins, Lich's Elixir cheats one knockout", () => {
+  const { repo, engine, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addXp(u.id, 'swords', xpForLevel(10));
+  repo.addItem(u.id, 'bronze_sword', 1);
+  repo.setVitals(u.id, { hp: 50, mana: 0, koUntil: 0 }, 1_000_000);
+  engine.addBuff(u.id, 'vampiric');
+  assert.match(say('!fight chicken'), /defeated a 🐔 Chicken.* 🧛 \+23 HP/);
+  engine.addBuff(u.id, 'deathless');
+  tick();
+  say('!fight dragon');
+  assert.match(say('!fight dragon'), /should have knocked you out, but your Lich's Elixir dragged you back on 1 HP!/);
+  assert.equal(engine.vitals(u.id).ko, false);
+  assert.equal(engine.vitals(u.id).hp, 1);
+  assert.equal(engine.hasBuff(u.id, 'deathless'), false, 'only once');
 });
 
 test('!drink picks the right potion, !heal spends mana, potions can be bought and brewed', () => {

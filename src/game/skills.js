@@ -125,6 +125,10 @@ const ITEMS = {
 
   // Skinning
   rabbit_hide: { name: 'Rabbit Hide', icon: '🐇', value: 2 },
+  // Lights fires (!lightfire). Wears out after `uses` fires, then it's gone.
+  flint_and_steel: { name: 'Flint and Steel', icon: '🪨', value: 10, keep: true, uses: 250 },
+  // Left over from every fire. Sells, and goes into undead potions (!brew).
+  ashes: { name: 'Ashes', icon: '🌫️', value: 3 },
   // Holds your arrows (they don't take backpack slots). Keep it in your backpack.
   quiver: { name: 'Quiver', icon: '🧺', value: 125, keep: true, quiverCapacity: 500 },
   squirrel_pelt: { name: 'Squirrel Pelt', icon: '🐿️', value: 5 },
@@ -484,6 +488,18 @@ const SKILLS = {
     type: 'farm',
     maxLevel: 500,
     resources: [], // crops, filled in below
+  },
+  firemaking: {
+    name: 'Firemaking',
+    icon: '🔥',
+    command: 'lightfire',
+    verb: 'burned',
+    type: 'burn',
+    maxLevel: 500,
+    // Needs a Flint and Steel in your backpack (250 uses). Burns one log per fire, leaving Ashes.
+    requires: 'flint_and_steel',
+    failMessages: ["the sparks didn't catch", 'the wind blew your fire out', 'the logs are too damp'],
+    resources: [], // one per log type, filled in below
   },
   smelting: {
     name: 'Smelting',
@@ -859,6 +875,38 @@ for (const [id, name, icon, level, inputs, restores] of POTION_LIST) {
   SKILLS.alchemy.recipes.push({ item: id, level, kind: 'potion', xp: Math.round(inputXp * 0.8) + 5, inputs });
 }
 
+// ---- Firemaking --------------------------------------------------------------------------
+// Every log can be burned from the Firemaking level it takes to chop it. Better logs give more XP.
+SKILLS.firemaking.resources = SKILLS.woodcutting.resources.map((r) => ({ item: r.item, level: r.level, xp: Math.round(r.xp * 1.25) }));
+
+// ---- Undead potions ------------------------------------------------------------------------
+// Brewed with Alchemy from Ashes plus something dead. Each one gives a timed effect (a "buff")
+// instead of healing. Drink with !drink <name>; drinking one that's active restarts its timer.
+const BUFFS = {
+  focus: { id: 'focus', name: 'Bone-Deep Focus', icon: '🦴', minutes: 30, text: '+20% XP in every skill' },
+  vampiric: { id: 'vampiric', name: 'Vampiric', icon: '🧛', minutes: 30, text: 'heal 15% of your max HP after every fight you win' },
+  haste: { id: 'haste', name: 'Wraithwalk', icon: '👻', minutes: 10, text: 'half the cooldown between actions' },
+  fury: { id: 'fury', name: 'Banshee Fury', icon: '😱', minutes: 30, text: '+25% attack in fights' },
+  luck: { id: 'luck', name: 'Grave Luck', icon: '🍀', minutes: 30, text: 'double chance of rare finds and rare loot' },
+  deathless: { id: 'deathless', name: 'Deathless', icon: '💀', minutes: 60, text: 'the next knockout leaves you on 1 HP instead (once)' },
+};
+const UNDEAD_POTIONS = [
+  // id, name, icon, Alchemy level, ingredients, buff, XP
+  ['bone_brew', 'Bone Brew', '🥣', 5, { ashes: 2, old_bone: 1 }, 'focus', 20],
+  ['vampire_draught', 'Vampire Draught', '🍷', 15, { ashes: 3, rat_tail: 1 }, 'vampiric', 35],
+  ['wraith_tonic', 'Wraith Tonic', '🌫️', 30, { ashes: 4, bone_dust: 1 }, 'haste', 60],
+  ['banshee_brew', 'Banshee Brew', '🌀', 50, { ashes: 5, cursed_skull: 1 }, 'fury', 95],
+  ['grave_luck_tonic', 'Grave Luck Tonic', '🪦', 75, { ashes: 6, crystal_skull: 1 }, 'luck', 140],
+  ['lich_elixir', "Lich's Elixir", '⚱️', 100, { ashes: 8, ectoplasm: 1 }, 'deathless', 200],
+];
+for (const [id, name, icon, level, inputs, buff, xp] of UNDEAD_POTIONS) {
+  for (const i of Object.keys(inputs)) if (!ITEMS[i]) throw new Error(`potion ${id} needs unknown item ${i}`);
+  const inputValue = Object.entries(inputs).reduce((sum, [i, q]) => sum + ITEMS[i].value * q, 0);
+  ITEMS[id] = { name, icon, value: Math.round(inputValue * 1.3), keep: true, potion: { buff } };
+  SKILLS.alchemy.recipes.push({ item: id, level, kind: 'undead', xp, inputs });
+}
+SKILLS.alchemy.recipes.sort((a, b) => a.level - b.level);
+
 // Shop (website + "!buy"). Prices can be changed on the admin page.
 const SHOP = [
   { item: 'smithing_hammer', cost: 500, description: 'Lets you !smith weapons and armor from alloys. Keep it in your backpack.' },
@@ -892,6 +940,8 @@ const SHOP = [
     category: 'arrows',
     description: `Adds +${attack} attack to every shot. They go in your quiver, not your backpack.`,
   })),
+  // Always add new shop items at the end (see above).
+  { item: 'flint_and_steel', cost: 50, description: 'Lights fires with !lightfire (burns one log from your backpack for Firemaking XP and Ashes). Good for 250 fires, then it wears out.' },
 ];
 
 // Backpack: how many items (total, across all stacks) a player can carry. Upgrade with
@@ -964,5 +1014,6 @@ module.exports = {
   maxLevel,
   maxHpFor,
   maxManaFor,
+  BUFFS,
   findItem,
 };

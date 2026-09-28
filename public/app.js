@@ -166,7 +166,7 @@
           .map(
             (i) => `<div class="inv-item${i.rare ? ' rare' : ''}${i.gear ? ' gear' : ''}" title="${esc(itemTitle(i))}">
               <span class="qty">${fmt(i.qty)}</span><div class="ic">${i.icon}</div>
-              <div class="nm">${esc(i.name)}</div><div class="val">${fmt(i.value * i.qty)} pts</div>
+              <div class="nm">${esc(i.name)}</div><div class="val">${i.usesLeft != null ? `${i.usesLeft} uses` : `${fmt(i.value * i.qty)} pts`}</div>
               ${
                 isMe
                   ? `<div class="inv-actions">${i.gear ? `<button class="mini" data-act="equip" data-item="${esc(i.id)}">Equip</button>` : ''}${i.potion ? `<button class="mini" data-act="drink" data-item="${esc(i.id)}">Drink</button>` : ''}<button class="mini" data-act="sell" data-item="${esc(i.id)}" data-name="${esc(i.name)}" data-value="${i.value}">Sell</button></div>`
@@ -229,6 +229,8 @@
     const bits = [`${i.name} — sells for ${fmt(i.value)} pts`];
     if (i.attack) bits.push(`+${i.attack} attack, needs ${i.wieldSkill || 'Swords'} ${i.level}`);
     if (i.defence) bits.push(`+${i.defence} defence, needs Combat ${i.level}`);
+    if (i.usesLeft != null) bits.push(`${i.usesLeft}/${i.uses} uses left`);
+    if (i.effect) bits.push(`drink for ${i.effect.name} (${i.effect.minutes} min): ${i.effect.text}`);
     return bits.join(' · ');
   }
 
@@ -283,6 +285,13 @@
           </div>
         </div>
         ${vitalsBars(c, isMe)}
+        ${
+          c.buffs && c.buffs.length
+            ? `<div class="buffs">${c.buffs
+                .map((b) => `<span class="buff" title="${esc(b.text)}">${b.icon} ${esc(b.name)} <small data-until="${b.until}">${Math.max(1, Math.ceil((b.until - Date.now()) / 60000))}m</small></span>`)
+                .join('')}</div>`
+            : ''
+        }
         <div class="gear-grid">${c.worn
           .map(
             (w) => `<div class="gear-slot${w.item ? ' filled' : ''}" title="${w.item ? esc(itemTitle(w.item)) : ''}">
@@ -457,7 +466,7 @@
               ${(i.item === 'farm_plot' || i.category === 'potions' || i.category === 'arrows') && loggedIn ? `<input type="number" class="qty" id="qty-${esc(i.item)}" value="${i.category === 'arrows' ? 50 : 1}" min="1" max="${i.category === 'arrows' ? 500 : 100}" aria-label="How many">` : ''}
               ${buyBtn(i, i.item === 'farm_plot' && plots >= 100)}
             </div>
-            <p class="muted" style="font-size:.8rem;margin:8px 0 0">In chat: <code>!buy ${esc(i.item === 'farm_plot' ? 'plot' : i.category === 'potions' ? i.name.toLowerCase() : i.category === 'arrows' ? `${i.name.toLowerCase()} 50` : i.name.split(' ').pop().toLowerCase())}</code></p>
+            <p class="muted" style="font-size:.8rem;margin:8px 0 0">In chat: <code>!buy ${esc(i.item === 'farm_plot' ? 'plot' : i.item === 'flint_and_steel' ? 'flint' : i.category === 'potions' ? i.name.toLowerCase() : i.category === 'arrows' ? `${i.name.toLowerCase()} 50` : i.name.split(' ').pop().toLowerCase())}</code></p>
           </section>`;
     const allSeeds = items.filter((i) => i.category === 'seeds');
     // Show what you can plant now plus the next few unlocks; "Show all" reveals the rest.
@@ -677,6 +686,10 @@
             <li><b>Farming</b>: everyone gets a free 🟫 farm plot. Buy seeds (and more plots, ${fmt((g.shop.find((x) => x.item === 'farm_plot') || {}).cost || 0)} pts each, up to 100) in the <a href="#/shop">shop</a>, <code>!plant carrot</code>, and <code>!harvest</code> when it's grown (carrots take 20 minutes, 1 crop per plot). ${g.skills.find((x) => x.type === 'farm')?.tiers.length || ''} crops to unlock up to level 500. Farming has its own cooldown, so you can farm while you do everything else.</li>
             <li><b>Combat</b>: with a sword (shop or smithed), <code>!fight</code> monsters for Swords XP and loot. <code>!fight goblin</code> picks a target (<code>!targets</code> lists the best ones for your level, gear and HP), and you can pick any monster, but ones above your level hit much harder. <code>!monsters</code> rates them for you (⚪ too easy · 🟢 good match · 🟠 tough · 🔴 hard · ☠️ deadly) and <code>!scout troll</code> shows how a fight would go. A plain <code>!fight</code> picks your best safe match, and you're warned before a fight that would likely knock you out. Fights cost ❤️ HP (better weapons and armor mean less). At 0 HP you're knocked out: wait until you're back at full HP (24h) or <code>!drink</code> a health potion. <code>!heal</code> spends 🔷 mana to restore HP.</li>
             <li><b>Archery &amp; Fletching</b>: <code>!fletch arrows</code> from 1 Oak Logs + 1 🪶 Feathers (from chickens) + 1 Iron Ingot, 10 at a time. Arrows go in a 🧺 Quiver (shop 250 pts, or <code>!fletch quiver</code> from 2 Rabbit Hides), which holds 500. Get a bow (shop 500 pts, or <code>!fletch oak shortbow</code> from 2 Oak Logs), then <code>!shoot</code> monsters for Archery XP: each fight uses one arrow, and better arrows hit harder. <code>!fight</code> uses whichever combat skill you're best at.</li>
+            <li><b>Firemaking</b>: buy a 🪨 Flint and Steel in the <a href="#/shop">shop</a> (${fmt((g.shop.find((x) => x.item === 'flint_and_steel') || {}).cost || 0)} pts, good for 250 fires), then <code>!lightfire</code> burns the best log in your backpack (or <code>!lightfire oak</code>). Better logs give more XP, and every fire leaves 🌫️ Ashes. Sometimes the fire won't catch; nothing is used up, just try again.</li>
+            <li><b>Undead potions</b>: <code>!brew</code> Ashes with something dead into potions with timed effects, then <code>!drink</code> them. <code>!buffs</code> shows what's active.<ul>${(g.buffs || [])
+              .map((b) => `<li>${b.icon} <b>${esc(b.potion)}</b>: ${esc(b.text)} (${b.minutes} min)</li>`)
+              .join('')}</ul></li>
             <li><b>Alchemy</b>: <code>!brew</code> potions from crops you farm, e.g. 2 Carrots make a Minor Health Potion. Or buy potions in the <a href="#/shop">shop</a>.</li>
             <li>Your <b>character level</b> grows with the combined XP of all skills — train them all!</li>
           </ol>
@@ -702,6 +715,8 @@
             <dt><code>!fletch &lt;item&gt;</code></dt><dd>Make arrows, bows or a quiver (<code>!quiver</code> shows your arrows)</dd>
             <dt><code>!monsters</code></dt><dd>Which monsters suit you (⚪ too easy to ☠️ deadly)</dd>
             <dt><code>!scout &lt;monster&gt;</code></dt><dd>How a fight would go, without fighting</dd>
+            <dt><code>!lightfire [log]</code></dt><dd>Burn a log for Firemaking XP and Ashes (needs flint and steel)</dd>
+            <dt><code>!buffs</code></dt><dd>Your active potion effects</dd>
             <dt><code>!heal</code></dt><dd>Spend half your mana to restore 25% HP</dd>
             <dt><code>!equip &lt;item&gt;</code></dt><dd>Wear gear (<code>!unequip</code>, <code>!equipped</code>)</dd>
             <dt><code>!buy &lt;item&gt;</code></dt><dd>Buy a hammer or sword (<code>!shop</code> lists them)</dd>
