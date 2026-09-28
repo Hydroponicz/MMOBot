@@ -115,6 +115,7 @@
     }
     document.getElementById('nav-admin').hidden = !state.isAdmin;
     document.getElementById('nav-dev').hidden = !state.devMode;
+    fitNav();
   }
 
   // Notification bell: saved notices (market sales, pets, quests) plus live reminders.
@@ -169,7 +170,66 @@
 
   function setActiveNav(route) {
     document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === route));
+    // A dropdown lights up when the page you're on is inside it.
+    document.querySelectorAll('#nav .nav-group').forEach((g) => g.classList.toggle('active', !!g.querySelector('a.active')));
+    closeMenus();
   }
+
+  // ---- Top menu: "Play" and "Community" dropdowns, and the ☰ menu on small screens ----
+  const navToggle = document.getElementById('nav-toggle');
+  function closeMenus(except = null) {
+    document.querySelectorAll('#nav .nav-group.open').forEach((g) => {
+      if (g === except) return;
+      g.classList.remove('open');
+      g.querySelector('.nav-group-btn').setAttribute('aria-expanded', 'false');
+    });
+    if (!except) {
+      document.body.classList.remove('nav-open');
+      navToggle.setAttribute('aria-expanded', 'false');
+    }
+  }
+  document.querySelectorAll('#nav .nav-group-btn').forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const g = btn.parentElement;
+      const open = !g.classList.contains('open');
+      closeMenus(g);
+      g.classList.toggle('open', open);
+      btn.setAttribute('aria-expanded', String(open));
+    };
+  });
+  navToggle.onclick = (e) => {
+    e.stopPropagation();
+    const open = !document.body.classList.contains('nav-open');
+    closeMenus();
+    document.body.classList.toggle('nav-open', open);
+    navToggle.setAttribute('aria-expanded', String(open));
+  };
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#nav, #nav-toggle')) closeMenus();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeMenus();
+  });
+  // Use the ☰ menu whenever the links don't fit on one line (instead of a scrolling row).
+  function fitNav() {
+    const body = document.body;
+    const wasOpen = body.classList.contains('nav-open');
+    body.classList.remove('nav-compact', 'nav-open');
+    const nav = document.getElementById('nav');
+    const account = document.getElementById('account');
+    const items = [...nav.children].filter((el) => !el.hidden);
+    const right = Math.max(...items.map((el) => el.getBoundingClientRect().right));
+    const tooWide = window.innerWidth < 720 || right > account.getBoundingClientRect().left - 8 || nav.scrollWidth > nav.clientWidth + 1;
+    body.classList.toggle('nav-compact', tooWide);
+    if (tooWide && wasOpen) body.classList.add('nav-open');
+  }
+  let fitTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(fitTimer);
+    fitTimer = setTimeout(fitNav, 80);
+  });
+  document.fonts?.ready.then(fitNav);
 
   // ---- shared components -------------------------------------------------
   function feedItem(a, isNew = false) {

@@ -71,10 +71,23 @@ main.container { flex: 1; padding-top: 28px; padding-bottom: 48px; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.1rem; color: var(--text); }
 .brand:hover { text-decoration: none; }
 .brand-mark { font-size: 1.3rem; }
-.nav { display: flex; gap: 2px; flex: 1; overflow-x: auto; }
-.nav a { color: var(--muted); padding: 6px 10px; border-radius: 8px; font-weight: 600; white-space: nowrap; }
-.nav a:hover { color: var(--text); background: var(--panel); text-decoration: none; }
-.nav a.active { color: var(--text); background: var(--panel-2); }
+.nav { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; }
+.nav a, .nav-group-btn { color: var(--muted); padding: 6px 8px; border-radius: 8px; font-weight: 600; white-space: nowrap; }
+.nav a:hover, .nav-group-btn:hover { color: var(--text); background: var(--panel); text-decoration: none; }
+.nav a.active, .nav-group.active > .nav-group-btn { color: var(--text); background: var(--panel-2); }
+.nav a.nav-admin { color: var(--gold); }
+.nav-group { position: relative; }
+.nav-group-btn { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; font: inherit; font-weight: 600; cursor: pointer; }
+.nav-group-btn .caret { font-size: 0.7em; transition: transform 0.15s; }
+.nav-group.open .caret { transform: rotate(180deg); }
+.nav-menu {
+  display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 250px; flex-direction: column; gap: 2px; padding: 6px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);
+}
+.nav-group.open .nav-menu { display: flex; }
+.nav-menu a { display: flex; flex-direction: column; gap: 0; padding: 8px 10px; color: var(--text); }
+.nav-menu a small { color: var(--muted); font-weight: 500; font-size: 0.78rem; }
+.nav-toggle { display: none; margin-left: auto; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font-size: 1.2rem; cursor: pointer; }
 .account { display: flex; align-items: center; gap: 10px; }
 .account .me-link { display: flex; align-items: center; gap: 8px; color: var(--text); font-weight: 600; }
 
@@ -240,14 +253,27 @@ ol.steps { padding-left: 20px; } ol.steps li { margin-bottom: 8px; }
 
 .footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; padding: 18px 0; text-align: center; }
 
-@media (max-width: 1360px) {
-  .topbar-inner { flex-wrap: wrap; row-gap: 4px; }
-  .nav { order: 3; flex-basis: 100%; }
+/* When the links don't fit (small screens, or extra admin links), app.js adds .nav-compact to <body>:
+   everything moves into the ☰ menu, grouped, one tap away. */
+.nav-compact .topbar-inner { position: relative; gap: 12px; }
+.nav-compact .nav-toggle { display: inline-grid; place-items: center; order: 3; }
+.nav-compact .account { margin-left: auto; }
+.nav-compact .nav {
+  display: none; position: absolute; top: 100%; left: 0; right: 0; flex-direction: column; align-items: stretch; gap: 2px;
+  padding: 10px 16px 16px; background: var(--bg-2); border-bottom: 1px solid var(--border); box-shadow: var(--shadow);
+  max-height: calc(100vh - 64px); overflow-y: auto;
 }
+.nav-compact.nav-open .nav { display: flex; }
+.nav-compact .nav a { padding: 10px 12px; }
+.nav-compact .nav-group-btn { pointer-events: none; width: 100%; padding: 12px 12px 2px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.nav-compact .nav-group-btn .caret { display: none; }
+.nav-compact .nav-group.active > .nav-group-btn { background: none; color: var(--muted); }
+.nav-compact .nav-menu { display: flex; position: static; min-width: 0; padding: 0; background: none; border: 0; box-shadow: none; }
+.nav-compact .nav-menu a { flex-direction: row; align-items: baseline; gap: 8px; }
 
 @media (max-width: 600px) {
-  .topbar-inner { flex-wrap: wrap; gap: 8px; }
-  .nav { order: 3; flex-basis: 100%; }
+  .topbar-inner { gap: 8px; }
+  .account .me-link > span:not(.avatar) { display: none; }
   .stat-row { grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
   .stat .v { font-size: 1.15rem; }
   .level-ring { width: 88px; height: 88px; }

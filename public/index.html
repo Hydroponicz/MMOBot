@@ -15,19 +15,32 @@
   <header class="topbar">
     <div class="topbar-inner">
       <a href="#/" class="brand"><span class="brand-mark">⚔️</span><span id="brand-name">MMOBot</span></a>
-      <nav class="nav" id="nav">
-        <a href="#/" data-route="home">Home</a>
-        <a href="#/leaderboards" data-route="leaderboards">Leaderboards</a>
-        <a href="#/shop" data-route="shop">Shop</a>
-        <a href="#/market" data-route="market">Market</a>
-        <a href="#/casino" data-route="casino">Casino</a>
-        <a href="#/cards" data-route="cards">Cards</a>
-        <a href="#/customize" data-route="customize">Customize</a>
-        <a href="#/guide" data-route="guide">How to play</a>
-        <a href="#/dev" data-route="dev" id="nav-dev" hidden>Test chat</a>
-        <a href="#/admin" data-route="admin" id="nav-admin" hidden>Admin</a>
+      <nav class="nav" id="nav" aria-label="Main">
+        <a href="#/" data-route="home">🏠 Home</a>
+        <div class="nav-group">
+          <button type="button" class="nav-group-btn" aria-expanded="false" aria-haspopup="true">🎮 Play <span class="caret">▾</span></button>
+          <div class="nav-menu">
+            <a href="#/shop" data-route="shop">🛒 Shop <small>Tools, potions, cosmetics</small></a>
+            <a href="#/market" data-route="market">🏪 Market <small>Buy and sell items with players</small></a>
+            <a href="#/cards" data-route="cards">🃏 Cards <small>Open packs, grade and trade</small></a>
+            <a href="#/casino" data-route="casino">🎰 Casino <small>Slots, roulette, blackjack…</small></a>
+          </div>
+        </div>
+        <div class="nav-group">
+          <button type="button" class="nav-group-btn" aria-expanded="false" aria-haspopup="true">🏆 Community <span class="caret">▾</span></button>
+          <div class="nav-menu">
+            <a href="#/leaderboards" data-route="leaderboards">📊 Leaderboards <small>Top players by skill</small></a>
+            <a href="#/guilds" data-route="guilds">🛡️ Guilds <small>Teams with a shared bank</small></a>
+            <a href="#/hall" data-route="hall">🏛️ Hall of fame <small>Champions and records</small></a>
+          </div>
+        </div>
+        <a href="#/customize" data-route="customize">🎨 Customize</a>
+        <a href="#/guide" data-route="guide">📖 How to play</a>
+        <a href="#/dev" data-route="dev" id="nav-dev" hidden>🧪 Test chat</a>
+        <a href="#/admin" data-route="admin" id="nav-admin" class="nav-admin" hidden>⚙️ Admin</a>
       </nav>
       <div class="account" id="account"></div>
+      <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Menu" aria-expanded="false" aria-controls="nav">☰</button>
     </div>
   </header>
 
