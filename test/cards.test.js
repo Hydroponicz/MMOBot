@@ -151,6 +151,18 @@ test('card market respects the trading switch and the new-player wait', () => {
   const { repo, engine, a } = setup();
   repo.addPoints(a.id, 1000);
   const card = engine.cardOpenPacks(a, 'wildlands-booster').packs[0][0];
+  // New players are told exactly what's left before they can sell.
+  engine.cfg.tradeMinActions = 20;
+  engine.cfg.tradeMinHours = 24;
+  const st = engine.marketStatus(a.id);
+  assert.equal(st.blocked, true);
+  assert.equal(st.actions, 0);
+  assert.equal(st.needActions, 20);
+  assert.ok(st.hoursLeft > 23);
+  assert.match(engine.cardList(a, card.id, 100).error, /new players can't buy, sell or trade with other players yet\. To unlock it: do 20 more game actions in chat, like !fish or !mine \(0\/20 done\), and wait about 24 more hours/);
+  engine.cfg.tradeMinActions = 0;
+  engine.cfg.tradeMinHours = 0;
+  assert.equal(engine.marketStatus(a.id).blocked, false);
   engine.cfg.tradingEnabled = false;
   assert.match(engine.cardList(a, card.id, 100).error, /trading is switched off/);
   engine.cfg.tradingEnabled = true;

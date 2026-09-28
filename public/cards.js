@@ -176,6 +176,24 @@
       if (el) el.textContent = fmt(b);
     };
 
+    // Why this player can't use the card market or trades yet, with progress toward unlocking it.
+    function tradeLock(what) {
+      const st = data.marketStatus;
+      if (!st?.blocked) return '';
+      if (st.off) return `<div class="lock-box"><b>🔒 Trading is switched off right now.</b><p>The streamer has paused the market and trades. You can still grade cards or sell them to the bank.</p></div>`;
+      const bar = (have, need) => `<div class="raid-bar"><span style="width:${Math.min(100, (have / need) * 100)}%"></span></div>`;
+      const rows = [];
+      if (st.needActions) {
+        rows.push(`<li class="${st.actions >= st.needActions ? 'done' : ''}"><div>${st.actions >= st.needActions ? '✅' : '🎮'} <b>${st.actions}/${st.needActions}</b> game actions in chat${st.actions >= st.needActions ? '' : ` (${st.needActions - st.actions} to go: <code>!fish</code>, <code>!mine</code>, <code>!chop</code>…)`}</div>${bar(st.actions, st.needActions)}</li>`);
+      }
+      if (st.needHours) {
+        const played = st.needHours - st.hoursLeft;
+        const left = st.hoursLeft >= 1 ? `${Math.ceil(st.hoursLeft)}h left` : `${Math.max(1, Math.ceil(st.hoursLeft * 60))} min left`;
+        rows.push(`<li class="${st.hoursLeft <= 0 ? 'done' : ''}"><div>${st.hoursLeft <= 0 ? '✅' : '⏳'} <b>${st.needHours}h</b> since you first chatted${st.hoursLeft > 0 ? ` (${left})` : ''}</div>${bar(played, st.needHours)}</li>`);
+      }
+      return `<div class="lock-box"><b>🔒 You can't ${what} yet</b><p>New players unlock the card market and trades once both of these are done. It stops throwaway accounts from passing points around.</p><ul>${rows.join('')}</ul><p>Until then you can open packs, grade cards and sell them to the bank.</p></div>`;
+    }
+
     // ---- Overlay (pack opening, card details) --------------------------------------------------
     function overlay(html, cls = '') {
       const o = document.createElement('div');
@@ -332,6 +350,22 @@
     async function details(c) {
       const mine = loggedIn && state.me && c.owner === state.me.username;
       const o = overlay(`<button class="cd-x" data-close aria-label="Close">✕</button><div class="cd-detail" id="cd-detail"></div>`);
+      // Errors show inside the panel, next to the buttons (a toast would be hidden behind it).
+      const say = (msg) => {
+        const m = o.el.querySelector('#cd-msg');
+        if (!m) return toast(msg);
+        m.textContent = msg.charAt(0).toUpperCase() + msg.slice(1);
+        m.hidden = false;
+        m.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      };
+      const post = async (path, body = {}) => {
+        try {
+          return await api(path, { method: 'POST', body });
+        } catch (err) {
+          say(err.message);
+          return null;
+        }
+      };
       const $d = o.el.querySelector('#cd-detail');
       let pop = await api(`/cards/pop/${encodeURIComponent(c.card)}`).catch(() => null);
       const render = (card, anim = '') => {
@@ -357,12 +391,12 @@
         if (mine && card.status === 'owned') {
           actions = `
             ${card.grade ? '' : `<div class="cd-act"><button class="btn btn-primary" id="cd-grade" ${data.points < card.gradeFee ? 'disabled title="Not enough points"' : ''}>🔍 Grade it · ${fmt(card.gradeFee)} pts</button><p class="muted">With wear ${card.wear.toFixed(4)}: ${gradeHint(card.wear)}. The grade is final.</p></div>`}
-            <div class="cd-act"><form id="cd-list" class="form-row"><input type="number" name="price" min="1" value="${Math.max(1, Math.round(card.value * 1.1))}" aria-label="Price"><button class="btn">🏪 List for sale</button></form><p class="muted">Value ${fmt(card.value)} pts · you get the price minus ${Math.round(cat.fee * 100)}%.</p></div>
+            ${tradeLock('sell cards on the market') || `<div class="cd-act"><form id="cd-list" class="form-row"><input type="number" name="price" min="1" max="${Math.max(1000, card.value * 20)}" value="${Math.max(1, Math.round(card.value * 1.1))}" aria-label="Price"><button class="btn">🏪 List for sale</button></form><p class="muted">Value ${fmt(card.value)} pts · most you can ask: ${fmt(Math.max(1000, card.value * 20))} · you get the price minus ${Math.round(cat.fee * 100)}%.</p></div>`}
             <div class="cd-act"><button class="btn" id="cd-sell">💰 Sell to bank · +${fmt(card.buyback)} pts</button></div>`;
         } else if (mine && card.status === 'listed') {
           actions = `<div class="cd-act"><p>Listed for <b>${fmt(card.price)}</b> pts.</p><button class="btn" id="cd-unlist">Take it down</button></div>`;
         } else if (card.status === 'listed' && loggedIn) {
-          actions = `<div class="cd-act"><button class="btn btn-primary" id="cd-buy" ${data.points < card.price ? 'disabled' : ''}>Buy for ${fmt(card.price)} pts</button><p class="muted">Sold by ${esc(card.owner)}. Value ${fmt(card.value)} pts.</p></div>`;
+          actions = tradeLock('buy cards from other players') || `<div class="cd-act"><button class="btn btn-primary" id="cd-buy" ${data.points < card.price ? 'disabled' : ''}>Buy for ${fmt(card.price)} pts</button><p class="muted">Sold by ${esc(card.owner)}. Value ${fmt(card.value)} pts.</p></div>`;
         }
         $d.innerHTML = `
           <div class="cd-show ${anim}">${showCard(card, { size: 250, tilt: true })}</div>
@@ -374,6 +408,7 @@
             <div class="cd-wear"><div class="muted">Wear <b>${card.wear.toFixed(5)}</b> (${card.condition}) · lower is better</div><div class="wear-bar">${condBands}<i style="left:${card.wear * 100}%"></i></div></div>
             ${sub}
             ${popRow}
+            <div class="cd-msg" id="cd-msg" role="alert" hidden></div>
             ${actions}
           </div>`;
         const $ = (s) => $d.querySelector(s);
@@ -747,7 +782,7 @@
       $tab().innerHTML = `
         <section class="panel" style="margin-top:14px">
           <div class="panel-head"><h2>New trade</h2></div>
-          ${data.blocked ? `<p class="muted">${esc(data.blocked)}</p>` : `<form id="tr-find" class="form-row"><input type="text" name="name" style="max-width:260px" placeholder="Player name" required value="${esc(query?.get('with') || '')}"><button class="btn">Load their cards</button></form><div id="tr-build"></div>`}
+          ${data.blocked ? tradeLock('trade cards') : `<form id="tr-find" class="form-row"><input type="text" name="name" style="max-width:260px" placeholder="Player name" required value="${esc(query?.get('with') || '')}"><button class="btn">Load their cards</button></form><div id="tr-build"></div>`}
         </section>
         <section class="panel" style="margin-top:14px">
           <div class="panel-head"><h2>Your offers</h2></div>

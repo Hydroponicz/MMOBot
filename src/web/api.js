@@ -134,6 +134,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       fee: engine.cfg.marketFee ?? 0.05,
       points: me ? me.points : null,
       blocked: me ? engine.marketBlocked(me.id) : null,
+      marketStatus: me ? engine.marketStatus(me.id) : null,
       inventory: Object.entries(inv)
         .filter(([id, q]) => q > 0 && ITEMS[id] && !ITEMS[id].pet)
         .map(([id, qty]) => ({ id, qty, name: ITEMS[id].name, icon: ITEMS[id].icon, value: engine.sellValue(id), max: engine.marketMaxUnitPrice(id) })),
@@ -158,6 +159,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       catalog: engine.cardCatalog(),
       points: me ? me.points : null,
       blocked: me ? engine.marketBlocked(me.id) : null,
+      marketStatus: me ? engine.marketStatus(me.id) : null,
       collection: me ? engine.cardCollection(me.id) : null,
       pulls: engine.cardPulls(),
       graded: engine.cardRecentGrades(),

@@ -5,6 +5,7 @@ const { fmt, itemLabel } = require('./shared');
 
 const MAX_LISTINGS = 20;
 const dayOf = (ms) => new Date(ms).toISOString().slice(0, 10);
+const waitText = (hours) => (hours >= 1 ? `about ${Math.ceil(hours)} more hour${Math.ceil(hours) === 1 ? '' : 's'}` : `about ${Math.max(1, Math.ceil(hours * 60))} more minutes`);
 
 // Items that can't go on the market: pets are yours for good.
 const tradable = (id) => ITEMS[id] && !ITEMS[id].pet && !ITEMS[id].bound;
@@ -18,12 +19,27 @@ module.exports = {
     return Math.max(500, ITEMS[id].value * 50);
   },
 
-  marketBlocked(userId) {
+  // Can this player trade yet? New players wait a while (stops throwaway alt accounts). The website
+  // shows the progress; marketBlocked turns it into one clear sentence.
+  marketStatus(userId) {
     const c = this.cfg;
-    if (c.tradingEnabled === false) return 'trading is switched off right now.';
+    if (c.tradingEnabled === false) return { blocked: true, off: true };
     const u = this.repo.getUser(userId);
-    const newbie = (c.tradeMinHours && this.now() - u.created_at < c.tradeMinHours * 3_600_000) || u.actions_count < (c.tradeMinActions || 0);
-    return newbie ? `you can use the market once you've played a while (${c.tradeMinActions} actions and ${c.tradeMinHours}h since you first chatted).` : null;
+    const needActions = c.tradeMinActions || 0;
+    const needHours = c.tradeMinHours || 0;
+    const actions = Math.min(u.actions_count, needActions);
+    const hoursLeft = needHours ? Math.min(needHours, Math.max(0, needHours - (this.now() - u.created_at) / 3_600_000)) : 0;
+    return { blocked: actions < needActions || hoursLeft > 0, off: false, actions, needActions, hoursLeft, needHours };
+  },
+
+  marketBlocked(userId) {
+    const st = this.marketStatus(userId);
+    if (!st.blocked) return null;
+    if (st.off) return 'trading is switched off right now.';
+    const todo = [];
+    if (st.actions < st.needActions) todo.push(`do ${st.needActions - st.actions} more game actions in chat, like ${this.cfg.prefix}fish or ${this.cfg.prefix}mine (${st.actions}/${st.needActions} done)`);
+    if (st.hoursLeft > 0) todo.push(`wait ${waitText(st.hoursLeft)} (new players wait ${st.needHours}h after their first chat)`);
+    return `new players can't buy, sell or trade with other players yet. To unlock it: ${todo.join(', and ')}.`;
   },
 
   // ---- Daily cap on points passed to other players --------------------------------------------
