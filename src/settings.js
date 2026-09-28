@@ -35,6 +35,7 @@ const COMMANDS = [
   'blackjack',
   'crash',
   'mines',
+  'cards',
   'raid',
   'boost',
   'season',
@@ -100,6 +101,9 @@ const FIELDS = {
     casinoMinBet: { type: 'int', label: 'Minimum bet', help: 'Smallest bet allowed.', min: 1, max: 1e12 },
     casinoMaxBet: { type: 'int', label: 'Maximum bet (0 = no limit)', help: 'Bigger bets (including "all") are capped to this.', min: 0, max: 1e12 },
     casinoCooldown: { type: 'int', label: 'Casino cooldown (seconds)', help: 'Time between bets per viewer.', min: 0, max: 3600 },
+    cardsEnabled: { type: 'bool', label: 'Trading cards open', help: 'Card packs, grading, the card market and card trades on the website.' },
+    cardPackPriceMultiplier: { type: 'number', label: 'Card pack price multiplier', help: 'Scales every pack price (1 = normal: Scout 200, Booster 1,000, Elite 3,500, Mythic Vault 11,000).', min: 0.1, max: 100 },
+    cardBuyback: { type: 'number', label: 'Card buyback rate (0-1)', help: 'Share of a card’s value the bank pays when a player sells it back. 0.6 = 60%. Packs return about 88% of their price in card value, so this is the points sink.', min: 0, max: 1 },
   },
   events: {
     followPoints: { type: 'int', label: 'Points for a new follow', help: 'Given once per viewer when they follow the channel.', min: 0, max: 1e9 },
@@ -255,6 +259,9 @@ class Settings extends EventEmitter {
         casinoMinBet: config.game.casinoMinBet ?? 10,
         casinoMaxBet: config.game.casinoMaxBet ?? 0,
         casinoCooldown: config.game.casinoCooldown ?? 5,
+        cardsEnabled: config.game.cardsEnabled ?? true,
+        cardPackPriceMultiplier: config.game.cardPackPriceMultiplier ?? 1,
+        cardBuyback: config.game.cardBuyback ?? 0.6,
       },
       events: {
         followPoints: config.game.followPoints ?? 100,

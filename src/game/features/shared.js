@@ -60,6 +60,7 @@ const INFO_COMMANDS = {
   hit: ['chatHit', 'blackjack'], stand: ['chatStand', 'blackjack'], double: ['chatDouble', 'blackjack'], split: ['chatSplit', 'blackjack'],
   crash: ['chatCrash', 'crash'], rocket: ['chatCrash', 'crash'],
   mines: ['chatMines', 'mines'], minesweeper: ['chatMines', 'mines'],
+  cards: ['cardsInfo', 'cards'], packs: ['cardsInfo', 'cards'], card: ['cardsInfo', 'cards'],
   pick: ['chatPick', 'mines'], reveal: ['chatPick', 'mines'], cashout: ['chatCashout', 'mines'],
   casino: ['casinoHelp', 'casino'], gamble: ['casinoHelp', 'casino'],
   // Channel events: random events, raids, duels, boosts.

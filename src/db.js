@@ -129,6 +129,47 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, id DESC);
 
+-- Trading cards: every pulled card is its own row (wear and grade are per copy). status: owned,
+-- listed (on the card market for price), bank (sold back to the bank; kept for serials and pop reports).
+CREATE TABLE IF NOT EXISTS cards (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  card TEXT NOT NULL,
+  finish TEXT NOT NULL,
+  wear REAL NOT NULL,
+  q TEXT NOT NULL,
+  serial INTEGER NOT NULL,
+  pack TEXT,
+  status TEXT NOT NULL DEFAULT 'owned',
+  price INTEGER,
+  listed_at INTEGER,
+  grade INTEGER,
+  black INTEGER NOT NULL DEFAULT 0,
+  sub TEXT,
+  graded_at INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cards_owner ON cards(owner_id, status);
+CREATE INDEX IF NOT EXISTS idx_cards_status ON cards(status, listed_at);
+CREATE INDEX IF NOT EXISTS idx_cards_card ON cards(card, grade);
+
+-- Card trade offers between two players: cards (and points) each way.
+CREATE TABLE IF NOT EXISTS card_trades (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  to_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  give TEXT NOT NULL,
+  want TEXT NOT NULL,
+  points_give INTEGER NOT NULL DEFAULT 0,
+  points_want INTEGER NOT NULL DEFAULT 0,
+  message TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'open',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_card_trades_to ON card_trades(to_id, status);
+CREATE INDEX IF NOT EXISTS idx_card_trades_from ON card_trades(from_id, status);
+
 CREATE TABLE IF NOT EXISTS logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts INTEGER NOT NULL,
@@ -415,6 +456,49 @@ function createRepo(db) {
         )
         .all(sellerId, sellerId, limit),
     marketCount: (sellerId) => db.prepare('SELECT COUNT(*) AS n FROM market_listings WHERE seller_id = ?').get(sellerId).n,
+    // Trading cards
+    cardInsert(ownerId, { card, finish, wear, q }, pack, ts) {
+      const serial = db.prepare('SELECT COALESCE(MAX(serial), 0) + 1 AS n FROM cards WHERE card = ?').get(card).n;
+      return Number(
+        db.prepare('INSERT INTO cards (owner_id, card, finish, wear, q, serial, pack, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(ownerId, card, finish, wear, JSON.stringify(q), serial, pack, ts).lastInsertRowid
+      );
+    },
+    cardGet: (id) => db.prepare('SELECT * FROM cards WHERE id = ?').get(id) || null,
+    cardsOf: (ownerId) => db.prepare("SELECT * FROM cards WHERE owner_id = ? AND status IN ('owned', 'listed') ORDER BY id DESC").all(ownerId),
+    cardUpdate(id, fields) {
+      const allowed = ['owner_id', 'status', 'price', 'listed_at', 'grade', 'black', 'sub', 'graded_at'];
+      const keys = Object.keys(fields).filter((k) => allowed.includes(k));
+      if (!keys.length) return 0;
+      return db.prepare(`UPDATE cards SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => fields[k]), id).changes;
+    },
+    cardListings: (limit = 300) =>
+      db.prepare("SELECT c.*, u.username AS owner FROM cards c JOIN users u ON u.id = c.owner_id WHERE c.status = 'listed' ORDER BY c.listed_at DESC LIMIT ?").all(limit),
+    cardListingCount: (ownerId) => db.prepare("SELECT COUNT(*) AS n FROM cards WHERE owner_id = ? AND status = 'listed'").get(ownerId).n,
+    cardRecent: (limit = 400) => db.prepare('SELECT c.*, u.username AS owner FROM cards c JOIN users u ON u.id = c.owner_id ORDER BY c.id DESC LIMIT ?').all(limit),
+    cardRecentGraded: (limit = 20) =>
+      db.prepare('SELECT c.*, u.username AS owner FROM cards c JOIN users u ON u.id = c.owner_id WHERE c.grade IS NOT NULL ORDER BY c.graded_at DESC LIMIT ?').all(limit),
+    cardPop: (card) => db.prepare('SELECT grade, black, finish, COUNT(*) AS n FROM cards WHERE card = ? AND grade IS NOT NULL GROUP BY grade, black, finish').all(card),
+    cardPulled: (card) => db.prepare('SELECT COUNT(*) AS n FROM cards WHERE card = ?').get(card).n,
+    cardsActive: () => db.prepare("SELECT c.owner_id, c.card, c.finish, c.wear, c.grade, c.black, u.username FROM cards c JOIN users u ON u.id = c.owner_id WHERE c.status IN ('owned', 'listed') AND u.banned = 0").all(),
+    cardTradeAdd: ({ fromId, toId, give, want, pointsGive, pointsWant, message }, ts) =>
+      Number(
+        db
+          .prepare('INSERT INTO card_trades (from_id, to_id, give, want, points_give, points_want, message, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(fromId, toId, JSON.stringify(give), JSON.stringify(want), pointsGive, pointsWant, message, ts, ts).lastInsertRowid
+      ),
+    cardTradeGet: (id) => db.prepare('SELECT * FROM card_trades WHERE id = ?').get(id) || null,
+    cardTradeSet: (id, status, ts) => db.prepare("UPDATE card_trades SET status = ?, updated_at = ? WHERE id = ? AND status = 'open'").run(status, ts, id).changes,
+    cardTradesFor: (userId, limit = 40) =>
+      db
+        .prepare(
+          `SELECT t.*, f.username AS from_name, o.username AS to_name FROM card_trades t
+           JOIN users f ON f.id = t.from_id JOIN users o ON o.id = t.to_id
+           WHERE t.from_id = ? OR t.to_id = ? ORDER BY t.status = 'open' DESC, t.id DESC LIMIT ?`
+        )
+        .all(userId, userId, limit),
+    cardTradesOpenFrom: (userId) => db.prepare("SELECT COUNT(*) AS n FROM card_trades WHERE from_id = ? AND status = 'open'").get(userId).n,
+    cardTradesExpire: (before, ts) => db.prepare("UPDATE card_trades SET status = 'expired', updated_at = ? WHERE status = 'open' AND created_at < ?").run(ts, before).changes,
+
     // Notifications
     addNotification: (userId, text, ts) => db.prepare('INSERT INTO notifications (user_id, text, created_at) VALUES (?, ?, ?)').run(userId, text, ts),
     notifications: (userId, limit = 20) => db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT ?').all(userId, limit),
@@ -442,6 +526,7 @@ function createRepo(db) {
         equipment: all('SELECT slot, tier FROM equipment WHERE user_id = ?'),
         worn: all('SELECT slot, item FROM worn_gear WHERE user_id = ?'),
         plots: all('SELECT plot, crop, planted_at, ready_at FROM farm_plots WHERE user_id = ?'),
+        cards: all("SELECT * FROM cards WHERE owner_id = ? AND status IN ('owned', 'listed')"),
         settings: Object.fromEntries(settingKeys.map((k) => [k, stmt.getSetting.get(k)?.value ?? null])),
       };
     },
@@ -452,6 +537,10 @@ function createRepo(db) {
       for (const r of snap.equipment) db.prepare('INSERT INTO equipment (user_id, slot, tier) VALUES (?, ?, ?)').run(userId, r.slot, r.tier);
       for (const r of snap.worn) db.prepare('INSERT INTO worn_gear (user_id, slot, item) VALUES (?, ?, ?)').run(userId, r.slot, r.item);
       for (const r of snap.plots) db.prepare('INSERT INTO farm_plots (user_id, plot, crop, planted_at, ready_at) VALUES (?, ?, ?, ?, ?)').run(userId, r.plot, r.crop, r.planted_at, r.ready_at);
+      // Cards taken by a reset come back (unless someone else owns them by now).
+      for (const r of snap.cards || []) {
+        db.prepare("UPDATE cards SET owner_id = ?, status = ?, price = ?, listed_at = ? WHERE id = ? AND (owner_id = ? OR status = 'bank')").run(userId, r.status, r.price, r.listed_at, r.id, userId);
+      }
       const u = snap.user;
       db.prepare('UPDATE users SET points = ?, hp = ?, hp_at = ?, mana = ?, mana_at = ?, ko_until = ?, stamina = ?, stamina_at = ?, season_xp = ?, title = ? WHERE id = ?').run(
         u.points, u.hp, u.hp_at, u.mana, u.mana_at, u.ko_until, u.stamina, u.stamina_at, u.season_xp, u.title, userId
@@ -475,6 +564,8 @@ function createRepo(db) {
         'DELETE FROM equipment WHERE user_id = ?',
         'DELETE FROM worn_gear WHERE user_id = ?',
         'DELETE FROM farm_plots WHERE user_id = ?',
+        "UPDATE cards SET status = 'bank', price = NULL WHERE owner_id = ? AND status IN ('owned', 'listed')",
+        "UPDATE card_trades SET status = 'cancelled' WHERE status = 'open' AND (from_id = ?1 OR to_id = ?1)",
         "UPDATE users SET points = 0, hp = NULL, mana = NULL, ko_until = 0, stamina = NULL, season_xp = 0, title = '' WHERE id = ?",
       ]) db.prepare(sql).run(userId);
     },

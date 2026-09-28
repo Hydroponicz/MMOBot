@@ -39,7 +39,7 @@
   };
   const skillIcon = (id) => state.site?.skills.find((s) => s.id === id)?.icon || '✨';
   const feedIcon = (a) =>
-    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒', jackpot: '🎰', death: '💀', achievement: '🏆', task: '📋', trade: '🤝', follow: '💚', sub: '⭐', gift: '🎁', raid: '⚔️', duel: '⚔️', event: '📣' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
+    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒', jackpot: '🎰', death: '💀', achievement: '🏆', task: '📋', trade: '🤝', follow: '💚', sub: '⭐', gift: '🎁', raid: '⚔️', duel: '⚔️', event: '📣', pull: '🃏' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
 
   // ---- live activity (SSE) ----------------------------------------------
   const listeners = new Set();
@@ -846,6 +846,7 @@
   };
 
   pages.casino = async () => window.MMOCasino($app, { api, toast, esc, fmt, state, route });
+  pages.cards = async (_, query) => window.MMOCards($app, { api, toast, esc, fmt, state, route, ago, playerLink }, query);
 
   pages.leaderboards = async (_, query) => {
     const kind = query.get('board') || 'overall';
@@ -1529,6 +1530,16 @@
         ]),
       },
       {
+        id: 'cards', tab: 'rewards', icon: '🃏', title: 'Creature cards', summary: 'Open packs, grade your pulls, trade with players',
+        body: list([
+          `On the <a href="#/cards">Cards</a> page, spend points on packs of fantasy creature cards: Scout packs (3 cards), Boosters (5), Elite packs and the Mythic Vault. Three sets, six rarities from Common to Mythic, and any card can come out Holo (3× value) or Gold Foil (10×).`,
+          'Every card has its own <b>wear</b> from 0 (flawless) to 1 (wrecked). Lower is better: it sets the condition (Pristine, Mint, Near Mint, Excellent...) and what the card is worth.',
+          '<b>Grading</b> costs a fee and seals the card in a slab with a grade from 1 to 10 plus four subgrades. A GEM MINT 10 is worth 4× a raw card; four perfect subgrades make a PRISTINE 10 black label (10×). Clean cards usually grade well, but the grade is final.',
+          'Sell cards back to the bank for part of their value, list them on the card market, or send trade offers (cards and points both ways) to other players.',
+          `Collect every card in a set for a points reward and a title. ${c('cards')} in chat shows your collection.`,
+        ]),
+      },
+      {
         id: 'market', tab: 'rewards', icon: '🏪', title: 'Player market', summary: 'Buy and sell items with other players',
         body: list([
           'On the <a href="#/market">Market</a> page, list items for a price. They leave your backpack until someone buys them or you cancel.',
@@ -1657,6 +1668,7 @@
         ['points', 'Your points'],
         ['give @name <item|points>', 'Give to another player'],
         ['market', 'Player market link'],
+        ['cards', 'Your trading cards (packs, grading and trades on the website)'],
         ['bounty <item> <points>', 'Post a bounty (bounty cancel)'],
         ['bounties', 'Open bounties'],
         ['guild', 'Your guild (guild create / join / leave / deposit / top)'],

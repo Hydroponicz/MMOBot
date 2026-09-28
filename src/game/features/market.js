@@ -145,7 +145,7 @@ module.exports = {
       .map(([, v]) => v);
     const sum = (k) => days.reduce((s, d) => s + (d[k] || 0), 0);
     const earned = sum('chat') + sum('actions') + sum('sold') + sum('rewards');
-    const spent = sum('shop') + sum('fees') + Math.max(0, sum('casinoWagered') - sum('casinoPaid'));
+    const spent = sum('shop') + sum('fees') + Math.max(0, sum('casinoWagered') - sum('casinoPaid')) + sum('cardGrading') + Math.max(0, sum('cardPacks') - sum('cardBuyback'));
     const alerts = [];
     const week = { days: days.length, earned, spent };
     if (days.length >= 2 && earned > 1000 && earned > spent * 1.5) {

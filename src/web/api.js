@@ -149,6 +149,42 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   router.post('/market/:id/buy', requireLogin, marketAct((req) => engine.marketBuy(req.user, req.params.id)));
   router.post('/market/:id/cancel', requireLogin, marketAct((req) => engine.marketCancel(req.user, req.params.id)));
 
+  // ---- Trading cards -------------------------------------------------------------------------
+  // Catalog, packs and public feeds for everyone; your collection and trades when logged in.
+  router.get('/cards', (req, res) => {
+    const me = req.user ? repo.getUser(req.user.id) : null;
+    res.json({
+      open: engine.cfg.cardsEnabled !== false,
+      catalog: engine.cardCatalog(),
+      points: me ? me.points : null,
+      blocked: me ? engine.marketBlocked(me.id) : null,
+      collection: me ? engine.cardCollection(me.id) : null,
+      pulls: engine.cardPulls(),
+      graded: engine.cardRecentGrades(),
+      top: engine.cardTopCollectors(10),
+    });
+  });
+  router.get('/cards/market', (req, res) => res.json({ listings: engine.cardListings(), fee: engine.cfg.marketFee ?? 0.05 }));
+  router.get('/cards/pop/:card', (req, res) => {
+    const pop = engine.cardPopulation(req.params.card);
+    return pop ? res.json(pop) : res.status(404).json({ error: 'no such card' });
+  });
+  router.get('/cards/player/:name', (req, res) => {
+    const p = engine.cardPlayer(req.params.name);
+    return p ? res.json(p) : res.status(404).json({ error: 'no such player' });
+  });
+  router.get('/cards/trades', requireLogin, (req, res) => res.json({ trades: engine.cardTrades(req.user.id) }));
+  router.post('/cards/open', requireLogin, marketAct((req) => engine.cardOpenPacks(req.user, req.body?.pack, req.body?.count ?? 1)));
+  router.post('/cards/:id/grade', requireLogin, marketAct((req) => engine.cardGrade(req.user, req.params.id)));
+  router.post('/cards/sell', requireLogin, marketAct((req) => engine.cardSellBack(req.user, req.body?.ids)));
+  router.post('/cards/:id/list', requireLogin, marketAct((req) => engine.cardList(req.user, req.params.id, req.body?.price)));
+  router.post('/cards/:id/unlist', requireLogin, marketAct((req) => engine.cardUnlist(req.user, req.params.id)));
+  router.post('/cards/:id/buy', requireLogin, marketAct((req) => engine.cardBuy(req.user, req.params.id)));
+  router.post('/cards/trades', requireLogin, marketAct((req) => engine.cardTradeOffer(req.user, req.body || {})));
+  router.post('/cards/trades/:id/accept', requireLogin, marketAct((req) => engine.cardTradeAccept(req.user, req.params.id)));
+  router.post('/cards/trades/:id/decline', requireLogin, marketAct((req) => engine.cardTradeClose(req.user, req.params.id, 'declined')));
+  router.post('/cards/trades/:id/cancel', requireLogin, marketAct((req) => engine.cardTradeClose(req.user, req.params.id, 'cancelled')));
+
   // ---- Guilds -------------------------------------------------------------------------------
   router.get('/guilds', (req, res) => {
     const mine = req.user ? repo.guildOf(req.user.id) : null;
