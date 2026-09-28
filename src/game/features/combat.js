@@ -121,9 +121,9 @@ module.exports = {
       ITEMS[pick.weapon].attack * this.enchantMult(userId, pick.weapon) * (st.set ? st.set.attack : 1) + (pick.arrow ? ITEMS[pick.arrow].attack : 0) + (pick.spell ? pick.spell.attack : 0) + (pick.skillId === 'archery' ? st.archeryBonus : 0);
     const perk = this.perks(userId);
     return {
-      // Banshee Fury: +25% attack. Race perks scale attack and defence.
-      attack: Math.round(attack * (this.hasBuff(userId, 'fury') ? 1.25 : 1) * perk.attack),
-      defence: Math.round(st.defence * perk.defence),
+      // Banshee Fury +25% and Venom Coating +20% attack, Stoneskin +25% defence. Race perks scale both.
+      attack: Math.round(attack * (this.hasBuff(userId, 'fury') ? 1.25 : 1) * (this.hasBuff(userId, 'venom') ? 1.2 : 1) * perk.attack),
+      defence: Math.round(st.defence * (this.hasBuff(userId, 'stoneskin') ? 1.25 : 1) * perk.defence),
     };
   },
 

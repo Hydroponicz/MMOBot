@@ -207,6 +207,9 @@
       p('M87,21 Q100,16 102,2 Q94,14 82,17Z', '#efe6c8');
       p('M30,44 Q30,14 60,14 Q90,14 90,44Z', '#9aa3ad', 'stroke="#6f7780" stroke-width="1.5"');
       out.push('<rect x="30" y="38" width="60" height="7" rx="2" fill="#7a5334"/>');
+    } else if (hat === 'demon') {
+      p('M40,30 Q30,20 32,4 Q38,18 48,24Z', '#b3202a', 'stroke="#6e1016" stroke-width="1.5"');
+      p('M80,30 Q90,20 88,4 Q82,18 72,24Z', '#b3202a', 'stroke="#6e1016" stroke-width="1.5"');
     } else if (hat === 'halo') {
       out.push('<ellipse cx="60" cy="10" rx="22" ry="6" fill="none" stroke="#ffd84a" stroke-width="7" opacity=".25"/><ellipse cx="60" cy="10" rx="22" ry="6" fill="none" stroke="#ffe27a" stroke-width="3"/>');
     } else if (hat === 'champion') {

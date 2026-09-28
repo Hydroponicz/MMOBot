@@ -108,8 +108,8 @@ module.exports = {
     return Boolean(this.activeBuffs(userId)[id]);
   },
 
-  addBuff(userId, id, now = this.now()) {
-    const buffs = { ...this.activeBuffs(userId, now), [id]: now + BUFFS[id].minutes * 60_000 };
+  addBuff(userId, id, now = this.now(), minutes = BUFFS[id].minutes) {
+    const buffs = { ...this.activeBuffs(userId, now), [id]: now + minutes * 60_000 };
     this.repo.setSetting(this.buffKey(userId), buffs);
     return buffs[id];
   },
@@ -199,12 +199,13 @@ module.exports = {
 
   drinkBuff(user, id, now) {
     const buff = BUFFS[ITEMS[id].potion.buff];
+    const minutes = ITEMS[id].potion.minutes || buff.minutes;
     const had = this.hasBuff(user.id, buff.id);
     this.repo.transaction(() => {
       this.repo.removeItem(user.id, id, 1);
-      this.addBuff(user.id, buff.id, now);
+      this.addBuff(user.id, buff.id, now, minutes);
     });
-    return `${ITEMS[id].icon} you drank a ${ITEMS[id].name}: ${buff.icon} ${buff.name} for ${buff.minutes} min${had ? ' (timer restarted)' : ''}: ${buff.text}.`;
+    return `${ITEMS[id].icon} you drank a ${ITEMS[id].name}: ${buff.icon} ${buff.name} for ${minutes} min${had ? ' (timer restarted)' : ''}: ${buff.text}.`;
   },
 
   // !drink [potion]: with no name, drinks what you need most — the weakest health potion that tops

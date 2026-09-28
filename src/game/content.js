@@ -1,6 +1,6 @@
 // Extra content: cosmetics, pets, race-only items, quest chains. Adds its items to ITEMS and SHOP, so
 // require it once before the game uses the item list (shared.js does).
-const { ITEMS, SKILLS, SHOP } = require('./skills');
+const { ITEMS, SKILLS, SHOP, BUFFS, MUSEUM } = require('./skills');
 
 // ---- Cosmetics: bought in the shop, worn on the Customize page. Looks only, no stats. ----------
 // They don't take backpack slots and aren't sold by !sell all.
@@ -253,6 +253,118 @@ const QUESTS = [
     reward: 20000,
     title: 'Champion of the Realm',
   },
+  {
+    id: 'scavenger',
+    name: 'The Monster Scavenger',
+    icon: '🦴',
+    intro: 'Nothing a monster drops goes to waste. Cook it, brew it, fletch it, open it, show it off.',
+    steps: [
+      { text: 'Cook a Cheesy Potato Bake (Giant Rat cheese + a potato)', qty: 1, match: { skill: 'cooking', item: 'cheesy_potato_bake' } },
+      { text: 'Brew Goblin Grog (goblin ears + a carrot)', qty: 1, match: { skill: 'alchemy', item: 'goblin_grog' } },
+      { text: 'Fletch Fang Arrows (wolf fangs)', qty: 1, match: { skill: 'fletching', item: 'fang_arrows' } },
+      { text: 'Open monster loot (goblin pouches, stolen goods...)', qty: 3, match: { kind: 'open' } },
+      { text: 'Craft a Wolf Pelt Cape', qty: 1, match: { skill: 'crafting', item: 'wolf_pelt_cape' } },
+    ],
+    reward: 5000,
+    title: 'the Scavenger',
+  },
 ];
 
-module.exports = { COSMETICS, COSMETIC_SLOTS, SEASON_COSMETICS, LIMITED_COSMETICS, LIMITED_SHOP, PETS, PET_BONUS, RACE_ITEMS, QUESTS };
+// ---- Uses for combat drops ---------------------------------------------------------------------
+// Every monster drop is good for something besides selling: dishes, potions, arrows, capes,
+// containers to open, or museum trophies. (!item <name> shows where anything comes from and goes.)
+
+// New timed effects (see vitals.js buffs).
+BUFFS.wellfed = { id: 'wellfed', name: 'Well Fed', icon: '🍲', minutes: 15, text: '+5% XP in every skill' };
+BUFFS.stoneskin = { id: 'stoneskin', name: 'Stoneskin', icon: '🪨', minutes: 20, text: '+25% defence in fights' };
+BUFFS.venom = { id: 'venom', name: 'Venom Coating', icon: '🐍', minutes: 20, text: '+20% attack in fights' };
+
+// Cooking: monster dishes heal like other food and leave you Well Fed.
+const MONSTER_DISHES = [
+  // id, name, icon, Cooking level, inputs, XP
+  ['cheesy_potato_bake', 'Cheesy Potato Bake', '🧀', 8, { cheese: 1, potato: 1 }, 30],
+  ['golden_omelette', 'Golden Omelette', '🍳', 30, { golden_egg: 1 }, 400],
+  ['hydra_soup', 'Hydra Head Soup', '🍲', 130, { hydra_head: 1 }, 520],
+  ['giants_toe_stew', "Giant's Toe Stew", '🦶', 180, { giant_toe: 1 }, 700],
+  ['dragonheart_roast', 'Dragonheart Roast', '❤️‍🔥', 250, { elder_heart: 1 }, 1200],
+];
+for (const [id, name, icon, level, inputs, xp] of MONSTER_DISHES) {
+  const inValue = Object.entries(inputs).reduce((sum, [i, q]) => sum + ITEMS[i].value * q, 0);
+  ITEMS[id] = { name, icon, value: Math.round(inValue * 1.3) + 1, food: { heal: Math.round(10 + level * 2), buff: 'wellfed' } };
+  SKILLS.cooking.recipes.push({ item: id, level, kind: 'dish', word: name.split(' ')[0].toLowerCase(), xp, inputs });
+}
+SKILLS.cooking.recipes.sort((a, b) => a.level - b.level);
+
+// Alchemy: combat potions (a timed effect, some longer than the undead potions).
+const MONSTER_POTIONS = [
+  // id, name, icon, Alchemy level, inputs, buff, minutes, XP
+  ['goblin_grog', 'Goblin Grog', '🍺', 12, { goblin_ear: 2, carrot: 1 }, 'luck', 20, 40],
+  ['berserker_draught', 'Berserker Draught', '🔴', 55, { war_paint: 1, ashes: 3 }, 'fury', 30, 110],
+  ['stoneskin_tonic', 'Stoneskin Tonic', '🪨', 80, { ogre_tooth: 1, ashes: 4 }, 'stoneskin', 20, 160],
+  ['venom_coating', 'Venom Coating', '🐍', 100, { venom_sac: 1, ashes: 4 }, 'venom', 20, 200],
+  ['regeneration_draught', 'Regeneration Draught', '🩸', 150, { hydra_blood: 1, ashes: 5 }, 'vampiric', 45, 300],
+  ['infernal_focus', 'Infernal Focus', '🔥', 200, { infernal_ash: 1, ashes: 6 }, 'focus', 60, 420],
+  ['frostguard_elixir', 'Frostguard Elixir', '❄️', 250, { frost_core: 1, ashes: 6 }, 'stoneskin', 60, 520],
+  ['soulbound_elixir', 'Soulbound Elixir', '💎', 300, { soul_gem: 1, ashes: 8 }, 'deathless', 120, 650],
+];
+for (const [id, name, icon, level, inputs, buff, minutes, xp] of MONSTER_POTIONS) {
+  const inValue = Object.entries(inputs).reduce((sum, [i, q]) => sum + ITEMS[i].value * q, 0);
+  ITEMS[id] = { name, icon, value: Math.round(inValue * 1.3), keep: true, potion: { buff, minutes } };
+  SKILLS.alchemy.recipes.push({ item: id, level, kind: 'combat', xp, inputs });
+}
+SKILLS.alchemy.recipes.sort((a, b) => a.level - b.level);
+
+// Fletching: monster arrowheads instead of metal bars (a little stronger than metal at that level).
+const MONSTER_ARROWS = [
+  // id, name, logs, arrowhead, Fletching level, Archery level to use, attack
+  ['fang_arrows', 'Fang Arrows', 'oak_logs', 'wolf_fang', 20, 20, 4],
+  ['tusk_arrows', 'Tusk Arrows', 'maple_logs', 'orc_tusk', 55, 55, 9],
+  ['claw_arrows', 'Wyvern Claw Arrows', 'ironwood_logs', 'wyvern_claw', 200, 200, 34],
+  ['dragonbone_arrows', 'Dragonbone Arrows', 'dragonwood_logs', 'dragon_bone', 400, 400, 65],
+];
+for (const [id, name, logs, head, fletch, use, attack] of MONSTER_ARROWS) {
+  ITEMS[id] = { name, icon: '🏹', value: Math.max(1, Math.round((ITEMS[logs].value + ITEMS[head].value + ITEMS.feathers.value) / 10)), keep: true, ammo: 'bow', level: use, attack, wieldSkill: 'Archery' };
+  const xp = SKILLS.fletching.recipes.find((r) => r.group === 'arrows' && r.level <= fletch && r.item !== id);
+  SKILLS.fletching.recipes.push({ item: id, level: fletch, kind: 'ammo', group: 'arrows', yield: 10, xp: Math.round((xp ? xp.xp : 20) * 1.1), inputs: { [logs]: 1, feathers: 1, [head]: 1 } });
+}
+SKILLS.fletching.recipes.sort((a, b) => a.level - b.level);
+
+// Crafting: capes (cosmetic) from hides, scales and shrouds; a horned helm from minotaur horns.
+const MONSTER_COSMETICS = [
+  // id, name, icon, slot, style, Crafting level, inputs, XP
+  ['wolf_pelt_cape', 'Wolf Pelt Cape', '🐺', 'cape', '#6d6258', 20, { wolf_pelt: 3 }, 80],
+  ['troll_hide_cape', 'Troll Hide Cape', '🧌', 'cape', '#5d6b4a', 70, { troll_hide: 3 }, 220],
+  ['silk_cape', 'Spider Silk Cape', '🕸️', 'cape', '#e8e4dc', 100, { spider_silk: 3 }, 320],
+  ['shroud_cape', 'Wraith Shroud Cape', '👻', 'cape', '#2b3140', 130, { wraith_shroud: 2 }, 400],
+  ['minotaur_helm', 'Minotaur Helm', '🐂', 'hat', 'viking', 160, { minotaur_horn: 2 }, 480],
+  ['wyvern_scale_cape', 'Wyvern Scale Cape', '🐉', 'cape', '#2f8a86', 200, { wyvern_scale: 4 }, 620],
+  ['demon_horns', 'Demon Horns', '😈', 'hat', 'demon', 300, { demon_horn: 2 }, 900],
+  ['dragon_scale_cape', 'Dragon Scale Cape', '🐲', 'cape', '#a82f2f', 400, { dragon_scale: 4 }, 1300],
+  ['ancient_aura', 'Ancient Aura', '🌿', 'aura', '#8ad8a0', 480, { ancient_scale: 3 }, 1700],
+];
+for (const [id, name, icon, slot, style, level, inputs, xp] of MONSTER_COSMETICS) {
+  const inValue = Object.entries(inputs).reduce((sum, [i, q]) => sum + ITEMS[i].value * q, 0);
+  ITEMS[id] = { name, icon, value: Math.round(inValue * 1.2), keep: true, cosmetic: { slot, style } };
+  SKILLS.crafting.recipes.push({ item: id, level, kind: 'cosmetic', xp, inputs });
+}
+SKILLS.crafting.recipes.sort((a, b) => a.level - b.level);
+
+// Containers: !open them for points and a few random items.
+const CONTAINERS = {
+  goblin_pouch: { points: [20, 80], loot: [['magic_rune', 0.5, [5, 15]], ['carrot_seeds', 0.4, [2, 5]], ['iron_arrows', 0.3, [10, 20]]] },
+  stolen_goods: { points: [60, 200], loot: [['iron_bar', 0.4, [1, 3]], ['steel_arrows', 0.4, [10, 25]], ['goblin_pouch', 0.3, [1, 1]]] },
+  ogre_belt: { points: [150, 400], loot: [['health_potion', 0.35, [1, 1]], ['mana_potion', 0.3, [1, 1]], ['ashes', 0.5, [5, 12]]] },
+  labyrinth_key: { points: [500, 1500], loot: [['greater_health_potion', 0.3, [1, 2]], ['rune_shard', 0.3, [1, 1]], ['shadow_gem', 0.05, [1, 1]], ['golden_egg', 0.04, [1, 1]]] },
+};
+for (const [id, c] of Object.entries(CONTAINERS)) {
+  for (const [i] of c.loot) if (!ITEMS[i]) throw new Error(`container ${id} drops unknown item ${i}`);
+  ITEMS[id].opens = true;
+}
+
+// Museum trophy collections for rare monster drops.
+MUSEUM.push(
+  { id: 'trophies', name: 'Trophy Hall', icon: '🏆', items: ['golden_egg', 'goblin_crown', 'bandit_mask', 'troll_club'], reward: 15000, title: 'the Monster Hunter' },
+  { id: 'legends', name: 'Legendary Relics', icon: '🐉', items: ['dragon_egg', 'phylactery', 'soul_gem', 'elder_heart'], reward: 150000, title: 'the Dragonslayer' },
+);
+
+module.exports = { CONTAINERS, MONSTER_DISHES, MONSTER_POTIONS, MONSTER_ARROWS, MONSTER_COSMETICS, COSMETICS, COSMETIC_SLOTS, SEASON_COSMETICS, LIMITED_COSMETICS, LIMITED_SHOP, PETS, PET_BONUS, RACE_ITEMS, QUESTS };

@@ -293,7 +293,8 @@ class GameEngine extends EventEmitter {
         value: this.sellValue(id, userId),
         rare: !!ITEMS[id].rare,
         ...(id === 'flint_and_steel' ? { usesLeft: this.flintUses(userId) } : {}),
-        ...(ITEMS[id].potion?.buff ? { effect: BUFFS[ITEMS[id].potion.buff] } : {}),
+        ...(ITEMS[id].potion?.buff ? { effect: { ...BUFFS[ITEMS[id].potion.buff], minutes: ITEMS[id].potion.minutes || BUFFS[ITEMS[id].potion.buff].minutes } } : {}),
+        usedFor: this.itemUses(id).uses.slice(0, 4),
       }))
       .sort((a, b) => b.value * b.qty - a.value * a.qty);
     return {
@@ -408,10 +409,10 @@ class GameEngine extends EventEmitter {
       disabledCommands: this.cfg.disabledCommands || [],
       backpack: this.backpackTiers().map((t, i) => ({ level: i + 1, ...t })),
       shop: this.shopItems(),
-      // Undead potions and what they do.
+      // Buff potions (undead and monster potions) and what they do.
       buffs: Object.values(ITEMS)
         .filter((i) => i.potion?.buff)
-        .map((i) => ({ potion: i.name, icon: i.icon, ...BUFFS[i.potion.buff] })),
+        .map((i) => ({ potion: i.name, icon: i.icon, ...BUFFS[i.potion.buff], minutes: i.potion.minutes || BUFFS[i.potion.buff].minutes })),
       skills: SKILL_IDS.map((id) => {
         const s = SKILLS[id];
         return {
@@ -477,7 +478,7 @@ function isChatCommand(word) {
 }
 
 // Feature modules add their methods to the engine.
-for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events', 'museum', 'progression', 'character', 'community', 'market', 'gear', 'social', 'guilds']) {
+for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events', 'museum', 'progression', 'character', 'community', 'market', 'gear', 'social', 'guilds', 'items']) {
   Object.assign(GameEngine.prototype, require(`./features/${mod}`));
 }
 

@@ -342,6 +342,8 @@
     if (i.usesLeft != null) bits.push(`${i.usesLeft}/${i.uses} uses left`);
     if (i.food) bits.push(`!eat it to heal ${i.food.heal} HP (one meal heals at most 30% of your max HP)`);
     if (i.effect) bits.push(`drink for ${i.effect.name} (${i.effect.minutes} min): ${i.effect.text}`);
+    if (i.opens) bits.push('!open it for points and loot');
+    if (i.usedFor?.length && !i.food && !i.effect) bits.push(`used for: ${i.usedFor.join('; ')}`);
     return bits.join(' · ');
   }
 
@@ -1481,10 +1483,22 @@
         ]),
       },
       {
-        id: 'potions', tab: 'combat', icon: '🧪', title: 'Undead potions', summary: 'Timed buffs brewed from Ashes',
-        body: `<p>${c('brew')} Ashes with something dead, then ${c('drink')} it. ${c('buffs')} shows what's active.</p>${list(
+        id: 'potions', tab: 'combat', icon: '🧪', title: 'Buff potions', summary: 'Timed buffs brewed from Ashes and monster drops',
+        body: `<p>${c('brew')} Ashes with something dead or a monster drop, then ${c('drink')} it. ${c('buffs')} shows what's active.</p>${list(
           (g.buffs || []).map((b) => `${b.icon} <b>${esc(b.potion)}</b>: ${esc(b.text)} (${b.minutes} min)`)
         )}`,
+      },
+      {
+        id: 'drops', tab: 'combat', icon: '🦴', title: 'Monster drops', summary: 'Every drop is good for something besides selling',
+        body: `<p>${c('item cheese')} shows where any item comes from and what it's for.</p>${list([
+          `🍳 <b>Cooking</b>: monster dishes like the Cheesy Potato Bake (Giant Rat cheese + a potato) heal and make you 🍲 <b>Well Fed</b> (+5% XP for 15 min).`,
+          `⚗️ <b>Alchemy</b>: Goblin Grog, Stoneskin Tonic (+25% defence), Venom Coating (+20% attack), Regeneration Draught and more, brewed from ears, teeth, venom and blood.`,
+          `🪶 <b>Fletching</b>: fangs, tusks, claws and dragon bones make stronger arrows.`,
+          `🧵 <b>Crafting</b>: pelts, hides, silk and scales become capes to wear; minotaur and demon horns become helms.`,
+          `👛 <b>Loot to open</b>: goblin pouches, stolen goods, ogre belts and labyrinth keys. ${c('open')} them for points and random items.`,
+          `🏆 <b>Museum</b>: rare drops fill the Trophy Hall and Legendary Relics collections (${c('donate')}).`,
+          `🦴 The <b>Monster Scavenger</b> quest walks you through all of it.`,
+        ])}`,
       },
       ...g.skills.filter((s) => s.type === 'combat').map((s) => skillTopic(s, 'combat')),
       {
@@ -1638,6 +1652,8 @@
         ['buy <item>', 'Buy from the shop (shop lists items)'],
         ['buy arrows 50', 'Buy arrows'],
         ['inv', 'Your backpack'],
+        ['item <name>', 'Where an item comes from and what it is for'],
+        ['open [item]', 'Open goblin pouches, stolen goods and other monster loot'],
         ['points', 'Your points'],
         ['give @name <item|points>', 'Give to another player'],
         ['market', 'Player market link'],

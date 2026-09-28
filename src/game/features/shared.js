@@ -85,6 +85,8 @@ const INFO_COMMANDS = {
   quest: ['questInfo', 'quest'], quests: ['questInfo', 'quest'],
   goal: ['goalInfo', 'goal'],
   enchant: ['enchant', 'enchant'],
+  item: ['itemInfo', 'item'], info: ['itemInfo', 'item'], whatis: ['itemInfo', 'item'],
+  open: ['openContainer', 'open'],
   bounty: ['bounty', 'bounty'], bounties: ['bountyList', 'bounty'],
   dungeon: ['dungeonJoin', 'dungeon'], dungeons: ['dungeonJoin', 'dungeon'],
   hall: ['hallInfo', 'hall'],

@@ -39,6 +39,8 @@ const COMMANDS = [
   'boost',
   'season',
   'quest',
+  'item',
+  'open',
   'pet',
   'prestige',
   'goal',

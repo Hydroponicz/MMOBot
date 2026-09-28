@@ -281,8 +281,9 @@ module.exports = {
     const fire = skill.needsFire ? ` 🔥 Fire: ${minutesLeft(this.fireLeft(user.id))} left.` : '';
     // Cooking: likely to burn at the recipe's level, rarely 50+ levels above it. Burnt food is lost.
     if (skill.burnable && this.rng() < clamp(0.3 - (level - recipe.level) * 0.0056, 0.02, 0.3)) {
-      const raw = Object.keys(recipe.inputs)[0];
-      return { consumed: true, reply: `🔥 oops, you burned the ${ITEMS[raw].name}! It's ruined. Keep practising, you burn less as you level.${fire}` };
+      const inputs = Object.keys(recipe.inputs);
+      const burnt = inputs.length > 1 ? ITEMS[recipe.item].name : ITEMS[inputs[0]].name;
+      return { consumed: true, reply: `🔥 oops, you burned the ${burnt}! It's ruined. Keep practising, you burn less as you level.${fire}` };
     }
     const done = this.reward(user, skillId, recipe.item, recipe.xp, { rare: false, qty: recipe.yield || 1 });
     return { ...done, reply: `${done.reply}${fire}` };
@@ -384,11 +385,14 @@ module.exports = {
     }
     if (vit.hp >= vit.maxHp) return `you're already at full health. ${this.vitalsLine(vit)}`;
     const hp = Math.min(vit.maxHp, vit.hp + heals(id));
+    const buff = ITEMS[id].food.buff;
     this.repo.transaction(() => {
       this.repo.removeItem(user.id, id, 1);
       this.repo.setVitals(user.id, { hp, mana: vit.mana, koUntil: 0 }, now);
+      if (buff) this.addBuff(user.id, buff, now);
     });
-    return `${ITEMS[id].icon} you ate ${/^[AEIOU]/.test(ITEMS[id].name) ? 'an' : 'a'} ${ITEMS[id].name} (+${fmt(Math.round(hp - vit.hp))} HP). ${this.vitalsLine(this.vitals(user.id, now))}`;
+    const fed = buff ? ` ${BUFFS[buff].icon} ${BUFFS[buff].name} for ${BUFFS[buff].minutes} min: ${BUFFS[buff].text}.` : '';
+    return `${ITEMS[id].icon} you ate ${/^[AEIOU]/.test(ITEMS[id].name) ? 'an' : 'a'} ${ITEMS[id].name} (+${fmt(Math.round(hp - vit.hp))} HP). ${this.vitalsLine(this.vitals(user.id, now))}${fed}`;
   },
 
   // HP one meal of this food restores for this player.
@@ -435,6 +439,8 @@ module.exports = {
     xpGain = Math.max(1, Math.round(xpGain * this.raceXp(user.id, skillId) * this.petXp(user.id, skillId) * this.prestigeXp(user.id, skillId)));
     // Bone Brew: +20% XP while it lasts.
     if (this.hasBuff(user.id, 'focus')) xpGain = Math.round(xpGain * 1.2);
+    // Well Fed (monster dishes): +5% XP.
+    if (this.hasBuff(user.id, 'wellfed')) xpGain = Math.round(xpGain * 1.05);
     const before = this.repo.getSkills(user.id);
     const levelBefore = skillLevel(skillId, before[skillId]);
     const charBefore = characterProgress(SKILL_IDS.map((id) => before[id])).level;
