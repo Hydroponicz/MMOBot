@@ -495,3 +495,27 @@ test('admin audit log records changes and can undo points, items, bans, resets a
   const after = await api('/admin/audit');
   assert.match(after.entries[0].summary, /^undid #/);
 });
+
+test('with PUBLIC_URL set, pages on other addresses redirect there (login needs one address)', async (t) => {
+  const s = await start(makeConfig({ baseUrl: 'https://hydroponicz.wtf', baseUrlSource: 'PUBLIC_URL' }));
+  t.after(s.close);
+  // (fetch can't set the Host header, so use http directly.)
+  const http = require('node:http');
+  const get = (path, host) =>
+    new Promise((ok, fail) => {
+      const u = new URL(s.url + path);
+      http
+        .get({ hostname: u.hostname, port: u.port, path: u.pathname + u.search, headers: { host } }, (res) => {
+          res.resume();
+          ok({ status: res.statusCode, headers: { get: (h) => res.headers[h] } });
+        })
+        .on('error', fail);
+    });
+  const r = await get('/auth/login?x=1', 'www.hydroponicz.wtf');
+  assert.equal(r.status, 301);
+  assert.equal(r.headers.get('location'), 'https://hydroponicz.wtf/auth/login?x=1');
+  assert.equal((await get('/', 'mmobot-production.up.railway.app')).status, 301);
+  assert.equal((await get('/', 'hydroponicz.wtf')).status, 200, 'the real address is served');
+  assert.equal((await get('/api/site', 'www.hydroponicz.wtf')).status, 200, 'the API is left alone');
+  assert.equal((await get('/healthz', 'something.internal')).status, 200);
+});

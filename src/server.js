@@ -31,6 +31,19 @@ function createApp({ config, repo, logger: baseLogger = console, settings = new 
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
 
+  // With PUBLIC_URL set, pages opened on another address (www vs no-www, the old *.up.railway.app
+  // address) are sent to PUBLIC_URL. Kick login always returns to PUBLIC_URL, so it has to start there
+  // too or the login cookie is on the wrong address. Webhooks, the API and health checks are left alone.
+  if (['PUBLIC_URL', 'BASE_URL'].includes(config.baseUrlSource)) {
+    const canonical = new URL(config.baseUrl).host.toLowerCase();
+    app.use((req, res, next) => {
+      const host = String(req.headers.host || '').toLowerCase();
+      if (!host || host === canonical || !['GET', 'HEAD'].includes(req.method) || /^\/(webhooks|api|healthz)(\/|$)/.test(req.path)) return next();
+      if (/^(localhost|127\.0\.0\.1|\[::1\])(:|$)/.test(host) || host.endsWith('.railway.internal')) return next();
+      res.redirect(301, config.baseUrl + req.originalUrl);
+    });
+  }
+
   // Webhooks need the raw body for signature checks, so mount before any JSON parsing.
   app.use('/webhooks', webhookRouter({ bot, kick, repo, config, logger }));
   app.use(sessionMiddleware({ sessions, repo }));
