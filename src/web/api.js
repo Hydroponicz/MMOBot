@@ -115,6 +115,8 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   router.post('/me/harvest', requireLogin, act((req) => engine.harvest(req.user) || 'Slow down a little, farmer!'));
   router.post('/me/equip', requireLogin, act((req) => engine.equip(req.user, [String(req.body?.item || '')])));
   router.post('/me/drink', requireLogin, act((req) => engine.drink(req.user, [String(req.body?.item || '')])));
+  router.post('/me/quest/start', requireLogin, act((req) => { const r = engine.questStart(req.user, String(req.body?.quest || '')); return r.ok ? r.message : r.error; }));
+  router.post('/me/quest/pause', requireLogin, act((req) => { const r = engine.questPause(req.user, String(req.body?.quest || '')); return r.ok ? r.message : r.error; }));
   router.post('/me/heal', requireLogin, act((req) => engine.healSpell(req.user)));
   router.post('/me/eat', requireLogin, act((req) => engine.eat(req.user, [String(req.body?.item || '')])));
   router.post('/me/unequip', requireLogin, act((req) => engine.unequip(req.user, [String(req.body?.slot || '')])));

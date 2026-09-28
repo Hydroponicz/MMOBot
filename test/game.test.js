@@ -1868,27 +1868,54 @@ test('race-only items: only that race can make them', () => {
   assert.equal(repo.getInventory(u.id).dwarven_warhammer, 1);
 });
 
-test('quests: steps count matching actions; finishing a chain pays and gives a title', () => {
+test('quests: players choose any quest, up to 3 at once, in parallel; pausing keeps progress', () => {
   const { repo, engine, say, u } = extrasSetup();
   const said = [];
   engine.on('announce', (t) => said.push(t));
-  assert.match(say('!quest'), /The Blacksmith's Apprentice \(step 1\/5\): Mine Copper Ore 0\/10/);
-  // Walk the chain by feeding matching activity.
   const act = (entry, n = 1) => { for (let i = 0; i < n; i++) engine.questProgress(u, { kind: 'action', ...entry }); };
+  // New players start with the first quest active but can pick any other.
+  assert.match(say('!quest'), /The Blacksmith's Apprentice \(1\/5\): Mine Copper Ore 0\/10/);
+  assert.match(say('!quest start relic hunter'), /Started 🏺 Relic Hunter: Dig up finds 0\/25/);
+  assert.match(say('!quest hearth'), /Started 🍳 Hearth & Home/, '!quest <name> starts it too');
+  assert.match(say('!quest start hunter'), /3 quests going at once/);
+  assert.match(say('!quests'), /▶️ 🔨 The Blacksmith's Apprentice.*▶️ 🍳 Hearth & Home.*• 🏹 Hunter's Path.*▶️ 🏺 Relic Hunter/);
+  // Progress counts on every active quest that matches.
+  act({ skill: 'digging', item: 'old_bone' }, 10);
+  act({ skill: 'fishing', item: 'shrimp' }, 5);
+  assert.match(say('!quest'), /Relic Hunter \(1\/2\): Dig up finds 10\/25/);
+  assert.match(say('!quest'), /Hearth & Home \(1\/4\): Catch fish 5\/15/);
+  // Pausing stops counting but keeps progress.
+  assert.match(say('!quest pause relic'), /Paused 🏺 Relic Hunter/);
+  act({ skill: 'digging', item: 'old_bone' }, 5);
+  assert.match(say('!quest start hunter'), /Started 🏹 Hunter's Path/);
+  assert.match(say('!quest pause hunter'), /Paused/);
+  assert.match(say('!quest start relic'), /Resumed 🏺 Relic Hunter: Dig up finds 10\/25/);
+  assert.equal(engine.publicQuests(u.id).find((q) => q.id === 'hunter').status, 'available', 'no progress yet, so not "paused"');
+  // Finishing one pays and gives the title; the others carry on.
+  act({ skill: 'digging', item: 'old_bone' }, 15);
+  act({ kind: 'donate', item: 'old_bone' }, 3);
+  assert.ok(engine.titles(u.id).includes('the Relic Hunter'));
+  assert.match(said.pop(), /completed the quest 🏺 Relic Hunter/);
+  assert.equal(engine.publicQuests(u.id).find((q) => q.id === 'relics').status, 'done');
+  assert.match(say('!quest start relic'), /already finished/);
+  assert.equal(engine.notifications(u.id).saved[0].text.includes('Quest complete'), true);
+  const before = repo.getUser(u.id).points;
   act({ skill: 'mining', item: 'copper_ore' }, 10);
-  assert.match(said.pop(), /✅ Mine Copper Ore! Next .*Mine Tin Ore \(0\/10\)/);
-  act({ skill: 'mining', item: 'copper_ore' }, 3);
-  assert.match(say('!quest'), /step 2\/5\): Mine Tin Ore 0\/10/, 'wrong item does not count');
   act({ skill: 'mining', item: 'tin_ore' }, 10);
   act({ skill: 'smelting', item: 'bronze_bar' }, 5);
   act({ skill: 'smithing', item: 'bronze_sword' }, 1);
-  const before = repo.getUser(u.id).points;
   act({ skill: 'swords', item: 'goblin_ear', monster: 'goblin' }, 3);
   assert.equal(repo.getUser(u.id).points - before, 2000);
   assert.ok(engine.titles(u.id).includes('the Apprentice'));
-  assert.match(say('!quest'), /Hearth & Home \(step 1\/4\)/);
-  assert.equal(engine.publicQuests(u.id)[0].status, 'done');
-  assert.equal(engine.notifications(u.id).saved[0].text.includes('Quest complete'), true);
+});
+
+test('quests: progress saved by the old one-at-a-time quests carries over', () => {
+  const { repo, engine, say, u } = extrasSetup();
+  repo.setSetting(`quest:${u.id}`, { chain: 'hearth', step: 2, progress: 1, done: ['apprentice'] });
+  assert.match(say('!quest'), /Hearth & Home \(3\/4\): Light fires 1\/3/);
+  assert.ok(engine.titles(u.id).includes('the Apprentice'));
+  assert.match(say('!quest start hunter'), /Started/);
+  assert.deepEqual(engine.questState(u.id).active, ['hearth', 'hunter']);
 });
 
 test('channel goals: chat actions fill it; reaching it starts an XP boost', () => {

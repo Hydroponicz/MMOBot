@@ -649,3 +649,11 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 .econ-alert.bad { border-left-color: var(--danger); }
 .econ-alert ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 0.9rem; }
 .grid > * { min-width: 0; }
+
+.quest-active-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 12px; margin-bottom: 12px; }
+.quest-active-grid .quest-active { margin-bottom: 0; }
+.quest-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr)); gap: 8px; }
+.quest-card { display: flex; flex-direction: column; gap: 4px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+.quest-card.done { border-color: var(--gold); opacity: 0.8; }
+.quest-card.paused { border-style: dashed; }
+.quest-card .mini { align-self: flex-start; margin-top: 4px; }

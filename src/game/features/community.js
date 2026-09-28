@@ -5,6 +5,8 @@ const { QUESTS } = require('../content');
 const { fmt } = require('./shared');
 
 const ACTION_KINDS = ['action', 'rare'];
+// How many quests a player can have going at once.
+const MAX_ACTIVE = 3;
 
 // Does an activity entry match a quest step?
 function matches(m, entry) {
@@ -20,72 +22,142 @@ module.exports = {
     return `quest:${userId}`;
   },
 
-  // { chain, step, progress, done: [chain ids] }. Chains are done in order.
+  // Players pick which quests to do (up to MAX_ACTIVE at once, all progressing together). Pausing one
+  // keeps its progress. State: { active: [ids], progress: { id: { step, count } }, done: [ids] }.
   questState(userId) {
-    return this.repo.getSetting(this.questKey(userId)) || { chain: QUESTS[0].id, step: 0, progress: 0, done: [] };
+    const st = this.repo.getSetting(this.questKey(userId));
+    if (!st) return { active: [QUESTS[0].id], progress: {}, done: [] };
+    // Saved before quests could be chosen: one chain in progress, done in order.
+    if (!Array.isArray(st.active)) {
+      return { active: st.chain ? [st.chain] : [], progress: st.chain ? { [st.chain]: { step: st.step || 0, count: st.progress || 0 } } : {}, done: st.done || [] };
+    }
+    return st;
+  },
+
+  saveQuests(userId, st) {
+    this.repo.setSetting(this.questKey(userId), st);
+  },
+
+  // A quest by id, name or part of its name ("blacksmith", "relic").
+  findQuest(q) {
+    const s = String(q || '').toLowerCase().trim();
+    if (!s) return null;
+    return QUESTS.find((x) => x.id === s || x.name.toLowerCase() === s) || QUESTS.find((x) => x.name.toLowerCase().includes(s));
   },
 
   questProgress(user, entry) {
     const st = this.questState(user.id);
-    const chain = QUESTS.find((q) => q.id === st.chain);
-    if (!chain) return;
-    const step = chain.steps[st.step];
-    if (!step || !matches(step.match, entry)) return;
-    st.progress += 1;
-    if (st.progress >= step.qty) {
-      st.step += 1;
-      st.progress = 0;
-      if (st.step >= chain.steps.length) {
-        st.done = [...st.done, chain.id];
-        const next = QUESTS.find((q) => !st.done.includes(q.id));
-        st.chain = next ? next.id : null;
-        st.step = 0;
-        this.repo.addPoints(user.id, chain.reward);
-        this.track('rewards', chain.reward);
-        this.repo.setSetting(this.questKey(user.id), st);
-        this.emitActivity(user, { kind: 'quest', text: `completed the quest ${chain.icon} ${chain.name}! (title: ${chain.title})` });
-        this.notify?.(user.id, `${chain.icon} Quest complete: ${chain.name}! +${fmt(chain.reward)} pts and the title "${chain.title}".`);
-        this.announce(`📜 @${user.username} completed the quest ${chain.icon} ${chain.name}! +${fmt(chain.reward)} pts and the title "${chain.title}".${next ? ` Next: ${next.icon} ${next.name} (${this.cfg.prefix}quest)` : ''}`);
-        return;
+    let changed = false;
+    for (const id of [...st.active]) {
+      const quest = QUESTS.find((q) => q.id === id);
+      if (!quest) continue;
+      const pr = st.progress[id] || { step: 0, count: 0 };
+      const step = quest.steps[pr.step];
+      if (!step || !matches(step.match, entry)) continue;
+      changed = true;
+      pr.count += 1;
+      st.progress[id] = pr;
+      if (pr.count < step.qty) continue;
+      pr.step += 1;
+      pr.count = 0;
+      if (pr.step >= quest.steps.length) {
+        st.done = [...st.done, id];
+        st.active = st.active.filter((x) => x !== id);
+        delete st.progress[id];
+        this.repo.addPoints(user.id, quest.reward);
+        this.track('rewards', quest.reward);
+        this.emitActivity(user, { kind: 'quest', text: `completed the quest ${quest.icon} ${quest.name}! (title: ${quest.title})` });
+        this.notify?.(user.id, `${quest.icon} Quest complete: ${quest.name}! +${fmt(quest.reward)} pts and the title "${quest.title}".`);
+        const left = QUESTS.filter((q) => !st.done.includes(q.id) && !st.active.includes(q.id)).length;
+        this.announce(`📜 @${user.username} completed the quest ${quest.icon} ${quest.name}! +${fmt(quest.reward)} pts and the title "${quest.title}".${left ? ` Pick another: ${this.cfg.prefix}quests` : ''}`);
+      } else {
+        const next = quest.steps[pr.step];
+        this.announce(`📜 @${user.username} ✅ ${step.text}! Next for ${quest.icon} ${quest.name}: ${next.text} (0/${next.qty}).`);
       }
-      const nextStep = chain.steps[st.step];
-      this.announce(`📜 @${user.username} ✅ ${step.text}! Next for ${chain.icon} ${chain.name}: ${nextStep.text} (0/${nextStep.qty}).`);
     }
-    this.repo.setSetting(this.questKey(user.id), st);
+    if (changed) this.saveQuests(user.id, st);
   },
 
-  // Titles from finished quest chains (added to the achievement titles).
+  // Start (or resume) a quest. Returns { ok, message } or { ok: false, error }.
+  questStart(user, name) {
+    const quest = this.findQuest(name);
+    if (!quest) return { ok: false, error: `no quest called "${name}". ${this.cfg.prefix}quests lists them.` };
+    const st = this.questState(user.id);
+    if (st.done.includes(quest.id)) return { ok: false, error: `you've already finished ${quest.icon} ${quest.name}.` };
+    if (st.active.includes(quest.id)) return { ok: false, error: `${quest.icon} ${quest.name} is already one of your active quests.` };
+    if (st.active.length >= MAX_ACTIVE) {
+      return { ok: false, error: `you can have ${MAX_ACTIVE} quests going at once. Pause one first: ${this.cfg.prefix}quest pause <name>.` };
+    }
+    st.active = [...st.active, quest.id];
+    this.saveQuests(user.id, st);
+    const pr = st.progress[quest.id];
+    const step = quest.steps[pr?.step || 0];
+    return { ok: true, message: `📜 ${pr ? 'Resumed' : 'Started'} ${quest.icon} ${quest.name}: ${step.text} ${pr?.count || 0}/${step.qty}.${pr ? '' : ` ${quest.intro}`}` };
+  },
+
+  // Pause a quest: it stops counting but keeps its progress.
+  questPause(user, name) {
+    const quest = this.findQuest(name);
+    const st = this.questState(user.id);
+    if (!quest || !st.active.includes(quest.id)) return { ok: false, error: `that isn't one of your active quests.` };
+    st.active = st.active.filter((x) => x !== quest.id);
+    this.saveQuests(user.id, st);
+    return { ok: true, message: `⏸️ Paused ${quest.icon} ${quest.name}. Your progress is kept: ${this.cfg.prefix}quest start ${quest.name.toLowerCase()} to pick it up again.` };
+  },
+
+  // Titles from finished quests (added to the achievement titles).
   questTitles(userId) {
     const { done } = this.questState(userId);
     return QUESTS.filter((q) => done.includes(q.id)).map((q) => q.title);
   },
 
-  // For the character page.
+  // For the character page: every quest with its status (done, active, paused, new) and progress.
   publicQuests(userId) {
     const st = this.questState(userId);
-    return QUESTS.map((q) => ({
-      id: q.id,
-      name: q.name,
-      icon: q.icon,
-      intro: q.intro,
-      reward: q.reward,
-      title: q.title,
-      status: st.done.includes(q.id) ? 'done' : q.id === st.chain ? 'active' : 'locked',
-      steps: q.steps.map((s, i) => ({
-        text: s.text,
-        qty: s.qty,
-        have: st.done.includes(q.id) || (q.id === st.chain && i < st.step) ? s.qty : q.id === st.chain && i === st.step ? st.progress : 0,
-      })),
-    }));
+    return QUESTS.map((q) => {
+      const done = st.done.includes(q.id);
+      const pr = st.progress[q.id];
+      const status = done ? 'done' : st.active.includes(q.id) ? 'active' : pr ? 'paused' : 'available';
+      return {
+        id: q.id,
+        name: q.name,
+        icon: q.icon,
+        intro: q.intro,
+        reward: q.reward,
+        title: q.title,
+        status,
+        steps: q.steps.map((s, i) => ({ text: s.text, qty: s.qty, have: done || (pr && i < pr.step) ? s.qty : pr && i === pr.step ? pr.count : 0 })),
+      };
+    });
   },
 
-  // !quest
-  questInfo(user) {
+  // !quest [start|pause <name>] · !quests lists them all
+  questInfo(user, args = [], cmd = 'quest') {
+    const p = this.cfg.prefix;
+    const [sub = '', ...rest] = args.map(String);
+    const reply = (r) => (r.ok ? r.message : r.error);
+    if (['start', 'begin', 'take', 'resume'].includes(sub.toLowerCase())) return reply(this.questStart(user, rest.join(' ')));
+    if (['pause', 'stop', 'drop'].includes(sub.toLowerCase())) return reply(this.questPause(user, rest.join(' ')));
     const st = this.questState(user.id);
-    const chain = QUESTS.find((q) => q.id === st.chain);
-    if (!chain) return `📜 you've finished all ${QUESTS.length} quests! 🏆 Titles: ${this.questTitles(user.id).join(', ')}`;
-    const step = chain.steps[st.step];
-    return `📜 ${chain.icon} ${chain.name} (step ${st.step + 1}/${chain.steps.length}): ${step.text} ${st.progress}/${step.qty}. Reward: ${fmt(chain.reward)} pts + title "${chain.title}". ${st.step === 0 && !st.progress ? chain.intro : ''}`.trim();
+    if (sub && !['list', 'all'].includes(sub.toLowerCase())) {
+      // "!quest relic hunter": start it if they can, otherwise show why not.
+      return reply(this.questStart(user, args.join(' ')));
+    }
+    const available = QUESTS.filter((q) => !st.done.includes(q.id) && !st.active.includes(q.id));
+    if (cmd === 'quests' || sub) {
+      return `📜 Quests: ${QUESTS.map((q) => `${st.done.includes(q.id) ? '✅' : st.active.includes(q.id) ? '▶️' : st.progress[q.id] ? '⏸️' : '•'} ${q.icon} ${q.name}`).join(' · ')}. ${p}quest start <name> (up to ${MAX_ACTIVE} at once).`;
+    }
+    if (!st.active.length) {
+      if (!available.length) return `📜 you've finished all ${QUESTS.length} quests! 🏆 Titles: ${this.questTitles(user.id).join(', ')}`;
+      return `📜 no active quest. Pick one: ${available.map((q) => `${q.icon} ${q.name}`).join(' · ')}. ${p}quest start <name>`;
+    }
+    const lines = st.active.map((id) => {
+      const q = QUESTS.find((x) => x.id === id);
+      const pr = st.progress[id] || { step: 0, count: 0 };
+      const step = q.steps[pr.step];
+      return `${q.icon} ${q.name} (${pr.step + 1}/${q.steps.length}): ${step.text} ${pr.count}/${step.qty}`;
+    });
+    return `📜 ${lines.join(' · ')}${available.length ? ` | More: ${p}quests` : ''}`;
   },
 
   // ---- Channel goals ----------------------------------------------------------------------

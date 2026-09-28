@@ -488,28 +488,51 @@
     toast('Card saved! Post it anywhere.');
   }
 
-  // Quest chains: the active one in full, the rest as a checklist.
+  // Quests: your active ones in full, the rest as cards you can start (up to 3 at once).
   function questsPanel(quests, isMe) {
     if (!quests) return '';
     const done = quests.filter((q) => q.status === 'done').length;
-    const active = quests.find((q) => q.status === 'active');
+    const active = quests.filter((q) => q.status === 'active');
+    const others = quests.filter((q) => q.status !== 'active');
+    const full = active.length >= 3;
+    const steps = (q) => `<ul class="tasks">${q.steps
+      .map(
+        (s) => `<li class="${s.have >= s.qty ? 'done' : ''}"><span>${esc(s.text)}</span><span>${Math.min(s.have, s.qty)}/${s.qty}${s.have >= s.qty ? ' ✅' : ''}</span>
+          <div class="task-bar"><span style="width:${Math.min(100, Math.round((s.have / s.qty) * 100))}%"></span></div></li>`
+      )
+      .join('')}</ul>`;
+    const label = { done: '✅ Done', paused: '⏸️ Paused', available: '' };
     return `<section class="panel" style="margin-top:16px">
-      <div class="panel-head"><h2>📜 Quests</h2><span class="muted">${done}/${quests.length} done</span></div>
+      <div class="panel-head"><h2>📜 Quests</h2><span class="muted">${done}/${quests.length} done · ${active.length}/3 active</span></div>
       ${
-        active
-          ? `<div class="quest-active"><h3 style="margin:0 0 4px">${active.icon} ${esc(active.name)}</h3><p class="muted" style="margin:0 0 10px">${esc(active.intro)}</p>
-              <ul class="tasks">${active.steps
-                .map(
-                  (s) => `<li class="${s.have >= s.qty ? 'done' : ''}"><span>${esc(s.text)}</span><span>${Math.min(s.have, s.qty)}/${s.qty}${s.have >= s.qty ? ' ✅' : ''}</span>
-                    <div class="task-bar"><span style="width:${Math.min(100, Math.round((s.have / s.qty) * 100))}%"></span></div></li>`
-                )
-                .join('')}</ul>
-              <p class="muted" style="margin:8px 0 0;font-size:.85rem">Reward: ${fmt(active.reward)} pts + the title “${esc(active.title)}”.${isMe ? ' <code>!quest</code> shows this in chat.' : ''}</p></div>`
-          : '<p>🏆 Every quest is done!</p>'
+        active.length
+          ? `<div class="quest-active-grid">${active
+              .map(
+                (q) => `<div class="quest-active">
+                  <div class="panel-head" style="margin-bottom:4px"><h3 style="margin:0">${q.icon} ${esc(q.name)}</h3>${isMe ? `<button class="mini" data-act="quest-pause" data-item="${esc(q.id)}">Pause</button>` : ''}</div>
+                  <p class="muted" style="margin:0 0 10px">${esc(q.intro)}</p>
+                  ${steps(q)}
+                  <p class="muted" style="margin:8px 0 0;font-size:.85rem">Reward: ${fmt(q.reward)} pts + the title “${esc(q.title)}”.</p>
+                </div>`
+              )
+              .join('')}</div>`
+          : `<p class="muted">${isMe ? 'No active quest. Pick one below!' : 'No active quests.'}</p>`
       }
-      <div class="quest-list">${quests
-        .map((q) => `<span class="badge${q.status === 'done' ? ' gold' : ''}" title="${esc(q.intro)}">${q.status === 'done' ? '✅' : q.status === 'active' ? '▶️' : '🔒'} ${q.icon} ${esc(q.name)}</span>`)
+      <div class="quest-cards">${others
+        .map(
+          (q) => `<div class="quest-card ${q.status}" title="${esc(q.intro)}">
+            <b>${q.icon} ${esc(q.name)}</b>
+            <small class="muted">${q.steps.length} steps · ${fmt(q.reward)} pts · “${esc(q.title)}”</small>
+            ${label[q.status] ? `<small>${label[q.status]}</small>` : ''}
+            ${
+              isMe && q.status !== 'done'
+                ? `<button class="mini" data-act="quest-start" data-item="${esc(q.id)}" ${full ? 'disabled title="Pause one of your 3 active quests first"' : ''}>${q.status === 'paused' ? 'Resume' : 'Start'}</button>`
+                : ''
+            }
+          </div>`
+        )
         .join('')}</div>
+      ${isMe ? '<p class="muted" style="margin:10px 0 0;font-size:.85rem">In chat: <code>!quest</code> shows your active quests, <code>!quests</code> lists them all, <code>!quest start relic hunter</code> / <code>!quest pause relic hunter</code>. Paused quests keep their progress.</p>' : ''}
     </section>`;
   }
 
@@ -607,10 +630,11 @@
         if (!confirm(`Sell 1 ${name} for ${fmt(value)} points?`)) return;
         body = { item, qty: 1 };
       } else if (act === 'plant' || act === 'harvest' || act === 'heal') body = {};
+      else if (act.startsWith('quest-')) body = { quest: item };
       else body = act === 'unequip' ? { slot } : { item };
       b.disabled = true;
       try {
-        const r = await api(`/me/${act}`, { method: 'POST', body });
+        const r = await api(`/me/${act.replace('quest-', 'quest/')}`, { method: 'POST', body });
         toast(r.message);
         route();
       } catch (err) {
@@ -1463,7 +1487,7 @@
       ...g.skills.filter((s) => s.type === 'combat').map((s) => skillTopic(s, 'combat')),
       {
         id: 'quests', tab: 'rewards', icon: '📜', title: 'Quests', summary: `${g.quests.length} short storylines with points and titles`,
-        body: `<p>Quests unlock one after another and count what you already do. ${c('quest')} shows your current step; your character page shows them all.</p>${list(
+        body: `<p>Pick any quests you like, up to 3 at once: they all count what you already do. ${c('quest start relic hunter')} starts one, ${c('quest pause relic hunter')} pauses it (progress is kept), ${c('quest')} shows your active ones and ${c('quests')} lists them all. Or use the buttons on your character page.</p>${list(
           g.quests.map((q) => `${q.icon} <b>${esc(q.name)}</b>: ${q.steps.map(esc).join(' → ')}. <span class="muted">Reward ${fmt(q.reward)} pts + “${esc(q.title)}”</span>`)
         )}`,
       },
@@ -1623,7 +1647,8 @@
         ['stats [name]', 'Levels and points'],
         ['stamina', 'Your stamina bar'],
         ['race [race]', 'Your race and its perks'],
-        ['quest', 'Your current quest step'],
+        ['quest', 'Your active quests (quest start / pause <name>)'],
+        ['quests', 'All quests and which are done'],
         ['pet [name]', 'Your pets, or switch the active one'],
         ['prestige <skill>', 'Reset a high skill for a star and +5% XP'],
         ['top [skill]', 'Top 5 players'],
