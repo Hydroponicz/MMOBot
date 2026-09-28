@@ -210,10 +210,12 @@
      <div id="sheet">
       <section class="panel">
         <div class="char-header">
-          ${avatar(p.avatarUrl, p.username)}
+          ${p.appearance ? `<div class="char-portrait">${window.MMOAvatar.svg(p.appearance, { size: 110, title: `${p.username} the ${p.appearance.raceName}` })}</div>` : avatar(p.avatarUrl, p.username)}
           <div class="char-title">
             <h1>${esc(p.username)}${p.title ? ` <span class="char-titletext">${esc(p.title)}</span>` : ''}</h1>
             <div class="char-badges">
+              ${p.appearance ? `<span class="badge" title="${esc([...p.appearance.pros, ...p.appearance.cons].join(' · '))}">${p.appearance.raceIcon} ${esc(p.appearance.raceName)}</span>` : ''}
+              ${isMe ? '<a class="badge" href="#/customize">🎨 Customize</a>' : ''}
               ${p.subscriber ? '<span class="badge gold">⭐ Subscriber</span>' : ''}
               <span class="badge gold">💰 ${fmt(p.points)} points</span>
               <span class="badge">📊 Total level ${fmt(p.totalLevel)}</span>
@@ -677,6 +679,119 @@
     return pages.player([state.me.username]);
   };
 
+  // ---- Character customizer: race and look -------------------------------------------------
+  const LOOK_SECTIONS = [
+    ['skin', 'Skin tone'],
+    ['hair', 'Hairstyle'],
+    ['hairColor', 'Hair color'],
+    ['facialHair', 'Facial hair'],
+    ['eyes', 'Eyes'],
+    ['eyeColor', 'Eye color'],
+    ['brows', 'Eyebrows'],
+    ['nose', 'Nose'],
+    ['mouth', 'Mouth'],
+    ['extra', 'Extras'],
+    ['outfit', 'Outfit'],
+  ];
+
+  pages.customize = async () => {
+    if (!state.me) {
+      $app.innerHTML = `
+        <div class="panel empty">
+          <span class="ic">🎨</span>
+          <h2>Customize your character</h2>
+          <p>Log in with the Kick account you chat with to pick your race and look.</p>
+          ${state.loginEnabled ? `<a class="btn btn-primary" href="/auth/login">Log in with Kick</a>` : '<p>Kick login is not configured yet.</p>'}
+        </div>`;
+      return;
+    }
+    const data = await api('/appearance');
+    const mine = data.mine;
+    const draft = { race: mine.race, look: { ...mine.look } };
+    const locked = mine.raceChangeAt && mine.raceChangeAt > Date.now();
+    const daysLeft = locked ? Math.ceil((mine.raceChangeAt - Date.now()) / 86_400_000) : 0;
+
+    const draw = () => {
+      const race = data.races.find((r) => r.id === draft.race);
+      const changed = draft.race !== mine.race || LOOK_SECTIONS.some(([k]) => draft.look[k] !== mine.look[k]);
+      $app.innerHTML = `
+        <div class="customize">
+          <section class="panel customize-preview">
+            <div class="customize-portrait">${window.MMOAvatar.svg(draft, { size: 220, title: `${state.me.username} the ${race.name}` })}</div>
+            <h2 style="margin:10px 0 2px">${esc(state.me.username)}</h2>
+            <div class="muted">${race.icon} ${esc(race.name)}</div>
+            <div class="customize-actions">
+              <button class="btn" data-random>🎲 Random look</button>
+              <button class="btn btn-primary" data-save ${changed ? '' : 'disabled'}>Save</button>
+            </div>
+            ${changed ? '<p class="muted" style="font-size:.85rem;margin:8px 0 0">Unsaved changes</p>' : ''}
+          </section>
+          <div>
+            <section class="panel">
+              <div class="panel-head"><h2>Race</h2><span class="muted" style="font-size:.85rem">${
+                locked ? `🔒 You can change race again in ${daysLeft} day${daysLeft === 1 ? '' : 's'}` : `You can change race once every ${data.raceChangeDays} days`
+              }</span></div>
+              ${data.perksOn ? '' : '<p class="muted">Race perks are switched off right now, so races are just for looks.</p>'}
+              <div class="race-grid">
+                ${data.races
+                  .map(
+                    (r) => `<button class="race-card${r.id === draft.race ? ' active' : ''}" data-race="${r.id}" ${locked && r.id !== mine.race ? 'disabled' : ''}>
+                      <div class="race-name">${r.icon} ${esc(r.name)}${r.id === mine.race ? ' <span class="muted">(current)</span>' : ''}</div>
+                      <div class="muted race-text">${esc(r.text)}</div>
+                      <ul class="race-perks">${r.pros.map((x) => `<li class="pro">✅ ${esc(x)}</li>`).join('')}${r.cons.map((x) => `<li class="con">❌ ${esc(x)}</li>`).join('')}</ul>
+                    </button>`
+                  )
+                  .join('')}
+              </div>
+            </section>
+            <section class="panel">
+              <h2 style="margin-top:0">Look</h2>
+              <p class="muted" style="margin-top:-6px;font-size:.9rem">Change your look as often as you like.</p>
+              ${LOOK_SECTIONS.map(
+                ([key, label]) => `<div class="look-row"><div class="look-label">${label}</div><div class="look-options">${data.options[key]
+                  .map((o) =>
+                    o.color
+                      ? `<button class="swatch${draft.look[key] === o.id ? ' active' : ''}" data-key="${key}" data-val="${o.id}" title="${esc(o.label)}" style="--sw:${o.color}"></button>`
+                      : `<button class="tab${draft.look[key] === o.id ? ' active' : ''}" data-key="${key}" data-val="${o.id}">${esc(o.label)}</button>`
+                  )
+                  .join('')}</div></div>`
+              ).join('')}
+            </section>
+          </div>
+        </div>`;
+    };
+    draw();
+
+    $app.onclick = async (e) => {
+      const b = e.target.closest('button');
+      if (!b || b.disabled) return;
+      if (b.dataset.race) draft.race = b.dataset.race;
+      else if (b.dataset.key) draft.look[b.dataset.key] = b.dataset.val;
+      else if ('random' in b.dataset) {
+        for (const [key] of LOOK_SECTIONS) {
+          const opts = data.options[key];
+          draft.look[key] = opts[Math.floor(Math.random() * opts.length)].id;
+        }
+      } else if ('save' in b.dataset) {
+        const switching = draft.race !== mine.race;
+        if (switching && !confirm(`Become ${draft.race === 'elf' || draft.race === 'orc' || draft.race === 'undead' ? 'an' : 'a'} ${data.races.find((r) => r.id === draft.race).name}? You won't be able to change race again for ${data.raceChangeDays} days.`)) return;
+        b.disabled = true;
+        try {
+          const r = await api('/me/appearance', { method: 'PUT', body: { race: draft.race, look: draft.look } });
+          toast(r.message);
+          $app.onclick = null;
+          return route();
+        } catch (err) {
+          toast(err.message);
+          b.disabled = false;
+          return;
+        }
+      } else return;
+      draw();
+    };
+    return () => ($app.onclick = null);
+  };
+
   pages.guide = async () => {
     const g = await api('/guide');
     const rareRows = (s, cols) =>
@@ -763,6 +878,7 @@
           <ol class="steps">
             <li>Type a skill command in chat, like <code>${esc(g.skills[0].command)}</code>. Your character is created automatically.</li>
             <li>Each action gives XP and an item. You have <b>${g.staminaMax}</b> stamina charges: every action (skilling, fighting, farming, raid attacks) uses one (cooking on a lit fire is free), and the bar refills to full <b>${g.staminaMinutes} minutes</b> after you use the first. Check it with <code>${g.prefix}stamina</code>.</li>
+            <li>Every character starts as a random race with a random look. <a href="#/customize">Customize</a> your skin tone, face, hair, facial hair and outfit any time, and pick your race (once every ${g.raceChangeDays} days). ${g.racePerks ? 'Each race has perks and drawbacks' : 'Race perks are switched off right now'}: ${g.races.map((r) => `${r.icon} <b>${esc(r.name)}</b> (${[...r.pros.map(esc), ...r.cons.map((c) => `<span class="muted">${esc(c)}</span>`)].join(', ')})`).join(' · ')}. <code>${g.prefix}race</code> shows yours in chat.</li>
             <li>Higher levels unlock better resources. Target one directly, e.g. <code>!mine iron</code> or <code>!chop oak</code>.</li>
             <li>Mine ores, then <code>!smelt</code> them into <b>ingots</b> (one ore) and <b>alloys</b> (mixed ores, e.g. copper + tin = bronze). The ores come out of your backpack.</li>
             <li>Your backpack holds <b>${g.backpack[0].capacity} items</b> to start. When it's full, <code>!sell</code>, <code>!smelt</code> or <code>!upgrade backpack</code> (up to ${g.backpack[g.backpack.length - 1].capacity} slots).</li>
@@ -771,7 +887,7 @@
             ${g.xpMultiplier !== 1 ? `<li><b>🔥 ${g.xpMultiplier}× XP event is on right now!</b></li>` : ''}
             <li><b>Smithing</b>: buy a 🔨 Smithing Hammer in the <a href="#/shop">shop</a> (keep it in your backpack), then turn alloys into weapons and armor: <code>!smith bronze sword</code>. <code>!equip</code> gear for attack and defence, or <code>!sell</code> it.</li>
             <li><b>Skinning</b>: with a 🔪 Skinning Knife in your backpack (buy it in the <a href="#/shop">shop</a> or smith it at Smithing 20 from a Sterling Alloy), <code>!skin</code> animals for hides, from rabbits up to celestial fleece.</li>
-            <li><b>Farming</b>: everyone gets a free 🟫 farm plot. Buy seeds (and more plots, ${fmt((g.shop.find((x) => x.item === 'farm_plot') || {}).cost || 0)} pts each, up to 100) in the <a href="#/shop">shop</a>, <code>!plant carrot</code>, and <code>!harvest</code> when it's grown (carrots take 20 minutes, 1 crop per plot). ${g.skills.find((x) => x.type === 'farm')?.tiers.length || ''} crops to unlock up to level 500. Farming has its own cooldown, so you can farm while you do everything else.</li>
+            <li><b>Farming</b>: everyone gets a free 🟫 farm plot. Buy seeds (and more plots, ${fmt((g.shop.find((x) => x.item === 'farm_plot') || {}).cost || 0)} pts each, up to 100) in the <a href="#/shop">shop</a>, <code>!plant carrot</code>, and <code>!harvest</code> when it's grown (carrots take 20 minutes, 1 crop per plot). ${g.skills.find((x) => x.type === 'farm')?.tiers.length || ''} crops to unlock up to level 500. Planting and harvesting each use a stamina charge.</li>
             <li><b>Combat</b>: with a sword (shop or smithed), <code>!fight</code> monsters for Swords XP and loot. <code>!fight goblin</code> picks a target (<code>!targets</code> lists the best ones for your level, gear and HP), and you can pick any monster, but ones above your level hit much harder. <code>!monsters</code> rates them for you (⚪ too easy · 🟢 good match · 🟠 tough · 🔴 hard · ☠️ deadly) and <code>!scout troll</code> shows how a fight would go. A plain <code>!fight</code> picks your best safe match, and you're warned before a fight that would likely knock you out. Fights cost ❤️ HP (better weapons and armor mean less). At 0 HP you're knocked out: wait until you're back at full HP (24h) or <code>!drink</code> a health potion. <code>!heal</code> spends 🔷 mana to restore HP.</li>
             <li><b>Archery &amp; Fletching</b>: <code>!fletch arrows</code> from 1 Oak Logs + 1 🪶 Feathers (from chickens) + 1 Iron Ingot, 10 at a time. Arrows go in a 🧺 Quiver (shop 250 pts, or <code>!fletch quiver</code> from 2 Rabbit Hides), which holds 500. Get a bow (shop 500 pts, or <code>!fletch oak shortbow</code> from 2 Oak Logs), then <code>!shoot</code> monsters for Archery XP: each fight uses one arrow, and better arrows hit harder. <code>!fight</code> uses whichever combat skill you're best at.</li>
             <li><b>Firemaking</b>: buy a 🪨 Flint and Steel in the <a href="#/shop">shop</a> (${fmt((g.shop.find((x) => x.item === 'flint_and_steel') || {}).cost || 0)} pts, good for 250 fires), then <code>!lightfire</code> burns the best log in your backpack (or <code>!lightfire oak</code>). Better logs give more XP, and every fire leaves 🌫️ Ashes. Sometimes the fire won't catch; nothing is used up, just try again.</li>

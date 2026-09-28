@@ -259,7 +259,7 @@ class GameEngine extends EventEmitter {
         id,
         qty,
         ...ITEMS[id],
-        value: this.sellValue(id),
+        value: this.sellValue(id, userId),
         rare: !!ITEMS[id].rare,
         ...(id === 'flint_and_steel' ? { usesLeft: this.flintUses(userId) } : {}),
         ...(ITEMS[id].potion?.buff ? { effect: BUFFS[ITEMS[id].potion.buff] } : {}),
@@ -340,6 +340,7 @@ class GameEngine extends EventEmitter {
         };
       })(),
       stamina: this.stamina(userId),
+      appearance: this.publicAppearance(userId),
     };
   }
 
@@ -349,6 +350,9 @@ class GameEngine extends EventEmitter {
       prefix: this.cfg.prefix,
       staminaMax: this.cfg.staminaMax,
       staminaMinutes: this.cfg.staminaMinutes,
+      races: this.appearanceOptions().races,
+      raceChangeDays: this.cfg.raceChangeDays ?? 30,
+      racePerks: this.cfg.racePerks !== false,
       chatPoints: this.cfg.chatPoints,
       chatCooldown: this.cfg.chatCooldown,
       xpMultiplier: this.cfg.xpMultiplier,
@@ -423,7 +427,7 @@ function isChatCommand(word) {
 }
 
 // Feature modules add their methods to the engine.
-for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events', 'museum', 'progression']) {
+for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events', 'museum', 'progression', 'character']) {
   Object.assign(GameEngine.prototype, require(`./features/${mod}`));
 }
 

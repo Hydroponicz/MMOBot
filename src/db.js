@@ -130,6 +130,11 @@ function migrate(db) {
   if (!cols.includes('title')) db.exec("ALTER TABLE users ADD COLUMN title TEXT NOT NULL DEFAULT ''");
   // Stamina charges: NULL means a full bar. stamina_at is when the bar started refilling (first charge used).
   if (!cols.includes('stamina')) db.exec('ALTER TABLE users ADD COLUMN stamina INTEGER');
+  // Race and look: NULL = the random one picked from the player's id (see game/appearance.js).
+  // race_changed_at: when they last picked a race on the website (limits race changes).
+  if (!cols.includes('race')) db.exec('ALTER TABLE users ADD COLUMN race TEXT');
+  if (!cols.includes('look')) db.exec('ALTER TABLE users ADD COLUMN look TEXT');
+  if (!cols.includes('race_changed_at')) db.exec('ALTER TABLE users ADD COLUMN race_changed_at INTEGER NOT NULL DEFAULT 0');
   if (!cols.includes('stamina_at')) db.exec('ALTER TABLE users ADD COLUMN stamina_at INTEGER NOT NULL DEFAULT 0');
 }
 
@@ -304,6 +309,8 @@ function createRepo(db) {
     plant: (userId, plot, crop, plantedAt, readyAt) => stmt.plant.run(userId, plot, crop, plantedAt, readyAt),
     clearPlot: (userId, plot) => stmt.clearPlot.run(userId, plot),
     setFarmAt: (userId, ts) => stmt.setFarmAt.run(ts, userId),
+    setAppearance: (userId, race, look, raceChangedAt) =>
+      db.prepare('UPDATE users SET race = ?, look = ?, race_changed_at = ? WHERE id = ?').run(race, JSON.stringify(look), raceChangedAt, userId),
     setStamina: (userId, stamina, at) => db.prepare('UPDATE users SET stamina = ?, stamina_at = ? WHERE id = ?').run(stamina, at, userId),
     // Simple per-player fields (whitelisted, so the column name is never user input).
     setUserField(userId, field, value) {

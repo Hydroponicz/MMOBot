@@ -51,8 +51,9 @@ module.exports = {
   vitals(userId, now = this.now()) {
     const u = this.repo.getUser(userId);
     const level = this.combatLevel(userId);
-    const maxHp = maxHpFor(level);
-    const maxMana = maxManaFor(level);
+    const perk = this.perks(userId);
+    const maxHp = Math.round(maxHpFor(level) * perk.hp);
+    const maxMana = Math.round(maxManaFor(level) * perk.mana);
     const regen = (value, at, max, hours) => (value === null || value === undefined ? max : Math.min(max, value + (max * Math.max(0, now - at)) / (hours * 3_600_000)));
     const mana = regen(u.mana, u.mana_at, maxMana, this.cfg.manaRegenHours);
     if (u.ko_until > now) return { hp: 0, maxHp, mana, maxMana, ko: true, koUntil: u.ko_until };
@@ -120,7 +121,7 @@ module.exports = {
 
   // Grave Luck doubles rare chances.
   luck(userId) {
-    return this.hasBuff(userId, 'luck') ? 2 : 1;
+    return (this.hasBuff(userId, 'luck') ? 2 : 1) * this.perks(userId).luck;
   },
 
   // ---- Stamina ------------------------------------------------------------------
@@ -134,11 +135,12 @@ module.exports = {
 
   // { charges, max, refillAt } (refillAt null = full).
   stamina(userId, now = this.now()) {
-    const max = Math.max(1, this.cfg.staminaMax ?? 3);
+    const max = Math.max(1, (this.cfg.staminaMax ?? 3) + this.perks(userId).stamina);
     const u = this.repo.getUser(userId);
     if (!u || u.stamina === null || u.stamina === undefined) return { charges: max, max, refillAt: null, startedAt: null };
     const refillAt = u.stamina_at + this.staminaRefillMs(userId, now);
-    if (now >= refillAt) return { charges: max, max, refillAt: null, startedAt: null };
+    // (Also full when the max went down, e.g. a Halfling who changed race.)
+    if (now >= refillAt || u.stamina >= max) return { charges: max, max, refillAt: null, startedAt: null };
     return { charges: clamp(u.stamina, 0, max), max, refillAt, startedAt: u.stamina_at };
   },
 

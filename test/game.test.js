@@ -6,7 +6,7 @@ const { xpForLevel, levelForXp, progress } = require('../src/game/xp');
 
 const baseConfig = {
   baseUrl: 'http://localhost:3000',
-  game: { prefix: '!', staminaMax: 1, staminaMinutes: 0.5, chatPoints: 5, chatCooldown: 60, replyInChat: true },
+  game: { prefix: '!', staminaMax: 1, staminaMinutes: 0.5, racePerks: false, chatPoints: 5, chatCooldown: 60, replyInChat: true },
 };
 
 function setup({ rolls } = {}) {
@@ -1723,4 +1723,58 @@ test('stamina: 3 charges, used by any action, full again 5 minutes after the fir
   assert.match(say('!stamina'), /full again in 2m 30s/);
   t += 150_000;
   assert.match(say('!stamina'), /3\/3/);
+});
+
+test('races: everyone starts with a random race and look; perks change XP, HP, stamina and prices', () => {
+  const repo = openDb(':memory:');
+  let t = 1_000_000;
+  const cfg = { ...baseConfig, game: { ...baseConfig.game, racePerks: true, raceChangeDays: 30 } };
+  const engine = new GameEngine({ repo, config: cfg, rng: () => 0.99, now: () => t });
+  const say = (content) => engine.handleChat({ kickUserId: '1', username: 'Alice', content }).reply;
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+
+  // A stable random character, no database write needed.
+  const first = engine.appearance(u.id);
+  assert.deepEqual(engine.appearance(u.id), first);
+  assert.equal(first.custom, false);
+  const { RACE_IDS, randomCharacter } = require('../src/game/appearance');
+  assert.ok(RACE_IDS.includes(first.race));
+  const races = new Set(Array.from({ length: 60 }, (_, i) => randomCharacter(i).race));
+  assert.ok(races.size >= 5, 'random races are spread out');
+
+  // The first race pick is free, then it's locked for 30 days. Looks can change any time.
+  const other = first.race === 'dwarf' ? 'elf' : 'dwarf';
+  assert.equal(engine.setAppearance(u, { race: other, look: { hair: 'mohawk', facialHair: 'longbeard' } }).ok, true);
+  assert.equal(engine.appearance(u.id).race, other);
+  assert.equal(engine.appearance(u.id).look.hair, 'mohawk');
+  assert.match(engine.setAppearance(u, { race: 'orc' }).error, /change your race again in 30 day/);
+  assert.equal(engine.setAppearance(u, { look: { hair: 'bun' } }).ok, true);
+  assert.equal(engine.setAppearance(u, { look: { hair: 'afro-mullet' } }).error, 'unknown hair: afro-mullet');
+  assert.equal(engine.setAppearance(u, { race: 'dragon' }).ok, false);
+  t += 30 * 86_400_000;
+
+  // Dwarf: +15% mining XP, +15% HP. Elf: -15% HP.
+  assert.equal(engine.setAppearance(u, { race: 'dwarf' }).ok, true);
+  assert.equal(engine.raceXp(u.id, 'mining'), 1.15);
+  assert.equal(engine.raceXp(u.id, 'archery'), 0.85);
+  const dwarfHp = engine.vitals(u.id).maxHp;
+  assert.match(say('!race'), /you are a 🧔 Dwarf\. ✅ \+15% Mining/);
+  assert.match(say('!race elf'), /🧝 Elf: ✅/);
+
+  // Halfling: +1 stamina charge.
+  t += 30 * 86_400_000;
+  engine.setAppearance(u, { race: 'halfling' });
+  assert.equal(engine.stamina(u.id).max, 2);
+  assert.ok(engine.vitals(u.id).maxHp < dwarfHp);
+
+  // Orc: sells for 10% less.
+  t += 30 * 86_400_000;
+  engine.setAppearance(u, { race: 'orc' });
+  assert.equal(engine.sellValue('shrimp', u.id), Math.round(engine.sellValue('shrimp') * 0.9));
+
+  // Perks off: races are cosmetic.
+  engine.cfg.racePerks = false;
+  assert.equal(engine.stamina(u.id).max, 1);
+  assert.equal(engine.raceXp(u.id, 'swords'), 1);
+  assert.equal(engine.sellValue('shrimp', u.id), engine.sellValue('shrimp'));
 });

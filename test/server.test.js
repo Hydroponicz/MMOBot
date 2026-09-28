@@ -17,7 +17,7 @@ function makeConfig(overrides = {}) {
       oauthBase: 'https://id.kick.com',
       apiBase: 'https://api.kick.com',
     },
-    game: { prefix: '!', staminaMax: 1, staminaMinutes: 0.5, chatPoints: 5, chatCooldown: 60, replyInChat: false },
+    game: { prefix: '!', staminaMax: 1, staminaMinutes: 0.5, racePerks: false, chatPoints: 5, chatCooldown: 60, replyInChat: false },
     adminUsers: [],
     devMode: true,
     persistentStorage: true,
@@ -344,4 +344,34 @@ test('webhook: follows and subscriber badges reach the game', async (t) => {
   assert.equal(s.repo.getUserByKickId('50').points, 100);
   assert.equal(s.repo.getUserByKickId('51').subscriber, 1);
   assert.equal(s.repo.getUserByKickId('51').points, 10, 'subscribers earn 2x chat points');
+});
+
+test('character customizer: options, save a look and race, race change is locked', async (t) => {
+  const { createSessions } = require('../src/web/session');
+  const config = makeConfig();
+  const s = await start(config);
+  t.after(s.close);
+  const opts = await fetch(`${s.url}/api/appearance`).then((r) => r.json());
+  assert.equal(opts.mine, null);
+  assert.equal(opts.races.length, 6);
+  assert.ok(opts.options.hair.some((o) => o.id === 'mohawk'));
+  assert.ok(opts.options.skin.every((o) => /^#[0-9a-f]{6}$/.test(o.color)));
+
+  const put = (body, cookie) =>
+    fetch(`${s.url}/api/me/appearance`, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...(cookie ? { cookie } : {}) }, body: JSON.stringify(body) });
+  assert.equal((await put({ race: 'elf' })).status, 401);
+
+  const u = s.repo.upsertUser({ kickUserId: '7', username: 'Viewer' });
+  let cookie;
+  createSessions({ secret: config.sessionSecret, secure: false }).write({ cookie: (n, v) => (cookie = `${n}=${v}`) }, 'mmo_session', { uid: u.id }, 60_000);
+  const race = s.engine.appearance(u.id).race === 'elf' ? 'orc' : 'elf';
+  const ok = await put({ race, look: { hair: 'braids', skin: 'deep' } }, cookie);
+  assert.equal(ok.status, 200);
+  const body = await ok.json();
+  assert.equal(body.profile.appearance.race, race);
+  assert.equal(body.profile.appearance.look.hair, 'braids');
+  const again = await put({ race: 'undead' }, cookie);
+  assert.equal(again.status, 400);
+  assert.match((await again.json()).error, /change your race again/);
+  assert.equal((await put({ look: { skin: 'nope' } }, cookie)).status, 400);
 });

@@ -177,8 +177,10 @@ module.exports = {
     };
   },
 
-  sellValue(itemId) {
-    return Math.round(ITEMS[itemId].value * this.cfg.sellMultiplier);
+  // With a userId, the player's race perk applies (e.g. Orcs sell for 10% less).
+  sellValue(itemId, userId = null) {
+    const race = userId ? this.perks(userId).sell : 1;
+    return Math.round(ITEMS[itemId].value * this.cfg.sellMultiplier * race);
   },
 
   // ---- Tools & upgrades (!upgrade rod, !upgrade backpack) --------------------

@@ -105,7 +105,7 @@ module.exports = {
       let sum = 0;
       for (const [id, qty] of entries) {
         this.repo.removeItem(user.id, id, qty);
-        sum += this.sellValue(id) * qty;
+        sum += this.sellValue(id, user.id) * qty;
       }
       this.repo.addPoints(user.id, sum);
       this.track('sold', sum);

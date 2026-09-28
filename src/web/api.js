@@ -81,6 +81,17 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     return engine.sell(req.user, [String(req.body?.item || ''), qty]);
   }));
 
+  // Character customizer: the options, races and (logged in) your current look.
+  router.get('/appearance', (req, res) => {
+    res.json({ ...engine.appearanceOptions(), mine: req.user ? engine.publicAppearance(req.user.id) : null });
+  });
+  router.put('/me/appearance', requireLogin, (req, res) => {
+    const r = engine.setAppearance(req.user, { race: req.body?.race, look: req.body?.look });
+    if (!r.ok) return res.status(400).json({ error: r.error });
+    logger.info(`[site] ${req.user.username}: appearance → ${r.message}`);
+    res.json({ message: r.message, profile: engine.profile(req.user.id) });
+  });
+
   router.get('/player/:name', (req, res) => {
     const user = repo.getUserByName(req.params.name);
     if (!user) return res.status(404).json({ error: 'player not found' });

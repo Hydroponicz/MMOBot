@@ -80,6 +80,7 @@ const INFO_COMMANDS = {
   eat: ['eat', 'eat'], food: ['eat', 'eat'],
   fire: ['fireInfo', 'eat'],
   stamina: ['staminaInfo', 'hp'], energy: ['staminaInfo', 'hp'],
+  race: ['raceInfo', 'stats'], races: ['raceInfo', 'stats'],
   buffs: ['buffsInfo', 'hp'], effects: ['buffsInfo', 'hp'],
   monsters: ['monstersInfo', 'monsters'], mobs: ['monstersInfo', 'monsters'],
   targets: ['targets', 'targets'], target: ['targets', 'targets'],

@@ -114,10 +114,11 @@ module.exports = {
     // Arrows, spells, and leather armor's archery bonus add to the weapon's attack.
     const attack =
       ITEMS[pick.weapon].attack + (pick.arrow ? ITEMS[pick.arrow].attack : 0) + (pick.spell ? pick.spell.attack : 0) + (pick.skillId === 'archery' ? st.archeryBonus : 0);
+    const perk = this.perks(userId);
     return {
-      // Banshee Fury: +25% attack.
-      attack: this.hasBuff(userId, 'fury') ? Math.round(attack * 1.25) : attack,
-      defence: st.defence,
+      // Banshee Fury: +25% attack. Race perks scale attack and defence.
+      attack: Math.round(attack * (this.hasBuff(userId, 'fury') ? 1.25 : 1) * perk.attack),
+      defence: Math.round(st.defence * perk.defence),
     };
   },
 

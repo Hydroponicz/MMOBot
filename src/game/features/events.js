@@ -392,7 +392,7 @@ module.exports = {
       const level = pick.weapon ? pick.level : this.combatLevel(u.id);
       const stats = pick.weapon ? this.fightStats(u.id, pick) : { attack: 0, defence: this.combatStats(u.id).defence };
       const skill = pick.weapon ? SKILLS[pick.skillId].name : 'Fists';
-      return { u, level, stats, hp: maxHpFor(this.combatLevel(u.id)), label: `${skill} ${level}${pick.weapon ? `, ${ITEMS[pick.weapon].name}` : ''}` };
+      return { u, level, stats, hp: this.vitals(u.id).maxHp, label: `${skill} ${level}${pick.weapon ? `, ${ITEMS[pick.weapon].name}` : ''}` };
     };
     const fa = fighter(a);
     const fb = fighter(b);

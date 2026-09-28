@@ -342,7 +342,8 @@ module.exports = {
       id = owned.find((i) => ITEMS[i].food.heal >= missing) || owned[owned.length - 1];
     }
     if (vit.hp >= vit.maxHp) return `you're already at full health. ${this.vitalsLine(vit)}`;
-    const hp = Math.min(vit.maxHp, vit.hp + ITEMS[id].food.heal);
+    // Undead get less out of food.
+    const hp = Math.min(vit.maxHp, vit.hp + Math.round(ITEMS[id].food.heal * this.perks(user.id).food));
     this.repo.transaction(() => {
       this.repo.removeItem(user.id, id, 1);
       this.repo.setVitals(user.id, { hp, mana: vit.mana, koUntil: 0 }, now);
@@ -383,6 +384,8 @@ module.exports = {
   // Adds XP and action points; returns "+X XP, +Y pts" plus level-up / progress text for the reply.
   grantXp(user, skillId, xpGain) {
     const skill = SKILLS[skillId];
+    // Race perk (e.g. Dwarves +15% Mining XP).
+    xpGain = Math.max(1, Math.round(xpGain * this.raceXp(user.id, skillId)));
     // Bone Brew: +20% XP while it lasts.
     if (this.hasBuff(user.id, 'focus')) xpGain = Math.round(xpGain * 1.2);
     const before = this.repo.getSkills(user.id);

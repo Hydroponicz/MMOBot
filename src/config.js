@@ -70,6 +70,9 @@ const config = {
     // Stamina: every game action uses a charge; the bar refills to full staminaMinutes after the first use.
     staminaMax: int('STAMINA_MAX', 3),
     staminaMinutes: num('STAMINA_MINUTES', 5),
+    // Races: perks on/off and days between race changes.
+    racePerks: bool('RACE_PERKS', true),
+    raceChangeDays: int('RACE_CHANGE_DAYS', 30),
     hpRegenHours: int('HP_REGEN_HOURS', 24),
     manaRegenHours: int('MANA_REGEN_HOURS', 2),
     // Points for chatting: awarded at most once per chatCooldown seconds per user.

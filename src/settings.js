@@ -59,6 +59,8 @@ const FIELDS = {
   general: {
     prefix: { type: 'string', label: 'Command prefix', help: 'What commands start with, e.g. ! for !fish.', maxLength: 3 },
     staminaMax: { type: 'int', label: 'Stamina charges', help: 'How many actions a viewer can take before resting. Every game action (skilling, fighting, farming, raid !attack) uses one charge.', min: 1, max: 100 },
+    racePerks: { type: 'bool', label: 'Race perks', help: 'Races give perks and drawbacks (XP, HP, attack, sell prices...). Off = races are just for looks.' },
+    raceChangeDays: { type: 'int', label: 'Race change wait (days)', help: 'How often a player can pick a new race on the website. Their look can be changed any time.', min: 0, max: 365 },
     staminaMinutes: { type: 'number', label: 'Stamina refill (minutes)', help: 'The bar fills back up to full this long after the first charge is used.', min: 0.05, max: 1440 },
     hpRegenHours: { type: 'int', label: 'HP regen (hours)', help: 'Hours to go from 0 to full HP. Knocked-out players can fight again after this, or right away with a health potion.', min: 1, max: 168 },
     manaRegenHours: { type: 'int', label: 'Mana regen (hours)', help: 'Hours to go from 0 to full mana.', min: 1, max: 168 },
@@ -205,6 +207,8 @@ class Settings extends EventEmitter {
         prefix: config.game.prefix,
         staminaMax: config.game.staminaMax ?? 3,
         staminaMinutes: config.game.staminaMinutes ?? 5,
+        racePerks: config.game.racePerks ?? true,
+        raceChangeDays: config.game.raceChangeDays ?? 30,
         hpRegenHours: config.game.hpRegenHours ?? 24,
         manaRegenHours: config.game.manaRegenHours ?? 2,
         chatPoints: config.game.chatPoints,
