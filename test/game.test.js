@@ -992,6 +992,17 @@ test('saved shop prices survive new shop items being added', () => {
   repo.setSetting('config_overrides', { shop: [{ cost: 111 }, { cost: 222 }] });
   const settings = new Settings({ config: { ...baseConfig, adminUsers: [], kick: { channel: 's' } }, repo });
   assert.deepEqual(settings.all.shop.slice(0, 4).map((r) => r.cost), [111, 222, 500, 750]);
+  // Saved rows now carry the item, so they stay on it even if items are added before it.
+  assert.equal(settings.all.shop[0].item, 'smithing_hammer');
+  const rows = settings.all.shop.map((r) => ({ cost: r.item === 'quiver' ? 99 : r.cost }));
+  settings.update('shop', rows);
+  const saved = repo.getSetting('config_overrides').shop;
+  assert.deepEqual(saved.find((r) => r.item === 'quiver'), { item: 'quiver', cost: 99 });
+  // Simulate a new item being inserted at the front: the saved quiver price still lands on the quiver.
+  repo.setSetting('config_overrides', { shop: [{ item: 'new_thing', cost: 5 }, ...saved] });
+  settings.reload();
+  assert.equal(settings.all.shop.find((r) => r.item === 'quiver').cost, 99);
+  assert.equal(settings.all.shop.find((r) => r.item === 'smithing_hammer').cost, 111);
 });
 
 // ---- Sterling alloy, farming ---------------------------------------------------

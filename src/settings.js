@@ -112,6 +112,8 @@ TABLES.backpack = {
 };
 TABLES.shop = {
   label: 'Shop prices',
+  // Saved rows are matched to items by id, so adding items anywhere never moves a saved price.
+  key: 'item',
   columns: { cost: { type: 'int', label: 'Price (points)', min: 0, max: 1e12 } },
   rows: () => SHOP.map((x) => ({ ...x, name: ITEMS[x.item].name, icon: ITEMS[x.item].icon })),
 };
@@ -190,7 +192,10 @@ class Settings extends EventEmitter {
       disabledCommands: [],
     };
     for (const [key, t] of Object.entries(TABLES)) {
-      this.defaults[key] = t.rows().map((row) => Object.fromEntries(Object.keys(t.columns).map((c) => [c, row[c]])));
+      this.defaults[key] = t.rows().map((row) => ({
+        ...(t.key ? { [t.key]: row[t.key] } : {}),
+        ...Object.fromEntries(Object.keys(t.columns).map((c) => [c, row[c]])),
+      }));
     }
     this.reload();
   }
@@ -203,8 +208,17 @@ class Settings extends EventEmitter {
     }
     const d = this.defaults;
     // Saved tables are applied row by row, so adding rows later (e.g. a new shop item) keeps earlier edits.
-    const table = (name) =>
-      Array.isArray(o[name]) && o[name].length <= d[name].length ? d[name].map((row, i) => ({ ...row, ...(o[name][i] || {}) })) : d[name];
+    const table = (name) => {
+      const saved = o[name];
+      if (!Array.isArray(saved)) return d[name];
+      const key = TABLES[name].key;
+      if (key) {
+        // Rows saved before keys existed are in the old order, which matched the defaults' first rows.
+        const byKey = new Map(saved.map((row, i) => [row[key] ?? d[name][i]?.[key], row]));
+        return d[name].map((row) => ({ ...row, ...(byKey.get(row[key]) || {}), [key]: row[key] }));
+      }
+      return saved.length <= d[name].length ? d[name].map((row, i) => ({ ...row, ...(saved[i] || {}) })) : d[name];
+    };
     this.all = {
       general: { ...d.general, ...(o.general || {}) },
       economy: { ...d.economy, ...(o.economy || {}) },
@@ -260,6 +274,7 @@ class Settings extends EventEmitter {
       }
     }
     if (t.tool && out[0].level !== 1) throw new SettingsError(`${t.label}: the first tier must be available at level 1`);
+    if (t.key) return out.map((row, i) => ({ [t.key]: this.defaults[section][i][t.key], ...row }));
     return out;
   }
 
