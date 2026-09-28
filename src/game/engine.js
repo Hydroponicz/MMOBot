@@ -45,12 +45,14 @@ const {
 
 class GameEngine extends EventEmitter {
   // settings: a Settings instance (live, admin-editable). Tests may pass a plain { game, all } object.
-  constructor({ repo, config, settings, rng = Math.random, now = () => Date.now() }) {
+  constructor({ repo, config, settings, rng = Math.random, petRng = Math.random, now = () => Date.now() }) {
     super();
     this.repo = repo;
     this.settings = settings || staticSettings(config);
     this.siteUrl = config.baseUrl;
     this.rng = rng;
+    // Pet drops use their own dice, so they never shift the game's other rolls.
+    this.petRng = petRng;
     this.now = now;
     this.cooldownWarned = new Map(); // userId -> stamina refill we already warned about
     this.lastBet = new Map(); // userId -> time of last casino bet (casino cooldown)
@@ -207,7 +209,7 @@ class GameEngine extends EventEmitter {
   emitActivity(user, entry) {
     const id = this.repo.logActivity({ userId: user.id, ...entry });
     // The overlay draws the player's character doing the action, so it gets their look and the item's icon.
-    const look = this.appearance(user.id);
+    const look = this.characterView(user.id);
     this.emit('activity', {
       id,
       username: user.username,
@@ -216,7 +218,7 @@ class GameEngine extends EventEmitter {
       item: null,
       xp: 0,
       icon: entry.item ? ITEMS[entry.item]?.icon : undefined,
-      appearance: look ? { race: look.race, look: look.look } : undefined,
+      appearance: look || undefined,
       ...entry,
     });
     // Daily tasks and achievements watch the activity feed.

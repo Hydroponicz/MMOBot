@@ -109,7 +109,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       rank: offset + i + 1,
       username: r.username,
       avatarUrl: r.avatar_url,
-      appearance: (({ race, look } = {}) => (race ? { race, look } : null))(engine.appearance(r.id) || {}),
+      appearance: r.id ? engine.characterView(r.id) : null,
       xp: r.xp ?? null,
       points: r.points ?? null,
       level:
@@ -412,7 +412,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       skill: 'mining',
       item: null,
       icon: '💎',
-      appearance: (({ race, look } = {}) => ({ race, look }))(engine.appearance(req.user.id) || {}),
+      appearance: engine.characterView(req.user.id),
       xp: 0,
       created_at: Date.now(),
     });

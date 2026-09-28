@@ -42,6 +42,7 @@ const {
   GATHER_HINT,
   unlockName,
 } = require('./shared');
+const { RACES } = require('../appearance');
 
 module.exports = {
   // ---- Skilling ----------------------------------------------------------
@@ -173,7 +174,10 @@ module.exports = {
   // Smelting: turns ores from the backpack into ingots (one ore type) and alloys (mixed ores).
   // Always frees backpack space, so it works even when the backpack is full.
   process(user, skillId, args) {
-    const skill = SKILLS[skillId];
+    const base = SKILLS[skillId];
+    // Race-only recipes (e.g. the Dwarven Warhammer) are hidden from other races.
+    const race = this.appearance(user.id)?.race;
+    const skill = { ...base, recipes: base.recipes.filter((r) => !r.race || r.race === race) };
     const level = skillLevel(skillId, this.repo.getSkills(user.id)[skillId]);
     const inv = this.repo.getInventory(user.id);
     if (skill.requires && !inv[skill.requires]) return { consumed: false, reply: this.missingToolMessage(skill) };
@@ -200,6 +204,8 @@ module.exports = {
     }
     if (args.length) {
       const id = findItem(args.join(' '), skill.recipes.map((r) => r.item));
+      const other = !id && base.recipes.find((r) => r.race && r.race !== race && r.item === findItem(args.join(' '), [r.item]));
+      if (other) return { consumed: false, reply: `only ${RACES[other.race].plural} know how to make the ${ITEMS[other.item].name}! (${this.siteUrl}/#/customize)` };
       if (!id) {
         if (skill.pickBest === false) {
           const eg = skill.example || 'bronze sword (sword, helmet, shield, platelegs, platebody) or !smith skinning knife';
@@ -385,7 +391,8 @@ module.exports = {
   grantXp(user, skillId, xpGain) {
     const skill = SKILLS[skillId];
     // Race perk (e.g. Dwarves +15% Mining XP).
-    xpGain = Math.max(1, Math.round(xpGain * this.raceXp(user.id, skillId)));
+    // Race perk (e.g. Dwarves +15% Mining XP), active pet (+5%) and prestige (+5% each).
+    xpGain = Math.max(1, Math.round(xpGain * this.raceXp(user.id, skillId) * this.petXp(user.id, skillId) * this.prestigeXp(user.id, skillId)));
     // Bone Brew: +20% XP while it lasts.
     if (this.hasBuff(user.id, 'focus')) xpGain = Math.round(xpGain * 1.2);
     const before = this.repo.getSkills(user.id);
@@ -419,6 +426,9 @@ module.exports = {
       text += ` ⭐ Character level ${charAfter}!`;
       this.emitActivity(user, { kind: 'charlevel', text: `reached character level ${charAfter}` });
     }
+    this.noteStreamXp?.(user, xpGain);
+    const pet = this.rollPet(user, skillId);
+    if (pet) text += ` 🐾 RARE PET: ${pet.icon} ${pet.name}!`;
     return { points, text };
   },
 

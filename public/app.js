@@ -542,8 +542,11 @@
     const loggedIn = points !== null;
     const buyBtn = (i, locked) =>
       loggedIn ? `<button class="btn btn-primary btn-sm" data-buy="${esc(i.item)}" ${locked ? 'disabled' : ''}>Buy</button>` : '';
+    // Cosmetics show on a preview of your own character (or a sample one when logged out).
+    const sample = state.me?.appearance || { race: 'human', look: { skin: 'light', hair: 'short', hairColor: 'brown', outfit: 'blue' } };
+    const preview = (i) => window.MMOAvatar.svg({ ...sample, gear: {}, pet: null, stars: 0, cosmetics: { [i.cosmetic.slot]: i.cosmetic.style } }, { size: 84 });
     const card = (i) => `<section class="panel shop-item">
-            <div class="shop-icon">${i.icon}</div>
+            <div class="shop-icon">${i.cosmetic ? `<span class="shop-preview">${preview(i)}</span>` : i.icon}</div>
             <h2>${esc(i.name)}</h2>
             <p class="muted">${esc(i.description || '')}</p>
             ${i.attack ? `<p class="shop-stat">⚔️ +${i.attack} attack · needs ${esc(i.wieldSkill || 'Swords')} ${i.level}</p>` : ''}
@@ -553,7 +556,7 @@
               ${(i.item === 'farm_plot' || i.category === 'potions' || i.category === 'arrows') && loggedIn ? `<input type="number" class="qty" id="qty-${esc(i.item)}" value="${i.category === 'arrows' ? 50 : 1}" min="1" max="${i.category === 'arrows' ? 500 : 100}" aria-label="How many">` : ''}
               ${buyBtn(i, i.item === 'farm_plot' && plots >= 100)}
             </div>
-            <p class="muted" style="font-size:.8rem;margin:8px 0 0">In chat: <code>!buy ${esc(i.item === 'farm_plot' ? 'plot' : i.item === 'flint_and_steel' ? 'flint' : i.category === 'potions' ? i.name.toLowerCase() : i.category === 'arrows' ? `${i.name.toLowerCase()} 50` : i.name.split(' ').pop().toLowerCase())}</code></p>
+            <p class="muted" style="font-size:.8rem;margin:8px 0 0">In chat: <code>!buy ${esc(i.item === 'farm_plot' ? 'plot' : i.item === 'flint_and_steel' ? 'flint' : i.category === 'potions' ? i.name.toLowerCase() : i.category === 'arrows' ? `${i.name.toLowerCase()} 50` : i.cosmetic ? i.name.toLowerCase() : i.name.split(' ').pop().toLowerCase())}</code></p>
           </section>`;
     const allSeeds = items.filter((i) => i.category === 'seeds');
     // Show what you can plant now plus the next few unlocks; "Show all" reveals the rest.
@@ -563,6 +566,7 @@
     const top = items.filter((i) => !i.category || i.category === 'farming');
     const potions = items.filter((i) => i.category === 'potions');
     const arrows = items.filter((i) => i.category === 'arrows');
+    const cosmetics = items.filter((i) => i.category === 'cosmetics');
     $app.innerHTML = `
       <div class="panel-head" style="margin-bottom:6px"><h1 style="margin:0">🛒 Shop</h1>${
         loggedIn
@@ -573,6 +577,10 @@
       }</div>
       <p class="muted">Spend the points you earn in chat. You can also buy in chat, e.g. <code>!buy hammer</code> or <code>!buy carrot seeds 5</code>.</p>
       <div class="shop-grid">${top.map(card).join('')}</div>
+
+      <h2 style="margin:28px 0 6px">🎩 Cosmetics</h2>
+      <p class="muted">Hats, capes and auras for your character. Looks only, no stats. They show on your portrait, the leaderboards and the stream overlay, and don't take backpack space. Wear them on the <a href="#/customize">Customize</a> page.</p>
+      <div class="shop-grid">${cosmetics.map(card).join('')}</div>
 
       <h2 style="margin:28px 0 6px">🧪 Potions</h2>
       <p class="muted">Fights cost HP. At 0 you're knocked out until you're back at full HP (24h), or until you drink a health potion. <code>!drink</code> in chat drinks the best one for you. Or brew your own from farmed crops with <code>!brew</code>.</p>
@@ -711,13 +719,29 @@
     const locked = mine.raceChangeAt && mine.raceChangeAt > Date.now();
     const daysLeft = locked ? Math.ceil((mine.raceChangeAt - Date.now()) / 86_400_000) : 0;
 
+    // Hats, capes, auras and pets you own.
+    const WARDROBE = [
+      ['hat', 'Hat'],
+      ['cape', 'Cape'],
+      ['aura', 'Aura'],
+      ['pet', 'Pet'],
+    ];
+    const worn = (key) => mine.wardrobe[key].find((o) => o.id === draft.look[key]);
+    const view = () => ({
+      race: draft.race,
+      look: draft.look,
+      gear: mine.gear,
+      stars: mine.stars,
+      cosmetics: Object.fromEntries(['hat', 'cape', 'aura'].filter((k) => worn(k)).map((k) => [k, worn(k).style])),
+      pet: worn('pet')?.icon || null,
+    });
     const draw = () => {
       const race = data.races.find((r) => r.id === draft.race);
-      const changed = draft.race !== mine.race || LOOK_SECTIONS.some(([k]) => draft.look[k] !== mine.look[k]);
+      const changed = draft.race !== mine.race || [...LOOK_SECTIONS, ...WARDROBE].some(([k]) => (draft.look[k] || 'none') !== (mine.look[k] || 'none'));
       $app.innerHTML = `
         <div class="customize">
           <section class="panel customize-preview">
-            <div class="customize-portrait">${window.MMOAvatar.svg(draft, { size: 220, title: `${state.me.username} the ${race.name}` })}</div>
+            <div class="customize-portrait">${window.MMOAvatar.svg(view(), { size: 220, title: `${state.me.username} the ${race.name}` })}</div>
             <h2 style="margin:10px 0 2px">${esc(state.me.username)}</h2>
             <div class="muted">${race.icon} ${esc(race.name)}</div>
             <div class="customize-actions">
@@ -755,6 +779,19 @@
                       : `<button class="tab${draft.look[key] === o.id ? ' active' : ''}" data-key="${key}" data-val="${o.id}">${esc(o.label)}</button>`
                   )
                   .join('')}</div></div>`
+              ).join('')}
+            </section>
+            <section class="panel">
+              <h2 style="margin-top:0">Wardrobe</h2>
+              <p class="muted" style="margin-top:-6px;font-size:.9rem">Buy hats, capes and auras in the <a href="#/shop">shop</a>. Pets are rare finds from actions: each one gives +5% XP in its skill while it follows you. Your equipped gear shows on your character too.</p>
+              ${WARDROBE.map(
+                ([key, label]) => `<div class="look-row"><div class="look-label">${label}</div><div class="look-options">${
+                  mine.wardrobe[key].length
+                    ? [{ id: 'none', name: 'None', icon: '' }, ...mine.wardrobe[key]]
+                        .map((o) => `<button class="tab${(draft.look[key] || 'none') === o.id ? ' active' : ''}" data-key="${key}" data-val="${o.id}" title="${esc(o.skill ? `+5% ${o.skill} XP` : o.name)}">${o.icon} ${esc(o.name)}</button>`)
+                        .join('')
+                    : `<span class="muted" style="font-size:.9rem">${key === 'pet' ? 'No pets yet. Keep playing!' : `None yet. <a href="#/shop">Shop</a>`}</span>`
+                }</div></div>`
               ).join('')}
             </section>
           </div>

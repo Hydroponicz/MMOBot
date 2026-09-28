@@ -17,7 +17,7 @@ function makeConfig(overrides = {}) {
       oauthBase: 'https://id.kick.com',
       apiBase: 'https://api.kick.com',
     },
-    game: { prefix: '!', staminaMax: 1, staminaMinutes: 0.5, racePerks: false, chatPoints: 5, chatCooldown: 60, replyInChat: false },
+    game: { prefix: '!', staminaMax: 1, staminaMinutes: 0.5, racePerks: false, petDropMultiplier: 0, chatPoints: 5, chatCooldown: 60, replyInChat: false },
     adminUsers: [],
     devMode: true,
     persistentStorage: true,

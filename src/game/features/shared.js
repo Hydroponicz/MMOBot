@@ -81,6 +81,8 @@ const INFO_COMMANDS = {
   fire: ['fireInfo', 'eat'],
   stamina: ['staminaInfo', 'hp'], energy: ['staminaInfo', 'hp'],
   race: ['raceInfo', 'stats'], races: ['raceInfo', 'stats'],
+  pet: ['petCommand', 'stats'], pets: ['petCommand', 'stats'],
+  prestige: ['prestige', 'stats'],
   buffs: ['buffsInfo', 'hp'], effects: ['buffsInfo', 'hp'],
   monsters: ['monstersInfo', 'monsters'], mobs: ['monstersInfo', 'monsters'],
   targets: ['targets', 'targets'], target: ['targets', 'targets'],

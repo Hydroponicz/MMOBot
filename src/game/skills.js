@@ -1203,3 +1203,6 @@ module.exports = {
   MUSEUM,
   findItem,
 };
+
+// Cosmetics, pets, race-only items and quests add themselves to ITEMS, SHOP and the recipes.
+require('./content');

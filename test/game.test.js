@@ -6,7 +6,7 @@ const { xpForLevel, levelForXp, progress } = require('../src/game/xp');
 
 const baseConfig = {
   baseUrl: 'http://localhost:3000',
-  game: { prefix: '!', staminaMax: 1, staminaMinutes: 0.5, racePerks: false, chatPoints: 5, chatCooldown: 60, replyInChat: true },
+  game: { prefix: '!', staminaMax: 1, staminaMinutes: 0.5, racePerks: false, petDropMultiplier: 0, chatPoints: 5, chatCooldown: 60, replyInChat: true },
 };
 
 function setup({ rolls } = {}) {
@@ -1789,4 +1789,78 @@ test('activity events carry the player look and item icon for the overlay', () =
   assert.ok(a.icon);
   assert.ok(a.appearance.race);
   assert.ok(a.appearance.look.skin);
+});
+
+function extrasSetup(game = {}, petRng = () => 0.99) {
+  const repo = openDb(':memory:');
+  let t = 1_000_000;
+  const cfg = { ...baseConfig, game: { ...baseConfig.game, staminaMax: 100, ...game } };
+  const engine = new GameEngine({ repo, config: cfg, rng: () => 0.99, petRng, now: () => t });
+  const say = (content, username = 'Alice', kickUserId = '1') => engine.handleChat({ kickUserId, username, content }).reply;
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  return { repo, engine, say, u, wait: (ms) => (t += ms) };
+}
+
+test('cosmetics: bought in the shop, no backpack space, worn on the portrait; gear shows too', () => {
+  const { repo, engine, say, u } = extrasSetup();
+  repo.addPoints(u.id, 100_000);
+  assert.match(say('!buy party hat'), /bought 🥳 Party Hat for 2,000 pts! Wear it/);
+  assert.match(say('!buy party hat'), /already have/);
+  assert.equal(engine.backpack(u.id).used, 0, 'cosmetics take no backpack space');
+  assert.equal(engine.setAppearance(u, { look: { hat: 'party_hat' } }).ok, true);
+  assert.equal(engine.setAppearance(u, { look: { cape: 'golden_cape' } }).error, "you don't own that cape");
+  assert.equal(engine.setAppearance(u, { look: { cape: 'party_hat' } }).ok, false, 'a hat is not a cape');
+  repo.addItem(u.id, 'bronze_helmet', 1);
+  repo.addItem(u.id, 'bronze_sword', 1);
+  say('!equip bronze helmet');
+  say('!equip bronze sword');
+  const view = engine.characterView(u.id);
+  assert.equal(view.cosmetics.hat, 'party');
+  assert.equal(view.gear.head, '#b87333');
+  assert.deepEqual(view.gear.weapon, { type: 'sword', color: '#b87333' });
+  assert.match(say('!sell all'), /nothing to sell|bag is empty|sold/);
+  assert.equal(repo.getInventory(u.id).party_hat, 1, 'cosmetics are kept by !sell all');
+  engine.setAppearance(u, { look: { hat: 'none' } });
+  assert.equal(engine.characterView(u.id).cosmetics.hat, undefined);
+});
+
+test('pets: rare drop once per skill, follows you, +5% XP in its skill', () => {
+  const { repo, engine, say, u } = extrasSetup({ petDropMultiplier: 1 }, () => 0);
+  assert.match(say('!pet'), /no pets yet/);
+  assert.match(say('!fish'), /RARE PET: 🐧 Heron Chick/);
+  assert.equal(repo.getInventory(u.id).pet_heron, 1);
+  assert.doesNotMatch(say('!fish'), /RARE PET/, 'only one of each pet');
+  assert.equal(engine.appearance(u.id).look.pet, 'pet_heron', 'the first pet follows you');
+  assert.equal(engine.petXp(u.id, 'fishing'), 1.05);
+  assert.equal(engine.petXp(u.id, 'mining'), 1);
+  say('!mine');
+  assert.match(say('!pet'), /pets \(2\/16\).*Following you: 🐧 Heron Chick/);
+  assert.match(say('!pet golem'), /Rock Golem is following you now/);
+  assert.equal(engine.characterView(u.id).pet, '🗿');
+  assert.equal(engine.backpack(u.id).used, 3, 'pets take no backpack space (just 2 fish and 1 ore)');
+});
+
+test('prestige: reset a level 100+ skill for a star and +5% XP', () => {
+  const { repo, engine, say, u } = extrasSetup();
+  assert.match(say('!prestige mining'), /need ⛏️ Mining level 100/);
+  repo.addXp(u.id, 'mining', xpForLevel(120));
+  assert.match(say('!prestige mining'), /resets ⛏️ Mining from level 120 to 1.*!prestige mining confirm/);
+  assert.match(say('!prestige mining confirm'), /Mining prestige 1! Back to level 1 with \+5% Mining XP/);
+  assert.equal(repo.getSkills(u.id).mining, 0);
+  assert.equal(engine.prestigeXp(u.id, 'mining'), 1.05);
+  assert.equal(engine.characterView(u.id).stars, 1);
+  assert.match(say('!mine'), /\+11 XP/, '10 XP base +5%');
+});
+
+test('race-only items: only that race can make them', () => {
+  const { repo, engine, say, u, wait } = extrasSetup({ raceChangeDays: 0 });
+  repo.addXp(u.id, 'smithing', xpForLevel(45));
+  repo.addItem(u.id, 'smithing_hammer', 1);
+  repo.addItem(u.id, 'mithril_bar', 6);
+  engine.setAppearance(u, { race: 'elf' });
+  assert.match(say('!smith dwarven warhammer'), /only Dwarves know how to make the Dwarven Warhammer/);
+  wait(1);
+  engine.setAppearance(u, { race: 'dwarf' });
+  assert.match(say('!smith dwarven warhammer'), /you \w+ 🔨 Dwarven Warhammer/);
+  assert.equal(repo.getInventory(u.id).dwarven_warhammer, 1);
 });

@@ -8,6 +8,7 @@ const crypto = require('node:crypto');
 const RACES = {
   human: {
     name: 'Human',
+    plural: 'Humans',
     icon: '🧑',
     text: 'Adaptable jacks of all trades.',
     perks: { xp: { all: 1.05 }, sell: 1.05 },
@@ -16,6 +17,7 @@ const RACES = {
   },
   elf: {
     name: 'Elf',
+    plural: 'Elves',
     icon: '🧝',
     text: 'Graceful forest folk with a gift for bows and growing things.',
     perks: { xp: { archery: 1.15, woodcutting: 1.15, farming: 1.15, alchemy: 1.15 }, mana: 1.2, hp: 0.85 },
@@ -24,6 +26,7 @@ const RACES = {
   },
   dwarf: {
     name: 'Dwarf',
+    plural: 'Dwarves',
     icon: '🧔',
     text: 'Stout miners and master smiths, hard to knock down.',
     perks: { xp: { mining: 1.15, smelting: 1.15, smithing: 1.15, archery: 0.85, magic: 0.85 }, hp: 1.15, defence: 1.1 },
@@ -32,6 +35,7 @@ const RACES = {
   },
   orc: {
     name: 'Orc',
+    plural: 'Orcs',
     icon: '👹',
     text: 'Fierce warriors who hit hard and haggle badly.',
     perks: { xp: { swords: 1.15, skinning: 1.15, cooking: 0.9, crafting: 0.9, alchemy: 0.9 }, attack: 1.15, hp: 1.1, sell: 0.9 },
@@ -40,6 +44,7 @@ const RACES = {
   },
   halfling: {
     name: 'Halfling',
+    plural: 'Halflings',
     icon: '🧒',
     text: 'Small, cheerful and tireless, happiest near water and a warm meal.',
     perks: { xp: { fishing: 1.15, cooking: 1.15, farming: 1.15 }, stamina: 1, attack: 0.9, hp: 0.9 },
@@ -48,6 +53,7 @@ const RACES = {
   },
   undead: {
     name: 'Undead',
+    plural: 'the Undead',
     icon: '💀',
     text: 'Risen from the grave, steeped in dark magic and unnaturally lucky.',
     perks: { xp: { magic: 1.15, alchemy: 1.15 }, mana: 1.25, luck: 1.15, food: 0.5 },

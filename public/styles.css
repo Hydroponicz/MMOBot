@@ -605,3 +605,4 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 /* Character faces on leaderboards */
 .lb-portrait { width: 34px; height: 34px; border-radius: 50%; overflow: hidden; flex: none; background: var(--panel-2); border: 1px solid var(--border); display: inline-flex; }
 .lb-portrait svg { display: block; }
+.shop-preview { display: inline-flex; width: 84px; height: 98px; border-radius: 12px; overflow: hidden; background: radial-gradient(circle at 50% 40%, var(--panel-2), var(--bg-2)); border: 1px solid var(--border); }

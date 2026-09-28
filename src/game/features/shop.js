@@ -99,7 +99,7 @@ module.exports = {
       const crop = CROPS.find((c) => c.item === found.seedFor);
       const lvl = skillLevel('farming', this.repo.getSkills(user.id).farming);
       if (lvl < crop.level) return `you need 🌱 Farming level ${crop.level} to grow ${ITEMS[crop.item].name} (you are ${lvl}).`;
-    } else if (!found.ammo) {
+    } else if (!found.ammo && !found.cosmetic) {
       // (Runes, like arrows, don't take backpack slots.)
       const bag = this.backpack(user.id);
       if (bag.used + qty > bag.capacity) return `🎒 no room in your backpack (${bag.used}/${bag.capacity}). !sell something first.`;
@@ -133,7 +133,9 @@ module.exports = {
                 ? ` Now !plant ${ITEMS[found.seedFor].name.toLowerCase()}.`
                 : found.potion
                   ? ' !drink it when you need it.'
-                  : '';
+                  : found.cosmetic
+                    ? ` Wear it: ${this.siteUrl}/#/customize`
+                    : '';
       return `🛒 bought ${itemLabel(found.item, qty)} for ${fmt(total)} pts!${tip} Balance: ${fmt(this.repo.getUser(user.id).points)}`;
     });
   },
@@ -163,8 +165,8 @@ module.exports = {
   backpack(userId) {
     const tiers = this.backpackTiers();
     const tier = Math.min(this.repo.getEquipment(userId).backpack || 0, tiers.length - 1);
-    // Seeds live in a seed pouch and arrows in the quiver: neither takes backpack slots.
-    const used = Object.entries(this.repo.getInventory(userId)).reduce((s, [id, q]) => s + (ITEMS[id] && !ITEMS[id].seedFor && !ITEMS[id].ammo ? q : 0), 0);
+    // Seeds live in a seed pouch and arrows in the quiver; cosmetics and pets are worn. None take backpack slots.
+    const used = Object.entries(this.repo.getInventory(userId)).reduce((s, [id, q]) => s + (ITEMS[id] && !ITEMS[id].seedFor && !ITEMS[id].ammo && !ITEMS[id].cosmetic && !ITEMS[id].pet ? q : 0), 0);
     const next = tiers[tier + 1];
     return {
       level: tier + 1,

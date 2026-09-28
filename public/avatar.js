@@ -34,6 +34,30 @@
     // Head shape per race: [rx, ry].
     const [rx, ry] = { dwarf: [32, 34], halfling: [31, 33], orc: [32, 35], elf: [28, 36] }[race] || [30, 36];
 
+    const G = appearance?.gear || {};
+    const C = appearance?.cosmetics || {};
+    const metal = (c) => [c, shade(c, -0.35), shade(c, 0.35)];
+
+    // ---- aura, cape and a weapon on the back, all behind the character
+    if (C.aura) out.push(`<circle cx="60" cy="74" r="62" fill="${C.aura}" opacity=".16"/><circle cx="60" cy="74" r="50" fill="${C.aura}" opacity=".16"/>`);
+    if (C.cape) p('M22,110 Q8,138 2,140 L118,140 Q112,138 98,110Z', C.cape);
+    if (G.weapon) {
+      const [wc, wd] = metal(G.weapon.color);
+      if (G.weapon.type === 'bow') {
+        line('M16,58 Q-2,96 18,134', '#8a5a35', 4.5);
+        line('M16,58 L18,134', '#e8e8e8', 1);
+      } else if (G.weapon.type === 'staff') {
+        line('M102,136 L112,26', '#7a5334', 4.5);
+        out.push(`<circle cx="112" cy="24" r="7" fill="${G.weapon.color === '#9aa3ad' ? '#9b6bff' : wc}"/><circle cx="110" cy="22" r="2.2" fill="#fff" opacity=".7"/>`);
+      } else {
+        line('M98,124 L114,54', wc, 6);
+        line('M98,124 L114,54', wd, 1.5, 'opacity=".5"');
+        line('M103,64 L121,70', '#5a4632', 4);
+        line('M114,54 L117,42', '#5a4632', 4);
+        out.push(`<circle cx="117.5" cy="40" r="3" fill="${wc}"/>`);
+      }
+    }
+
     // ---- behind the head: long hair, ponytail, bun
     if (hair === 'long') p('M26,52 Q24,20 60,19 Q96,20 94,52 L98,122 Q60,130 22,122Z', Hd);
     if (hair === 'ponytail') p('M84,38 Q110,48 102,100 Q96,78 82,60Z', Hd);
@@ -42,6 +66,13 @@
     // ---- body and neck
     p('M16,140 Q18,112 60,107 Q102,112 104,140Z', O);
     p('M47,109 L60,125 L73,109Z', shade(O, -0.3));
+    if (G.body) {
+      const [bc, bd, bl] = metal(G.body);
+      p('M20,140 Q22,113 60,109 Q98,113 100,140Z', bc, `stroke="${bd}" stroke-width="1.5"`);
+      line('M60,112 L60,140', bd, 1.5);
+      line('M36,122 Q48,118 56,122 M64,122 Q72,118 84,122', bl, 1.5, 'opacity=".6"');
+      out.push(`<ellipse cx="26" cy="121" rx="13" ry="8" fill="${bc}" stroke="${bd}" stroke-width="1.5"/><ellipse cx="94" cy="121" rx="13" ry="8" fill="${bc}" stroke="${bd}" stroke-width="1.5"/>`);
+    }
     out.push(`<rect x="52" y="88" width="16" height="22" rx="6" fill="${Sd}"/>`);
 
     // ---- ears
@@ -141,6 +172,51 @@
       p('M30,62 Q28,23 60,23 Q92,23 90,62 Q86,42 62,40 L60,30 L58,40 Q34,42 30,62Z', H);
       for (const x of [29, 91]) for (let y = 64; y <= 112; y += 8) out.push(`<ellipse cx="${x}" cy="${y}" rx="5" ry="5" fill="${y % 16 ? H : Hd}"/>`);
     }
+
+    // ---- helmet (a cosmetic hat shows instead) and hats
+    if (G.head && !C.hat) {
+      const [hc, hd, hl] = metal(G.head);
+      p('M27,64 Q25,19 60,18 Q95,19 93,64 L86,64 L86,49 Q60,40 34,49 L34,64Z', hc, `stroke="${hd}" stroke-width="1.5"`);
+      out.push(`<rect x="57" y="44" width="6" height="22" rx="2" fill="${hc}" stroke="${hd}" stroke-width="1.2"/>`);
+      line('M36,30 Q48,22 60,22', hl, 2, 'opacity=".6"');
+    }
+    const hat = C.hat;
+    if (hat === 'party') {
+      p('M46,30 L60,2 L74,30Z', '#e3508f');
+      line('M52,20 L66,24 M49,26 L70,30', '#ffd84a', 2.5);
+      out.push('<circle cx="60" cy="3" r="4" fill="#ffd84a"/>');
+    } else if (hat === 'chef') {
+      out.push('<circle cx="45" cy="16" r="10" fill="#fafafa"/><circle cx="60" cy="11" r="12" fill="#fafafa"/><circle cx="75" cy="16" r="10" fill="#fafafa"/><rect x="38" y="18" width="44" height="14" rx="3" fill="#f0f0f0" stroke="#d8d8d8"/>');
+    } else if (hat === 'bunny') {
+      out.push('<ellipse cx="47" cy="14" rx="7" ry="17" fill="#f5f5f5" transform="rotate(-12 47 14)"/><ellipse cx="47" cy="15" rx="3.5" ry="12" fill="#f4a6c0" transform="rotate(-12 47 15)"/><ellipse cx="73" cy="14" rx="7" ry="17" fill="#f5f5f5" transform="rotate(12 73 14)"/><ellipse cx="73" cy="15" rx="3.5" ry="12" fill="#f4a6c0" transform="rotate(12 73 15)"/>');
+    } else if (hat === 'wizard') {
+      p('M36,33 Q58,18 68,0 Q74,20 86,33Z', '#3a4fb8');
+      out.push('<ellipse cx="60" cy="33" rx="33" ry="6" fill="#2d3e96"/><text x="63" y="24" font-size="9" fill="#ffd84a" text-anchor="middle">★</text>');
+    } else if (hat === 'tophat') {
+      out.push('<rect x="41" y="2" width="38" height="30" rx="2" fill="#1c1c22"/><rect x="41" y="23" width="38" height="5" fill="#b8323a"/><ellipse cx="60" cy="32" rx="31" ry="5" fill="#15151a"/>');
+    } else if (hat === 'pirate') {
+      p('M24,36 Q34,10 60,10 Q86,10 96,36 Q60,26 24,36Z', '#1f1f24');
+      out.push('<circle cx="60" cy="22" r="4" fill="#f2f2f2"/><path d="M56,28 L64,28" stroke="#f2f2f2" stroke-width="2"/>');
+    } else if (hat === 'viking') {
+      p('M33,21 Q20,16 18,2 Q26,14 38,17Z', '#efe6c8');
+      p('M87,21 Q100,16 102,2 Q94,14 82,17Z', '#efe6c8');
+      p('M30,44 Q30,14 60,14 Q90,14 90,44Z', '#9aa3ad', 'stroke="#6f7780" stroke-width="1.5"');
+      out.push('<rect x="30" y="38" width="60" height="7" rx="2" fill="#7a5334"/>');
+    } else if (hat === 'halo') {
+      out.push('<ellipse cx="60" cy="10" rx="22" ry="6" fill="none" stroke="#ffd84a" stroke-width="7" opacity=".25"/><ellipse cx="60" cy="10" rx="22" ry="6" fill="none" stroke="#ffe27a" stroke-width="3"/>');
+    } else if (hat === 'crown') {
+      p('M36,32 L36,12 L47,22 L60,5 L73,22 L84,12 L84,32Z', '#e8c34a', 'stroke="#b8922a" stroke-width="1.5"');
+      out.push('<circle cx="60" cy="25" r="3.5" fill="#c0392b"/><circle cx="46" cy="27" r="2.5" fill="#3a64b8"/><circle cx="74" cy="27" r="2.5" fill="#3f8a4a"/>');
+    }
+
+    // ---- shield in front, pet at their feet, prestige stars
+    if (G.shield) {
+      const [sc, sd] = metal(G.shield);
+      p('M3,106 L31,106 L31,124 Q17,141 3,124Z', sc, `stroke="${sd}" stroke-width="2"`);
+      out.push(`<circle cx="17" cy="119" r="4" fill="${sd}"/>`);
+    }
+    if (appearance?.pet) out.push(`<text x="104" y="131" font-size="24" text-anchor="middle" dominant-baseline="central">${appearance.pet}</text>`);
+    if (appearance?.stars > 0) out.push(`<text x="4" y="12" font-size="11" font-weight="700" fill="#ffd84a">★${appearance.stars > 1 ? appearance.stars : ''}</text>`);
 
     // ---- earring
     if (L.extra === 'earring') out.push(`<circle cx="${lx}" cy="${race === 'elf' || race === 'orc' ? 73 : 74}" r="2.6" fill="none" stroke="#e8c34a" stroke-width="1.8"/>`);
