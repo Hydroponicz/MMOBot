@@ -28,8 +28,6 @@ function webhookRouter({ bot, kick, repo, config, logger = console }) {
     res.status(200).send('ok');
 
     if (messageId && !repo.markProcessed(messageId)) return; // duplicate delivery
-    if (type !== 'chat.message.sent') return;
-
     let payload;
     try {
       payload = JSON.parse(rawBody);
@@ -37,7 +35,12 @@ function webhookRouter({ bot, kick, repo, config, logger = console }) {
       return;
     }
     const broadcaster = kick.broadcaster();
-    if (broadcaster && String(payload.broadcaster?.user_id) !== String(broadcaster.user_id)) return;
+    if (broadcaster && payload.broadcaster && String(payload.broadcaster.user_id) !== String(broadcaster.user_id)) return;
+    // Follows, subs, gifted subs, live status.
+    if (type !== 'chat.message.sent') {
+      bot.handleChannelEvent(type, payload);
+      return;
+    }
     const sender = payload.sender || {};
     if (!sender.user_id || sender.is_anonymous) return;
 

@@ -39,7 +39,7 @@
   };
   const skillIcon = (id) => state.site?.skills.find((s) => s.id === id)?.icon || '✨';
   const feedIcon = (a) =>
-    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒', jackpot: '🎰', death: '💀' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
+    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒', jackpot: '🎰', death: '💀', follow: '💚', sub: '⭐', gift: '🎁', raid: '⚔️', duel: '⚔️', event: '📣' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
 
   // ---- live activity (SSE) ----------------------------------------------
   const listeners = new Set();
@@ -48,6 +48,35 @@
     const a = JSON.parse(e.data);
     listeners.forEach((fn) => fn(a));
   });
+
+  // Raid boss and channel boost banner at the top of every page.
+  const live = { raid: null, boost: null };
+  function drawBanner() {
+    const el = document.getElementById('live-banner');
+    const parts = [];
+    const b = live.boost;
+    if (b && b.until > Date.now()) {
+      parts.push(`<div class="banner boost">⚡ <b>${b.multiplier}x ${b.kind === 'xp' ? 'XP' : 'chat points'}</b> for everyone · ${Math.max(1, Math.ceil((b.until - Date.now()) / 60000))}m left${b.reason ? ` <span class="muted">(${esc(b.reason)})</span>` : ''}</div>`);
+    }
+    const r = live.raid;
+    if (r && r.active) {
+      const pct = Math.max(0, Math.round((r.hp / r.maxHp) * 100));
+      parts.push(`<div class="banner raid"><div class="banner-row"><span>${r.icon} <b>RAID: ${esc(r.name)}</b> (level ${r.level}) · type <code>!attack</code> in chat</span>
+        <span>${fmt(r.hp)} / ${fmt(r.maxHp)} HP · ${r.fighters} fighting · ${Math.max(0, Math.ceil((r.endsAt - Date.now()) / 60000))}m</span></div>
+        <div class="raid-bar"><span style="width:${pct}%"></span></div></div>`);
+    }
+    el.innerHTML = parts.join('');
+    el.hidden = !parts.length;
+  }
+  es.addEventListener('raid', (e) => {
+    live.raid = JSON.parse(e.data);
+    drawBanner();
+  });
+  es.addEventListener('boost', (e) => {
+    live.boost = JSON.parse(e.data);
+    drawBanner();
+  });
+  setInterval(drawBanner, 15000);
 
   // ---- chrome ------------------------------------------------------------
   function renderAccount() {
@@ -80,7 +109,7 @@
   function feedItem(a, isNew = false) {
     return `<li class="${esc(a.kind)}${isNew ? ' new' : ''}">
       <span class="ic">${feedIcon(a)}</span>
-      <span><a href="${playerLink(a.username)}">${esc(a.username)}</a> ${esc(a.text)}${a.xp ? ` <span class="muted">+${fmt(a.xp)} xp</span>` : ''}</span>
+      <span>${a.username ? `<a href="${playerLink(a.username)}">${esc(a.username)}</a> ` : ''}${esc(a.text)}${a.xp ? ` <span class="muted">+${fmt(a.xp)} xp</span>` : ''}</span>
       <span class="t" data-ts="${a.created_at}">${ago(a.created_at)}</span>
     </li>`;
   }
@@ -691,6 +720,7 @@
             <li><b>Archery &amp; Fletching</b>: <code>!fletch arrows</code> from 1 Oak Logs + 1 🪶 Feathers (from chickens) + 1 Iron Ingot, 10 at a time. Arrows go in a 🧺 Quiver (shop 250 pts, or <code>!fletch quiver</code> from 2 Rabbit Hides), which holds 500. Get a bow (shop 500 pts, or <code>!fletch oak shortbow</code> from 2 Oak Logs), then <code>!shoot</code> monsters for Archery XP: each fight uses one arrow, and better arrows hit harder. <code>!fight</code> uses whichever combat skill you're best at.</li>
             <li><b>Firemaking</b>: buy a 🪨 Flint and Steel in the <a href="#/shop">shop</a> (${fmt((g.shop.find((x) => x.item === 'flint_and_steel') || {}).cost || 0)} pts, good for 250 fires), then <code>!lightfire</code> burns the best log in your backpack (or <code>!lightfire oak</code>). Better logs give more XP, and every fire leaves 🌫️ Ashes. Sometimes the fire won't catch; nothing is used up, just try again.</li>
             <li><b>Cooking</b>: while your fire burns (5 minutes, longer with better logs), <code>!cook</code> the best raw food in your backpack, or name it: <code>!cook trout</code>, <code>!cook carrot</code>, <code>!cook rabbit</code>. Fish, vegetables, Raw Chicken from fights and the meat you get from <code>!skin</code> all cook; each unlocks at the level it takes to get it. Food burns sometimes (less as you level). Cooked food sells for more, and <code>!eat</code> heals HP.</li>
+            <li><b>Stream events</b>: when a ⚔️ <b>raid boss</b> appears, everyone types <code>!attack</code> to fight it together (<code>!raid</code> shows its HP). Beat it in time and the reward pool is split by damage; the top hitter is MVP. A 👺 treasure goblin (<code>!catch</code>) or 📦 supply drop (<code>!grab</code>) sometimes pops up: be quick! Following or subscribing earns points, and gifted subs start ⚡ double XP for everyone (<code>!boost</code>). Challenge a friend with <code>!duel @name 500</code>: they <code>!accept</code>, and the winner takes the bet (duels don't hurt your real HP).</li>
             <li><b>Undead potions</b>: <code>!brew</code> Ashes with something dead into potions with timed effects, then <code>!drink</code> them. <code>!buffs</code> shows what's active.<ul>${(g.buffs || [])
               .map((b) => `<li>${b.icon} <b>${esc(b.potion)}</b>: ${esc(b.text)} (${b.minutes} min)</li>`)
               .join('')}</ul></li>
@@ -722,6 +752,10 @@
             <dt><code>!lightfire [log]</code></dt><dd>Burn a log for Firemaking XP and Ashes (needs flint and steel)</dd>
             <dt><code>!cook [food]</code></dt><dd>Cook on your fire (<code>!fire</code> shows how long it lasts)</dd>
             <dt><code>!eat [food]</code></dt><dd>Eat cooked food to heal HP</dd>
+            <dt><code>!attack</code></dt><dd>Hit the raid boss (<code>!raid</code> shows it)</dd>
+            <dt><code>!catch</code> / <code>!grab</code></dt><dd>Claim a random event</dd>
+            <dt><code>!duel @name [bet]</code></dt><dd>Duel another player (<code>!accept</code> / <code>!decline</code>)</dd>
+            <dt><code>!boost</code></dt><dd>Is a channel XP boost running?</dd>
             <dt><code>!buffs</code></dt><dd>Your active potion effects</dd>
             <dt><code>!heal</code></dt><dd>Spend half your mana to restore 25% HP</dd>
             <dt><code>!equip &lt;item&gt;</code></dt><dd>Wear gear (<code>!unequip</code>, <code>!equipped</code>)</dd>
@@ -763,6 +797,7 @@
     ['settings', '⚙️ Settings'],
     ['players', '👥 Players'],
     ['economy', '💰 Economy'],
+    ['events', '🎉 Events'],
     ['tools', '🧰 Tools'],
     ['logs', '📜 Logs'],
   ];
@@ -1061,6 +1096,7 @@
         <div class="stack">
           ${fieldSection('general', 'General', 'Commands, cooldowns and chat behaviour.')}
           ${fieldSection('economy', 'Economy', 'Multipliers for XP, points and prices. Great for double-XP events.')}
+          ${fieldSection('events', 'Events', 'Follow and sub rewards, random chat events, raids and duels.')}
           ${fieldSection('casino', 'Casino', 'Slots, roulette, plinko and blackjack, on the site and in chat. Max bet 0 means no limit.')}
         </div>
         <div class="stack">
@@ -1232,6 +1268,63 @@
         }
       };
     });
+  };
+
+  // ---- Admin: events (raids, boosts, random events) ----------------------------
+  adminPages.events = async (query, header) => {
+    const d = await api('/admin/events');
+    const r = d.raid;
+    const stream = d.stream ? (d.stream.live ? '🔴 Live' : '⚫ Offline') : 'Unknown (no live/offline update from Kick yet)';
+    $app.innerHTML = `
+      ${header}
+      <p class="muted">Stream: <b>${stream}</b> · ${d.chatters} chatting in the last 10 minutes. Automatic events and raids are set on the Settings page (Events).</p>
+      <div class="grid grid-2">
+        <section class="panel">
+          <h2>⚔️ Raid boss</h2>
+          ${
+            r.active
+              ? `<p>${r.icon} <b>${esc(r.name)}</b> (level ${r.level}): ${fmt(r.hp)} / ${fmt(r.maxHp)} HP, ${r.fighters} fighting.</p><button class="btn" id="raid-end">End raid (boss escapes)</button>`
+              : `<p class="muted">Chat fights a giant monster together with <code>!attack</code>. Its HP scales with how many people are chatting; the reward pool is split by damage.</p>
+                 <div class="form-row"><select id="raid-monster" aria-label="Boss"><option value="">Auto (a bit above chat's level)</option>${d.monsters
+                   .map((m) => `<option value="${esc(m.id)}">${m.icon} ${esc(m.name)} (${m.level})</option>`)
+                   .join('')}</select>
+                 <button class="btn btn-primary" id="raid-start">Start raid</button></div>`
+          }
+        </section>
+        <section class="panel">
+          <h2>⚡ Channel boost</h2>
+          ${
+            d.boost
+              ? `<p><b>${d.boost.multiplier}x ${d.boost.kind === 'xp' ? 'XP' : 'chat points'}</b> for everyone, ${Math.ceil((d.boost.until - Date.now()) / 60000)}m left${d.boost.reason ? ` (${esc(d.boost.reason)})` : ''}.</p><button class="btn" id="boost-stop">Stop boost</button>`
+              : `<p class="muted">Gifted subs start these automatically. Start one yourself for an event:</p>
+                 <div class="form-row"><select id="boost-kind" aria-label="Boost type"><option value="xp">XP</option><option value="points">Chat points</option></select>
+                 <input type="number" id="boost-mult" value="2" min="1.1" max="10" step="0.5" style="max-width:80px" aria-label="Multiplier">
+                 <input type="number" id="boost-min" value="15" min="1" max="60" style="max-width:80px" aria-label="Minutes">
+                 <button class="btn btn-primary" id="boost-start">Start</button></div>`
+          }
+        </section>
+        <section class="panel">
+          <h2>📣 Random event</h2>
+          <p class="muted">Pop one now: a treasure goblin (first to <code>!catch</code>) or a supply drop (first 3 to <code>!grab</code>).</p>
+          <div class="form-row"><button class="btn" data-ev="goblin">👺 Goblin</button><button class="btn" data-ev="supply">📦 Supply drop</button></div>
+        </section>
+      </div>`;
+    const act = async (path, body, method = 'POST') => {
+      try {
+        await api(path, { method, body });
+        toast('Done');
+        route();
+      } catch (err) {
+        toast(err.message);
+      }
+    };
+    $app.querySelector('#raid-start')?.addEventListener('click', () => act('/admin/raid', { monster: $app.querySelector('#raid-monster').value }));
+    $app.querySelector('#raid-end')?.addEventListener('click', () => confirm('End the raid? The boss escapes and nobody is paid.') && act('/admin/raid/end', {}));
+    $app.querySelector('#boost-start')?.addEventListener('click', () =>
+      act('/admin/boost', { kind: $app.querySelector('#boost-kind').value, multiplier: Number($app.querySelector('#boost-mult').value), minutes: Number($app.querySelector('#boost-min').value) })
+    );
+    $app.querySelector('#boost-stop')?.addEventListener('click', () => act('/admin/boost', {}, 'DELETE'));
+    $app.querySelectorAll('[data-ev]').forEach((b) => b.addEventListener('click', () => act('/admin/random-event', { kind: b.dataset.ev })));
   };
 
   // ---- Admin: economy --------------------------------------------------------
@@ -1439,6 +1532,9 @@
   async function boot() {
     const [me, site] = await Promise.all([api('/me'), api('/site')]);
     Object.assign(state, { me: me.user, isAdmin: me.isAdmin, loginEnabled: me.loginEnabled, devMode: me.devMode, site });
+    live.raid = site.raid;
+    live.boost = site.boost;
+    drawBanner();
     if (site.channel) document.getElementById('brand-name').textContent = `${site.channel} MMO`;
     renderAccount();
     window.addEventListener('hashchange', route);

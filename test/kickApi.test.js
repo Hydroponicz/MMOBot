@@ -22,9 +22,9 @@ function fakeKick({ existing = [] } = {}) {
     if (u.pathname === '/oauth/token') return json(200, { access_token: 'app-token', expires_in: 3600, token_type: 'Bearer' });
     if (u.pathname === '/public/v1/channels') return json(200, { data: [{ broadcaster_user_id: 777, slug: 'streamer' }] });
     if (u.pathname === '/public/v1/events/subscriptions' && opts.method === 'POST') {
-      const s = { id: 'sub1', event: body.events[0].name, version: 1, broadcaster_user_id: body.broadcaster_user_id, method: 'webhook' };
-      subs.push(s);
-      return json(200, { data: [{ name: s.event, version: 1, subscription_id: s.id }] });
+      const added = body.events.map((e, i) => ({ id: `sub${subs.length + i + 1}`, event: e.name, version: 1, broadcaster_user_id: body.broadcaster_user_id, method: 'webhook' }));
+      subs.push(...added);
+      return json(200, { data: added.map((s) => ({ name: s.event, version: 1, subscription_id: s.id })) });
     }
     if (u.pathname === '/public/v1/events/subscriptions') return json(200, { data: subs });
     if (u.pathname === '/public/v1/public-key') return json(500, {});
@@ -45,14 +45,19 @@ test('ensureChatSubscription resolves the channel and subscribes with an app tok
 
   const tokenCall = fake.calls.find((c) => c.path === '/oauth/token');
   assert.equal(tokenCall.body.grant_type, 'client_credentials');
-  const post = fake.calls.find((c) => c.method === 'POST' && c.path === '/public/v1/events/subscriptions');
-  assert.equal(post.auth, 'Bearer app-token');
-  assert.deepEqual(post.body, { broadcaster_user_id: 777, events: [{ name: 'chat.message.sent', version: 1 }], method: 'webhook' });
+  const posts = fake.calls.filter((c) => c.method === 'POST' && c.path === '/public/v1/events/subscriptions');
+  assert.equal(posts[0].auth, 'Bearer app-token');
+  // Channel events (follows, subs, gifts, live status), then chat.
+  assert.deepEqual(
+    posts[0].body.events.map((e) => e.name),
+    ['channel.followed', 'channel.subscription.new', 'channel.subscription.renewal', 'channel.subscription.gifts', 'livestream.status.updated']
+  );
+  assert.deepEqual(posts[1].body, { broadcaster_user_id: 777, events: [{ name: 'chat.message.sent', version: 1 }], method: 'webhook' });
 
-  // Second call finds the existing subscription and does nothing.
+  // Second call finds the existing subscriptions and does nothing.
   const again = await kick.ensureChatSubscription();
   assert.equal(again.created, false);
-  assert.equal(fake.calls.filter((c) => c.method === 'POST' && c.path.startsWith('/public/v1/events')).length, 1);
+  assert.equal(fake.calls.filter((c) => c.method === 'POST' && c.path.startsWith('/public/v1/events')).length, 2);
 });
 
 test('ensureChatSubscription reports missing configuration', async () => {

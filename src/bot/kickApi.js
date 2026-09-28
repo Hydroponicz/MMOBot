@@ -14,6 +14,9 @@ twIDAQAB
 -----END PUBLIC KEY-----`;
 
 const CHAT_EVENT = 'chat.message.sent';
+// Channel events the game reacts to (follows, subs, gifted subs, going live). Optional: if Kick
+// refuses them, chat still works.
+const CHANNEL_EVENTS = ['channel.followed', 'channel.subscription.new', 'channel.subscription.renewal', 'channel.subscription.gifts', 'livestream.status.updated'];
 
 class KickApi {
   constructor({ config, repo, logger = console }) {
@@ -240,13 +243,13 @@ class KickApi {
     return (await this.request('GET', '/public/v1/events/subscriptions', { token }))?.data || [];
   }
 
-  async subscribeChat(broadcasterUserId) {
+  async subscribeChat(broadcasterUserId, events = [CHAT_EVENT]) {
     const token = await this.appAccessToken();
     return this.request('POST', '/public/v1/events/subscriptions', {
       token,
       body: {
         broadcaster_user_id: Number(broadcasterUserId),
-        events: [{ name: CHAT_EVENT, version: 1 }],
+        events: events.map((name) => ({ name, version: 1 })),
         method: 'webhook',
       },
     });
@@ -259,9 +262,19 @@ class KickApi {
     const channel = await this.resolveChannel();
     if (!channel) return { ok: false, reason: 'KICK_CHANNEL not set' };
     const subs = await this.listSubscriptions();
-    const existing = subs.find(
-      (x) => x.event === CHAT_EVENT && String(x.broadcaster_user_id) === String(channel.user_id)
-    );
+    const mine = subs.filter((x) => String(x.broadcaster_user_id) === String(channel.user_id));
+    // Follows, subs and live status: subscribe to any that are missing. A failure here never
+    // stops chat from working.
+    const missing = CHANNEL_EVENTS.filter((e) => !mine.some((x) => x.event === e));
+    if (missing.length) {
+      try {
+        await this.subscribeChat(channel.user_id, missing);
+        this.log.log(`[kick] subscribed to ${missing.join(', ')} for ${channel.username}`);
+      } catch (err) {
+        this.log.warn(`[kick] couldn't subscribe to channel events (${missing.join(', ')}): ${err.message}`);
+      }
+    }
+    const existing = mine.find((x) => x.event === CHAT_EVENT);
     if (existing) return { ok: true, created: false, subscription: existing };
     const created = await this.subscribeChat(channel.user_id);
     this.log.log(`[kick] subscribed to chat for ${channel.username}`);

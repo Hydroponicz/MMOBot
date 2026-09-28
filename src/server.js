@@ -18,6 +18,11 @@ function createApp({ config, repo, logger: baseLogger = console, settings = new 
   const engine = new GameEngine({ repo, config, settings });
   const kick = new KickApi({ config, repo, logger });
   const bot = new ChatBot({ engine, kick, logger });
+  // Things the game says by itself: raids starting and ending, random events...
+  engine.on('announce', (text) => {
+    if (engine.cfg.replyInChat) bot.say(text);
+    logger.info(`[event] ${text}`);
+  });
   const sessions = createSessions({ secret: config.sessionSecret, secure: config.baseUrl.startsWith('https://') });
 
   const app = express();
@@ -82,6 +87,14 @@ if (require.main === module) {
   const timers = [
     setInterval(() => keepChatSubscribed(kick, logger), 30 * 60 * 1000),
     setInterval(() => repo.prune(), 60 * 60 * 1000),
+    // Random events, raids and their timeouts.
+    setInterval(() => {
+      try {
+        engine.tick();
+      } catch (err) {
+        logger.error('[events] tick failed:', err);
+      }
+    }, 10 * 1000),
   ];
   timers.forEach((t) => t.unref());
 

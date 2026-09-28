@@ -10,7 +10,8 @@
        URL options (build them on the admin page):
          ?events=all      every action (default)       ?events=big   only level-ups, rare finds, upgrades
          &seconds=10      how long each event stays    &max=6        how many can be on screen at once
-         &quiet=1         don't show the "connected" message when the overlay loads */
+         &quiet=1         don't show the "connected" message when the overlay loads
+         &raid=0          hide the raid boss health bar and channel boost banner at the top */
     html, body { margin: 0; background: transparent; overflow: hidden; }
     body { font-family: Inter, system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; justify-content: flex-end; padding: 12px; box-sizing: border-box; gap: 8px; }
     .ev {
@@ -34,11 +35,26 @@
     .ev.jackpot b { color: #53fc18; }
     .ev.status { border-left-color: #8b98a8; font-size: 14px; }
     .ev.status.bad { border-left-color: #ff5c7a; }
+    .ev.follow, .ev.sub, .ev.gift { border-left-color: #ffc940; }
+    .ev.follow b, .ev.sub b, .ev.gift b { color: #ffc940; }
+    .ev.raid, .ev.duel, .ev.event { border-left-color: #ff5c7a; }
+    .ev.raid b, .ev.duel b { color: #ff5c7a; }
+    /* Raid boss bar and boost banner, pinned to the top. */
+    #top { position: fixed; top: 12px; left: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; }
+    .panel { padding: 10px 14px; border-radius: 12px; background: rgba(11, 14, 17, 0.9); color: #e8edf2; font-weight: 800; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4); animation: in 0.4s ease-out; }
+    .boss { border: 2px solid #ff5c7a; }
+    .boss .name { display: flex; justify-content: space-between; font-size: 16px; }
+    .boss .name small { color: #8b98a8; font-weight: 600; }
+    .bar { height: 16px; margin-top: 6px; border-radius: 99px; background: #1c232c; overflow: hidden; }
+    .bar span { display: block; height: 100%; background: linear-gradient(90deg, #dc2626, #f87171); transition: width 0.4s; }
+    .boss .top { margin-top: 6px; font-size: 13px; font-weight: 600; color: #8b98a8; }
+    .boost { border: 2px solid #53fc18; color: #53fc18; text-align: center; font-size: 16px; }
     @keyframes in { from { transform: translateX(-110%); opacity: 0; } to { transform: none; opacity: 1; } }
     @keyframes out { to { opacity: 0; transform: translateY(-10px); } }
   </style>
 </head>
 <body>
+  <div id="top"></div>
   <script>
     const params = new URLSearchParams(location.search);
     const onlyBig = params.get('events') === 'big' || params.has('big');
@@ -46,8 +62,8 @@
     const max = Math.min(Math.max(Number(params.get('max')) || 6, 1), 30);
     const quiet = params.has('quiet');
 
-    const BIG = ['levelup', 'charlevel', 'rare', 'upgrade', 'jackpot'];
-    const icons = { levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', buy: '🛒', action: '✨', test: '🧪', jackpot: '🎰', death: '💀' };
+    const BIG = ['levelup', 'charlevel', 'rare', 'upgrade', 'jackpot', 'follow', 'sub', 'gift', 'raid', 'duel', 'event'];
+    const icons = { levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', buy: '🛒', action: '✨', test: '🧪', jackpot: '🎰', death: '💀', follow: '💚', sub: '⭐', gift: '🎁', raid: '⚔️', duel: '⚔️', event: '📣' };
     const skillIcons = { fishing: '🎣', mining: '⛏️', woodcutting: '🪓', digging: '🏺', smelting: '🔥', smithing: '⚒️', swords: '🗡️', skinning: '🔪', farming: '🌱' };
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -83,13 +99,45 @@
         }
       }, 10000);
     });
+    // Raid boss health bar and channel boost banner.
+    const showTop = params.get('raid') !== '0';
+    const topEl = document.getElementById('top');
+    let raid = null;
+    let boost = null;
+    const fmtN = (n) => Number(n).toLocaleString();
+    function drawTop() {
+      if (!showTop) return;
+      const parts = [];
+      if (boost && boost.until > Date.now()) {
+        const m = Math.max(1, Math.ceil((boost.until - Date.now()) / 60000));
+        parts.push(`<div class="panel boost">⚡ ${boost.multiplier}x ${boost.kind === 'xp' ? 'XP' : 'chat points'} for everyone · ${m}m left</div>`);
+      }
+      if (raid && raid.active) {
+        const pct = Math.max(0, Math.round((raid.hp / raid.maxHp) * 100));
+        const m = Math.max(0, Math.ceil((raid.endsAt - Date.now()) / 60000));
+        const tops = (raid.top || []).slice(0, 3).map((t) => `${esc(t.username)} ${fmtN(t.damage)}`).join(' · ');
+        parts.push(`<div class="panel boss"><div class="name"><span>${raid.icon} RAID: ${esc(raid.name)}</span><small>${fmtN(raid.hp)} / ${fmtN(raid.maxHp)} HP · ${m}m</small></div>
+          <div class="bar"><span style="width:${pct}%"></span></div><div class="top">Type !attack · ${raid.fighters || 0} fighting${tops ? ` · ${tops}` : ''}</div></div>`);
+      }
+      topEl.innerHTML = parts.join('');
+    }
+    es.addEventListener('raid', (e) => {
+      raid = JSON.parse(e.data);
+      drawTop();
+    });
+    es.addEventListener('boost', (e) => {
+      boost = JSON.parse(e.data);
+      drawTop();
+    });
+    setInterval(drawTop, 15000);
+
     es.addEventListener('activity', (e) => {
       const a = JSON.parse(e.data);
       const big = BIG.includes(a.kind) || a.kind === 'test';
       if (onlyBig && !big) return;
       const icon = a.kind === 'action' ? skillIcons[a.skill] || icons.action : icons[a.kind] || '✨';
       const xp = a.xp && !big ? `<small>+${Number(a.xp).toLocaleString()} xp</small>` : '';
-      show(`<span class="ic">${icon}</span><span><b>${esc(a.username)}</b> ${esc(a.text)}${xp}</span>`, `${esc(a.kind)}${big ? ' big' : ''}`, big ? seconds + 3 : seconds);
+      show(`<span class="ic">${icon}</span><span>${a.username ? `<b>${esc(a.username)}</b> ` : ''}${esc(a.text)}${xp}</span>`, `${esc(a.kind)}${big ? ' big' : ''}`, big ? seconds + 3 : seconds);
     });
   </script>
 </body>

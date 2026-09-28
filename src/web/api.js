@@ -31,6 +31,8 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       channel: config.kick.channel,
       totals: repo.totals(),
       skills: SKILL_IDS.map((id) => ({ id, name: SKILLS[id].name, icon: SKILLS[id].icon })),
+      raid: engine.publicRaid(),
+      boost: engine.activeBoost(),
     });
   });
 
@@ -120,11 +122,22 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     res.flushHeaders();
     res.write('retry: 5000\n\n');
     const send = (entry) => res.write(`event: activity\ndata: ${JSON.stringify(entry)}\n\n`);
+    // Raid boss HP and channel boosts, for the overlay and site banners.
+    const sendRaid = (raid) => res.write(`event: raid\ndata: ${JSON.stringify(raid)}\n\n`);
+    const sendBoost = (boost) => res.write(`event: boost\ndata: ${JSON.stringify(boost)}\n\n`);
     const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
     engine.on('activity', send);
+    engine.on('raid', sendRaid);
+    engine.on('boost', sendBoost);
+    const raid = engine.publicRaid();
+    if (raid.active) sendRaid(raid);
+    const boost = engine.activeBoost();
+    if (boost) sendBoost(boost);
     req.on('close', () => {
       clearInterval(ping);
       engine.off('activity', send);
+      engine.off('raid', sendRaid);
+      engine.off('boost', sendBoost);
     });
   });
 
@@ -302,6 +315,40 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     logger.warn(`[admin] ${req.user.username} reset ${user.username}'s progress`);
     res.json({ ok: true });
   });
+
+  // ---- Admin: events (raids, boosts, random events, stream status) ---------------------
+  router.get('/admin/events', requireAdmin, (req, res) => {
+    res.json({
+      stream: repo.getSetting('stream'),
+      raid: engine.publicRaid(),
+      boost: engine.activeBoost(),
+      randomEvent: repo.getSetting('random_event'),
+      chatters: engine.activeChatters(10).length,
+      monsters: SKILLS.swords.monsters.map((m) => ({ id: m.id, name: m.name, icon: m.icon, level: m.level })),
+    });
+  });
+  const adminAct = (fn) => (req, res) => {
+    const r = fn(req);
+    if (r && r.ok === false) return res.status(400).json(r);
+    logger.info(`[admin] ${req.user.username} ${req.method} ${req.path}`);
+    res.json({ ok: true, ...(r || {}) });
+  };
+  router.post('/admin/raid', requireAdmin, adminAct((req) => engine.startRaid({ monsterId: req.body?.monster || null, hpMultiplier: Number(req.body?.hpMultiplier) || null })));
+  router.post('/admin/raid/end', requireAdmin, adminAct(() => ({ text: engine.finishRaid(false) })));
+  router.post('/admin/boost', requireAdmin, adminAct((req) => {
+    const multiplier = Number(req.body?.multiplier);
+    const minutes = Number(req.body?.minutes);
+    if (!(multiplier > 1 && multiplier <= 10) || !(minutes > 0 && minutes <= 60)) return { ok: false, error: 'multiplier 1-10 and 1-60 minutes' };
+    const kind = req.body?.kind === 'points' ? 'points' : 'xp';
+    const boost = engine.startBoost({ kind, multiplier, minutes, reason: String(req.body?.reason || 'streamer event').slice(0, 80) });
+    engine.announce(`⚡ ${multiplier}x ${kind === 'xp' ? 'XP' : 'chat points'} for everyone for ${minutes} min! ${boost.reason ? `(${boost.reason})` : ''}`);
+    return { boost };
+  }));
+  router.delete('/admin/boost', requireAdmin, adminAct(() => engine.stopBoost()));
+  router.post('/admin/random-event', requireAdmin, adminAct((req) => {
+    const ev = engine.spawnRandomEvent(req.body?.kind || null);
+    return ev ? { event: ev } : { ok: false, error: 'an event is already running' };
+  }));
 
   // ---- Admin: economy ----------------------------------------------------------
   router.get('/admin/economy', requireAdmin, (req, res) => {

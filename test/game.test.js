@@ -1408,3 +1408,108 @@ test('the bot combines replies that are waiting into one message', async () => {
   await new Promise((r) => setTimeout(r, 80));
   assert.equal(sent.length, 4, 'never over 500 characters');
 });
+
+// ---- Channel events, boosts, random events, raids, duels ----------------------------------
+
+function eventsSetup(rolls) {
+  const { Settings } = require('../src/settings');
+  const repo = openDb(':memory:');
+  const settings = new Settings({ config: { ...baseConfig, adminUsers: [], kick: { channel: 's' } }, repo });
+  let t = 1_000_000;
+  const queue = [...(rolls || [])];
+  const engine = new GameEngine({ repo, config: baseConfig, settings, rng: () => (queue.length ? queue.shift() : 0.99), now: () => t });
+  const said = [];
+  engine.on('announce', (x) => said.push(x));
+  const say = (content, username = 'Alice', kickUserId = '1') => engine.handleChat({ kickUserId, username, content }).reply;
+  return { repo, engine, settings, say, said, tick: (sec = 31) => (t += sec * 1000) };
+}
+
+test('Kick follows reward once; subs and gifted subs reward and start a double-XP boost', () => {
+  const { repo, engine, say } = eventsSetup();
+  const follow = { follower: { user_id: 5, username: 'NewFan', is_anonymous: false } };
+  assert.match(engine.channelEvent('channel.followed', follow), /💚 Thanks for the follow, @NewFan! \+100 pts/);
+  assert.equal(engine.channelEvent('channel.followed', follow), null, 'unfollow + follow again earns nothing');
+  assert.equal(repo.getUserByName('newfan').points, 100);
+
+  assert.match(engine.channelEvent('channel.subscription.new', { subscriber: { user_id: 6, username: 'Subby' } }), /⭐ @Subby subscribed! \+500 pts/);
+  assert.equal(repo.getUserByName('subby').subscriber, 1);
+  assert.match(engine.channelEvent('channel.subscription.renewal', { subscriber: { user_id: 6, username: 'Subby' } }), /resubscribed/);
+
+  const gift = { gifter: { user_id: 7, username: 'Gifter' }, giftees: [{ user_id: 8, username: 'Lucky1' }, { user_id: 9, username: 'Lucky2' }] };
+  assert.match(engine.channelEvent('channel.subscription.gifts', gift), /🎁 @Gifter gifted 2 subs! \+500 pts to them, \+500 each to the lucky ones\. DOUBLE XP for everyone for 10m!/);
+  assert.equal(repo.getUserByName('lucky2').points, 500);
+  assert.match(say('!fish'), /\+20 XP/, 'double XP');
+  assert.match(engine.boostInfo(), /⚡ 2x XP for everyone for another 10m \(Gifter gifted 2 subs\)/);
+  assert.match(engine.channelEvent('channel.subscription.gifts', { gifter: { is_anonymous: true }, giftees: [{ user_id: 10, username: 'L3' }] }), /An anonymous gifter gifted 1 sub!.*15m/, 'extends the boost');
+
+  engine.channelEvent('livestream.status.updated', { is_live: false });
+  assert.equal(engine.eventsAllowed(), false);
+  engine.channelEvent('livestream.status.updated', { is_live: true });
+  assert.equal(engine.eventsAllowed(), true);
+});
+
+test('random events: the first to !catch gets the goblin; the supply drop has 3 shares', () => {
+  const { repo, engine, say, said, tick } = eventsSetup();
+  engine.spawnRandomEvent('goblin');
+  assert.match(said[0], /TREASURE GOBLIN appeared! First to type !catch/);
+  assert.match(say('!catch', 'Alice', '1'), /👺 you caught the treasure goblin! \+990 pts and/);
+  assert.equal(say('!catch', 'Bob', '2'), null, 'too late: quiet');
+  engine.spawnRandomEvent('supply');
+  for (const [n, id] of [['A', '11'], ['B', '12'], ['C', '13']]) assert.match(say('!grab', n, id), /grabbed/);
+  assert.equal(say('!grab', 'D', '14'), null);
+  engine.spawnRandomEvent('goblin');
+  tick(61);
+  engine.tick();
+  assert.match(said[said.length - 1], /got away/);
+  assert.equal(repo.getSetting('random_event'), null);
+});
+
+test('raids: chat hits a shared boss; the pool is split by damage and the MVP gets loot', () => {
+  const { repo, engine, say, said, tick } = eventsSetup();
+  const a = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  const b = repo.upsertUser({ kickUserId: '2', username: 'Bob' });
+  for (const u of [a, b]) {
+    repo.addXp(u.id, 'swords', xpForLevel(40));
+    repo.addItem(u.id, 'mithril_sword', 1);
+  }
+  assert.match(say('!attack'), /no raid right now/);
+  const r = engine.startRaid({ monsterId: 'wolf', hpMultiplier: 1 });
+  assert.equal(r.raid.maxHp, 150);
+  assert.match(said[0], /RAID! A giant 🐺 Wolf \(level 20, 150 HP\) attacks the channel! Everyone type !attack/);
+  assert.match(say('!attack', 'Alice', '1'), /you hit the 🐺 Wolf for 174!|FINAL BLOW/);
+  const pts = repo.getUser(a.id).points;
+  assert.ok(pts >= 5000, `the whole pool went to the only hitter: ${pts}`);
+  assert.equal(repo.getInventory(a.id).wolf_pelt, 1);
+  assert.equal(repo.getInventory(a.id).wolf_fang, 1, 'MVP loot');
+  assert.equal(engine.raidState(), null);
+
+  tick(21);
+  engine.startRaid({ monsterId: 'wolf', hpMultiplier: 10 });
+  assert.match(say('!attack', 'Alice', '1'), /you hit the 🐺 Wolf/);
+  assert.equal(say('!attack', 'Alice', '1'), '@Alice ⏳ catch your breath, next !attack in 20s.');
+  say('!attack', 'Bob', '2');
+  assert.match(say('!raid'), /Raid: 🐺 Wolf [\d,]+\/1,500 HP · 2 fighting/);
+  tick(11 * 60);
+  engine.tick();
+  assert.match(said[said.length - 1], /escaped with [\d,]+ HP left/);
+});
+
+test('duels: challenge, accept, winner takes the bet; nobody gets hurt for real', () => {
+  const { repo, engine, say } = eventsSetup();
+  const a = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  const b = repo.upsertUser({ kickUserId: '2', username: 'Bob' });
+  repo.addPoints(a.id, 1000);
+  repo.addPoints(b.id, 1000);
+  repo.addXp(a.id, 'swords', xpForLevel(30));
+  repo.addItem(a.id, 'steel_sword', 1);
+  assert.match(say('!duel @Bob 500', 'Alice', '1'), /@Bob, @Alice challenges you to a duel for 500 pts! Type !accept within 60s/);
+  assert.match(say('!duel @Alice', 'Alice', '1'), /can't duel yourself/);
+  assert.match(say('!accept', 'Bob', '2'), /@Alice \(Swords 30, Steel Sword\) vs @Bob \(Fists 1\): after \d+ rounds @Alice WINS .* takes 500 pts!/);
+  // (+5 chat points each for their messages)
+  assert.equal(repo.getUser(a.id).points, 1505);
+  assert.equal(repo.getUser(b.id).points, 505);
+  assert.equal(engine.vitals(b.id).hp, engine.vitals(b.id).maxHp, 'duel damage is not real');
+  assert.match(say('!accept', 'Bob', '2'), /no duel waiting/);
+  say('!duel @Bob', 'Alice', '1');
+  assert.match(say('!decline', 'Bob', '2'), /declined the duel with @Alice/);
+});

@@ -60,6 +60,11 @@ const INFO_COMMANDS = {
   mines: ['chatMines', 'mines'], minesweeper: ['chatMines', 'mines'],
   pick: ['chatPick', 'mines'], reveal: ['chatPick', 'mines'], cashout: ['chatCashout', 'mines'],
   casino: ['casinoHelp', 'casino'], gamble: ['casinoHelp', 'casino'],
+  // Channel events: random events, raids, duels, boosts.
+  catch: ['eventCatch', 'catch'], grab: ['eventCatch', 'catch'],
+  raid: ['raidInfo', 'raid'], boss: ['raidInfo', 'raid'], attack: ['raidAttack', 'raid'],
+  duel: ['duel', 'duel'], accept: ['duelAccept', 'duel'], decline: ['duelDecline', 'duel'],
+  boost: ['boostInfo', 'boost'],
   // Health and mana. Potions and !heal have no cooldown.
   hp: ['vitalsInfo', 'hp'], health: ['vitalsInfo', 'hp'], mana: ['vitalsInfo', 'hp'], vitals: ['vitalsInfo', 'hp'],
   drink: ['drink', 'drink'], quaff: ['drink', 'drink'], potion: ['drink', 'drink'],

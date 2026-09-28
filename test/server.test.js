@@ -310,6 +310,7 @@ test('admin tools: backup downloads the database; restore replaces it on the nex
 
 test('admin economy page adds up where points come from and go', async (t) => {
   const s = await adminServer(t);
+  s.engine.rng = () => 0.99; // the fish never gets away
   s.engine.handleChat({ kickUserId: '5', username: 'Viewer', content: 'hello everyone' });
   s.engine.handleChat({ kickUserId: '5', username: 'Viewer', content: '!fish' });
   const e = await (await s.api('/api/admin/economy')).json();
@@ -317,4 +318,30 @@ test('admin economy page adds up where points come from and go', async (t) => {
   assert.ok(e.flows.actions >= 1);
   assert.equal(e.topEarners.length, 2);
   assert.ok(e.totals.points >= 6);
+});
+
+test('webhook: follows and subscriber badges reach the game', async (t) => {
+  const s = await start();
+  t.after(s.close);
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  s.kick.publicKey = publicKey.export({ type: 'spki', format: 'pem' });
+  const deliver = (type, id, payload) => {
+    const body = JSON.stringify(payload);
+    const sig = crypto.createSign('RSA-SHA256').update(`${id}.2026-01-01T00:00:00Z.${body}`).sign(privateKey, 'base64');
+    return fetch(`${s.url}/webhooks/kick`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Kick-Event-Type': type, 'Kick-Event-Message-Id': id, 'Kick-Event-Message-Timestamp': '2026-01-01T00:00:00Z', 'Kick-Event-Signature': sig },
+      body,
+    });
+  };
+  await deliver('channel.followed', 'f1', { broadcaster: { user_id: 99 }, follower: { user_id: 50, username: 'Fan', is_anonymous: false } });
+  await deliver('chat.message.sent', 'c1', {
+    broadcaster: { user_id: 99 },
+    sender: { user_id: 51, username: 'SubGuy', identity: { badges: [{ text: 'Subscriber', type: 'subscriber', count: 3 }] } },
+    content: 'hello there',
+  });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(s.repo.getUserByKickId('50').points, 100);
+  assert.equal(s.repo.getUserByKickId('51').subscriber, 1);
+  assert.equal(s.repo.getUserByKickId('51').points, 10, 'subscribers earn 2x chat points');
 });

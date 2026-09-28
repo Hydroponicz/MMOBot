@@ -75,6 +75,7 @@ class GameEngine extends EventEmitter {
       user.subscriber = sub;
     }
     this.repo.chatTick(user.id);
+    this.noteChatter(user);
     this.awardChatPoints(user, content);
 
     const { prefix, disabledCommands = [] } = this.cfg;
@@ -403,7 +404,7 @@ function isChatCommand(word) {
 }
 
 // Feature modules add their methods to the engine.
-for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames']) {
+for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events']) {
   Object.assign(GameEngine.prototype, require(`./features/${mod}`));
 }
 

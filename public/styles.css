@@ -502,3 +502,12 @@ tr.locked td { opacity: 0.55; }
 .kind-meat { background: rgba(248, 113, 113, 0.15); color: var(--swords); }
 td.up, b.up { color: var(--accent); }
 td.down, b.down { color: var(--danger); }
+
+/* Raid / boost banner */
+#live-banner { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.banner { padding: 10px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel); font-size: 0.95rem; }
+.banner.boost { border-color: var(--accent); color: var(--accent); }
+.banner.raid { border-color: var(--danger); }
+.banner-row { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.raid-bar { height: 10px; margin-top: 8px; border-radius: 99px; background: var(--bg-2); overflow: hidden; }
+.raid-bar span { display: block; height: 100%; background: linear-gradient(90deg, #dc2626, #f87171); transition: width 0.4s; }

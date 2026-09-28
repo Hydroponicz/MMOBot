@@ -38,6 +38,19 @@ class ChatBot {
     return reply;
   }
 
+  // Kick channel events (follow, sub, gifts, live): the engine rewards players and says thanks.
+  handleChannelEvent(type, payload) {
+    try {
+      const text = this.engine.channelEvent(type, payload);
+      this.log.info(`[event] ${type}${text ? ` → ${text}` : ''}`);
+      if (text && this.engine.cfg.replyInChat) this.say(text);
+      return text;
+    } catch (err) {
+      this.log.error(`[bot] error handling ${type}`, err);
+      return null;
+    }
+  }
+
   isOwnReply(content) {
     const at = this.recentReplies.get(String(content || '').trim());
     return at !== undefined && Date.now() - at < 5 * 60_000;

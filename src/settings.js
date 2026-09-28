@@ -35,6 +35,15 @@ const COMMANDS = [
   'blackjack',
   'crash',
   'mines',
+  'raid',
+  'boost',
+  'duel',
+  'catch',
+  'daily',
+  'give',
+  'craft',
+  'museum',
+  'title',
   ...TOOL_SKILLS.map((id) => SKILLS[id].tool.id),
   'stats',
   'inv',
@@ -71,6 +80,20 @@ const FIELDS = {
     casinoMinBet: { type: 'int', label: 'Minimum bet', help: 'Smallest bet allowed.', min: 1, max: 1e12 },
     casinoMaxBet: { type: 'int', label: 'Maximum bet (0 = no limit)', help: 'Bigger bets (including "all") are capped to this.', min: 0, max: 1e12 },
     casinoCooldown: { type: 'int', label: 'Casino cooldown (seconds)', help: 'Time between bets per viewer.', min: 0, max: 3600 },
+  },
+  events: {
+    followPoints: { type: 'int', label: 'Points for a new follow', help: 'Given once per viewer when they follow the channel.', min: 0, max: 1e9 },
+    subPoints: { type: 'int', label: 'Points for a sub or resub', help: 'Given to the subscriber.', min: 0, max: 1e9 },
+    giftPointsPerSub: { type: 'int', label: 'Points per gifted sub (to the gifter)', help: 'Each gifted sub also gives the person receiving it the sub points.', min: 0, max: 1e9 },
+    giftBoostMinutesPerSub: { type: 'int', label: 'Double XP minutes per gifted sub', help: 'Gifted subs start a channel-wide XP boost (0 = off). Capped at 60 minutes.', min: 0, max: 60 },
+    giftBoostMultiplier: { type: 'number', label: 'Gifted-sub XP boost', help: 'XP multiplier during that boost (2 = double XP).', min: 1, max: 10 },
+    eventsOnlyWhenLive: { type: 'bool', label: 'Random events and raids only when live', help: 'Needs Kick live status (the bot subscribes to it); if the stream status is unknown, events run anyway.' },
+    randomEventMinutes: { type: 'int', label: 'Random chat events every (minutes)', help: 'A treasure goblin or supply drop appears about this often while chat is active (0 = off).', min: 0, max: 1440 },
+    raidEveryMinutes: { type: 'int', label: 'Raid boss every (minutes)', help: 'A world boss appears this often (0 = only when you start one on the Events page).', min: 0, max: 1440 },
+    raidMinutes: { type: 'int', label: 'Raid length (minutes)', help: 'How long chat has to beat the boss before it escapes.', min: 1, max: 60 },
+    raidRewardPoints: { type: 'int', label: 'Raid reward pool (points)', help: 'Split between everyone who hit the boss, by damage dealt.', min: 0, max: 1e9 },
+    raidCooldown: { type: 'int', label: 'Raid attack cooldown (seconds)', help: 'Time between !attack per viewer.', min: 0, max: 600 },
+    duelsEnabled: { type: 'bool', label: 'Duels', help: '!duel @name [bet]: player vs player fights for points.' },
   },
   economy: {
     xpMultiplier: { type: 'number', label: 'XP multiplier', help: '2 = double XP event.', min: 0.1, max: 100 },
@@ -196,6 +219,20 @@ class Settings extends EventEmitter {
         casinoMaxBet: config.game.casinoMaxBet ?? 0,
         casinoCooldown: config.game.casinoCooldown ?? 5,
       },
+      events: {
+        followPoints: config.game.followPoints ?? 100,
+        subPoints: config.game.subPoints ?? 500,
+        giftPointsPerSub: config.game.giftPointsPerSub ?? 250,
+        giftBoostMinutesPerSub: config.game.giftBoostMinutesPerSub ?? 5,
+        giftBoostMultiplier: config.game.giftBoostMultiplier ?? 2,
+        eventsOnlyWhenLive: config.game.eventsOnlyWhenLive ?? true,
+        randomEventMinutes: config.game.randomEventMinutes ?? 15,
+        raidEveryMinutes: config.game.raidEveryMinutes ?? 0,
+        raidMinutes: config.game.raidMinutes ?? 10,
+        raidRewardPoints: config.game.raidRewardPoints ?? 5000,
+        raidCooldown: config.game.raidCooldown ?? 20,
+        duelsEnabled: config.game.duelsEnabled ?? true,
+      },
       economy: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, growMultiplier: 1 },
       disabledCommands: [],
     };
@@ -231,6 +268,7 @@ class Settings extends EventEmitter {
       general: { ...d.general, ...(o.general || {}) },
       economy: { ...d.economy, ...(o.economy || {}) },
       casino: { ...d.casino, ...(o.casino || {}) },
+      events: { ...d.events, ...(o.events || {}) },
       disabledCommands: Array.isArray(o.disabledCommands) ? o.disabledCommands : d.disabledCommands,
       ...Object.fromEntries(Object.keys(TABLES).map((k) => [k, table(k)])),
     };
@@ -239,7 +277,7 @@ class Settings extends EventEmitter {
 
   // Flat view the game engine reads on every command.
   get game() {
-    return { ...this.all.general, ...this.all.economy, ...this.all.casino, disabledCommands: this.all.disabledCommands };
+    return { ...this.all.general, ...this.all.economy, ...this.all.casino, ...this.all.events, disabledCommands: this.all.disabledCommands };
   }
 
   // Validate and save one section. Returns the new settings; throws SettingsError on bad input.
