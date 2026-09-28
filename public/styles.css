@@ -566,3 +566,38 @@ a.badge:hover { text-decoration: none; color: var(--text); }
   .customize-preview { position: static; }
   .look-row { grid-template-columns: 1fr; gap: 6px; }
 }
+
+/* ---- How to play: tabs, collapsible topics, search ---- */
+.guide-head { display: flex; gap: 16px; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; margin-bottom: 16px; }
+.guide-search { flex: 1 1 280px; max-width: 420px; padding: 10px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font: inherit; }
+.guide-search:focus { outline: none; border-color: var(--accent); }
+.guide-banner { margin-bottom: 16px; color: var(--gold); }
+.guide-tabs .tab { font: inherit; font-weight: 600; }
+.guide-tools { display: flex; gap: 8px; justify-content: flex-end; margin-bottom: 10px; }
+.topics { display: grid; gap: 8px; }
+.topic { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.topic > summary { display: grid; grid-template-columns: 32px auto 1fr 16px; align-items: center; gap: 10px; padding: 14px 16px; cursor: pointer; list-style: none; }
+.topic > summary::-webkit-details-marker { display: none; }
+.topic > summary::after { content: '▸'; color: var(--muted); transition: transform 0.15s ease; justify-self: end; }
+.topic[open] > summary::after { transform: rotate(90deg); }
+.topic > summary:hover { background: var(--panel-2); }
+.topic-icon { font-size: 1.3rem; text-align: center; }
+.topic-title { font-weight: 700; }
+.topic-sum { color: var(--muted); font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topic-body { padding: 4px 18px 18px; border-top: 1px solid var(--border); }
+.topic-body > p:first-child { margin-top: 14px; }
+.topic-list { margin: 12px 0; padding-left: 20px; display: grid; gap: 6px; }
+.topic-body .topic-list:first-child { margin-top: 14px; }
+.race-mini { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 12px; }
+.race-mini .topic-list { padding-left: 0; list-style: none; font-size: 0.88rem; gap: 2px; margin: 6px 0 0; }
+.cmd-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr)); gap: 12px; }
+.cmd-groups .panel + .panel { margin-top: 0; }
+.cmd-group h3 { margin: 0 0 10px; }
+.cmd-group .kv dd { word-break: normal; }
+@media (max-width: 600px) {
+  .topic > summary { grid-template-columns: 28px 1fr 16px; }
+  .topic-sum { grid-column: 2; white-space: normal; font-size: 0.85rem; }
+  .topic > summary::after { grid-column: 3; grid-row: 1; }
+  .cmd-group .kv { grid-template-columns: 1fr; gap: 2px; }
+  .cmd-group .kv dd { margin-bottom: 8px; }
+}

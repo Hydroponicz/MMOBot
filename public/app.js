@@ -792,7 +792,7 @@
     return () => ($app.onclick = null);
   };
 
-  pages.guide = async () => {
+  pages.guide = async (_, query) => {
     const g = await api('/guide');
     const rareRows = (s, cols) =>
       s.rares
@@ -870,109 +870,314 @@
             <td class="num">${r.cost ? `${fmt(r.cost)} pts` : 'free'}</td></tr>`
           )
           .join('')}</tbody></table></div>`;
+    // ---- Topics: short summary on the collapsed row, details inside ----
+    const P = g.prefix;
+    const c = (x) => `<code>${esc(P + x)}</code>`;
+    const shopCost = (item) => fmt((g.shop.find((x) => x.item === item) || {}).cost || 0);
+    const list = (items) => `<ul class="topic-list">${items.map((x) => `<li>${x}</li>`).join('')}</ul>`;
+    const backpackTable = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Level</th><th>Backpack</th><th class="num">Slots</th><th class="num">Cost</th></tr></thead>
+        <tbody>${g.backpack
+          .map((b) => `<tr><td><b>${b.level}</b></td><td>${b.icon} ${esc(b.name)}</td><td class="num">${b.capacity}</td><td class="num">${b.cost ? `${fmt(b.cost)} pts` : 'free'}</td></tr>`)
+          .join('')}</tbody></table></div>`;
+
+    // What each skill is about, shown above its unlock table.
+    const SKILL_INTRO = {
+      fishing: `${c('fish')} catches fish. Higher levels unlock better fish; aim for one with ${c('fish trout')}. Fish sell for points, or ${c('cook')} them into food.`,
+      mining: `${c('mine')} digs ore. Pick an ore with ${c('mine iron')}. ${c('smelt')} ores into ingots and alloys.`,
+      woodcutting: `${c('chop')} cuts logs (${c('chop oak')} for a specific tree). Logs are used for fires, bows, arrows and staffs.`,
+      digging: `${c('dig')} unearths coins, relics and fossils. ${c('donate')} them to the museum for 3× their value.`,
+      skinning: `Needs a 🔪 Skinning Knife in your backpack (shop, or smith one at Smithing 20). ${c('skin')} animals for hides and raw meat. ${c('craft')} hides into leather armor.`,
+      farming: `Everyone gets a free 🟫 plot; buy more in the <a href="#/shop">shop</a> (${shopCost('farm_plot')} pts each, up to 100). Buy seeds, ${c('plant carrot')}, then ${c('harvest')} when it's grown (1 crop per plot). ${c('farm')} shows your plots. Planting and harvesting each use a stamina charge.`,
+      firemaking: `Buy a 🪨 Flint and Steel (${shopCost('flint_and_steel')} pts, 250 fires), then ${c('lightfire')} burns your best log (or ${c('lightfire oak')}). Better logs give more XP, and every fire leaves 🌫️ Ashes. If it doesn't catch, nothing is used up. ${c('fire')} shows how long it burns.`,
+      cooking: `While your fire burns (5 minutes, longer with better logs), ${c('cook')} your best raw food or name it: ${c('cook trout')}. <b>Cooking uses no stamina</b>, so cook as much as you like while the fire lasts. Food sometimes burns (less as you level). ${c('eat')} cooked food to heal.`,
+      smelting: `${c('smelt')} ores from your backpack into ingots (one ore) and alloys (mixed ores, e.g. copper + tin = bronze). Better furnaces can smelt two at once.`,
+      smithing: `Needs a 🔨 Smithing Hammer in your backpack. ${c('smith bronze sword')} turns alloys into weapons and armor. ${c('equip')} them or ${c('sell')} them.`,
+      fletching: `${c('fletch arrows')} makes 10 arrows from 1 Oak Logs + 1 🪶 Feathers + 1 Iron Ingot. Also bows (${c('fletch oak shortbow')}), staffs and a quiver.`,
+      crafting: `${c('craft')} hides into leather armor (it adds to your attack when you ${c('shoot')}), bigger quivers, and Magic Runes (${c('craft runes')}: 1 Ashes + 1 Tin Ore makes 10).`,
+      alchemy: `${c('brew')} potions from crops you farm, e.g. 2 Carrots make a Minor Health Potion. Undead potions come from Ashes plus something dead (see <b>Undead potions</b> in the Combat tab).`,
+      swords: `With a sword, ${c('fight')} monsters for Swords XP and loot. ${c('fight goblin')} picks a target; a plain ${c('fight')} picks your best safe match.`,
+      archery: `With a bow, a 🧺 quiver and arrows, ${c('shoot')} monsters for Archery XP. Each fight uses one arrow; better arrows hit harder. ${c('quiver')} shows your arrows, ${c('buy arrows 50')} buys more.`,
+      magic: `With a staff, ${c('cast')} spells for Magic XP. Each cast uses a Magic Rune and 1 mana. Stronger spells unlock as you level. ${c('heal')} also trains Magic.`,
+    };
+    const skillTopic = (s, tab) => ({
+      id: s.id,
+      tab,
+      icon: s.icon,
+      title: s.name,
+      summary: `${s.command} · max level ${s.maxLevel}`,
+      body: `<p>${SKILL_INTRO[s.id] || `${c(s.command.replace(/^\W/, ''))} trains ${esc(s.name)}.`}</p>${tierTable(s)}${s.tool ? toolTable(s.tool, s) : ''}`,
+    });
+
+    const TABS = [
+      ['basics', '🚀 Getting started'],
+      ['skills', '🛠️ Skills'],
+      ['combat', '⚔️ Combat'],
+      ['rewards', '🏆 Rewards & social'],
+      ['events', '🎉 Stream events'],
+      ['commands', '💬 All commands'],
+    ];
+    const topics = [
+      {
+        id: 'first-steps', tab: 'basics', icon: '👋', title: 'Your first commands', summary: 'Type a skill command in chat and you are playing',
+        body: list([
+          `Type a skill command in chat, like ${c('fish')}, ${c('mine')} or ${c('chop')}. Your character is created automatically.`,
+          'Each action gives XP, points and an item. Higher levels unlock better resources.',
+          `Target something directly: ${c('mine iron')}, ${c('chop oak')}.`,
+          `${c('stats')} shows your levels, ${c('inv')} your backpack, ${c('commands')} the command list.`,
+          'Log in on this site with Kick to see your character, shop, and customize your look.',
+        ]),
+      },
+      {
+        id: 'stamina', tab: 'basics', icon: '⚡', title: 'Stamina', summary: `${g.staminaMax} charges, refilled every ${g.staminaMinutes} minutes`,
+        body: list([
+          `You have <b>${g.staminaMax} stamina charges</b>. Every action (skilling, fighting, farming, raid attacks) uses one.`,
+          `The bar fills back up to full <b>${g.staminaMinutes} minutes</b> after you use the first charge.`,
+          `<b>Cooking on a lit fire is free</b>, and info commands like ${c('stats')} never cost stamina.`,
+          `${c('stamina')} shows your bar. Halflings get an extra charge, and the Wraith Tonic potion refills it twice as fast.`,
+        ]),
+      },
+      {
+        id: 'races', tab: 'basics', icon: '🧬', title: 'Races & your look', summary: 'Pick a race with perks and drawbacks, customize your character',
+        body: `<p>Everyone starts as a random race with a random look. <a href="#/customize">Customize</a> your skin, face, hair, facial hair and outfit any time, and pick a race once every ${g.raceChangeDays} days. ${c('race')} shows yours in chat.${g.racePerks ? '' : ' <b>Race perks are switched off right now.</b>'}</p>
+          <div class="race-mini">${g.races
+            .map((r) => `<div><b>${r.icon} ${esc(r.name)}</b>${list([...r.pros.map((x) => `✅ ${esc(x)}`), ...r.cons.map((x) => `<span class="muted">❌ ${esc(x)}</span>`)])}</div>`)
+            .join('')}</div>`,
+      },
+      {
+        id: 'points', tab: 'basics', icon: '💰', title: 'Points & selling', summary: 'Earn points by chatting, playing and selling loot',
+        body: list([
+          `Chatting earns <b>${g.chatPoints} points</b> (once every ${g.chatCooldown}s). Every action earns a few more.`,
+          `${c('sell all')} (or ${c('sellall')}) sells your loot. Gear, tools, seeds and potions are kept; sell those by name: ${c('sell trout 5')}.`,
+          `Spend points in the <a href="#/shop">shop</a> (or ${c('buy')} in chat) on tools, seeds, potions and more, or gamble them in the <a href="#/casino">casino</a>.`,
+        ]),
+      },
+      {
+        id: 'backpack', tab: 'basics', icon: '🎒', title: 'Backpack', summary: `${g.backpack[0].capacity} slots to start, up to ${g.backpack[g.backpack.length - 1].capacity}`,
+        body: `<p>When your backpack is full, ${c('sell')}, ${c('smelt')} or ${c('upgrade backpack')}. Seeds don't take space.</p>${backpackTable}`,
+      },
+      {
+        id: 'tools', tab: 'basics', icon: '🔧', title: 'Tools & leveling', summary: 'Skills go to level 500; better tools every 50 levels',
+        body: list([
+          'Every skill goes to <b>level 500</b>. Your <b>character level</b> grows with the combined XP of all your skills.',
+          `Every 50 levels you can buy a better tool: ${c('upgrade rod')}, ${c('upgrade pickaxe')}, ${c('upgrade axe')}, ${c('upgrade shovel')}, ${c('upgrade furnace')}. Better tools fail less and give bonus XP and better rare odds.`,
+          `${c('gear')} shows all your tools. Each skill's tool table is in the <b>Skills</b> tab.`,
+        ]),
+      },
+      ...g.skills.filter((s) => s.type !== 'combat').map((s) => skillTopic(s, 'skills')),
+      {
+        id: 'fighting', tab: 'combat', icon: '🗡️', title: 'How fighting works', summary: 'Pick monsters your size; fights cost HP',
+        body: list([
+          `${c('fight')} uses whichever combat skill you're best at (Swords, Archery or Magic) with your best weapon.`,
+          `${c('targets')} lists the best monsters for your level, gear and HP. ${c('monsters')} rates them: ⚪ too easy · 🟢 good match · 🟠 tough · 🔴 hard · ☠️ deadly.`,
+          `${c('scout troll')} shows how a fight would go without fighting. You're warned before a fight that would likely knock you out.`,
+          `${c('equip')} gear for attack and defence. ${c('equipped')} shows it, ${c('unequip helmet')} takes it off.`,
+        ]),
+      },
+      {
+        id: 'health', tab: 'combat', icon: '❤️', title: 'Health, mana & knockouts', summary: 'At 0 HP you are knocked out until you heal',
+        body: list([
+          `Fights cost ❤️ HP (better weapons and armor mean less). ${c('hp')} shows your health and mana.`,
+          `At 0 HP you're knocked out until you're back at full HP, or ${c('drink')} a health potion to get up now.`,
+          `${c('eat')} cooked food to heal, and ${c('heal')} spends 🔷 mana to restore 25% HP.`,
+        ]),
+      },
+      {
+        id: 'potions', tab: 'combat', icon: '🧪', title: 'Undead potions', summary: 'Timed buffs brewed from Ashes',
+        body: `<p>${c('brew')} Ashes with something dead, then ${c('drink')} it. ${c('buffs')} shows what's active.</p>${list(
+          (g.buffs || []).map((b) => `${b.icon} <b>${esc(b.potion)}</b>: ${esc(b.text)} (${b.minutes} min)`)
+        )}`,
+      },
+      ...g.skills.filter((s) => s.type === 'combat').map((s) => skillTopic(s, 'combat')),
+      {
+        id: 'daily', tab: 'rewards', icon: '📅', title: 'Daily reward & tasks', summary: 'Free points every day, more for streaks',
+        body: list([`${c('daily')} gives points, more each day in a row (up to 7 days).`, `${c('tasks')} shows 3 daily tasks that pay when you finish them.`]),
+      },
+      {
+        id: 'titles', tab: 'rewards', icon: '🏅', title: 'Achievements & titles', summary: 'Unlock titles to show off',
+        body: list([`Achievements unlock titles. ${c('achievements')} lists them, ${c('title')} picks the one you show.`]),
+      },
+      {
+        id: 'seasons', tab: 'rewards', icon: '🗓️', title: 'Seasons', summary: 'Top 3 each season win a permanent title',
+        body: list([`The Season leaderboard counts XP earned this season. ${c('season')} shows the leaders and your rank.`, 'The top 3 at the end of a season win a permanent title.']),
+      },
+      {
+        id: 'museum', tab: 'rewards', icon: '🏛️', title: 'Museum', summary: 'Donate digging finds for 3× value and titles',
+        body: list([`${c('donate')} your digging finds. Each pays 3× its value.`, `Finishing a collection (coins, relics, fossils, royal treasures...) pays a big reward and a title. ${c('museum')} shows your progress.`]),
+      },
+      {
+        id: 'trading', tab: 'rewards', icon: '🤝', title: 'Trading & duels', summary: 'Give items or points, duel for bets',
+        body: list([
+          `${c('give @name iron ore 5')} or ${c('give @name 500')} (once you've played a little; point gifts have a daily limit).`,
+          `${c('duel @name 500')} challenges someone; they ${c('accept')} or ${c('decline')}. The winner takes the bet. Duels don't hurt your real HP.`,
+        ]),
+      },
+      {
+        id: 'raids', tab: 'events', icon: '🐉', title: 'Raid bosses', summary: 'Everyone fights a giant boss together',
+        body: list([`When a ⚔️ raid boss appears, type ${c('attack')} to hit it (each attack uses stamina). ${c('raid')} shows its HP.`, 'Beat it in time and the reward pool is split by damage. The top hitter is MVP and gets extra loot.']),
+      },
+      {
+        id: 'random-events', tab: 'events', icon: '👺', title: 'Treasure goblins & supply drops', summary: 'Be the first to type the command',
+        body: list([`A 👺 treasure goblin (${c('catch')}) or 📦 supply drop (${c('grab')}) sometimes pops up in chat. Be quick!`]),
+      },
+      {
+        id: 'boosts', tab: 'events', icon: '🚀', title: 'Follows, subs & XP boosts', summary: 'Supporting the channel pays off for everyone',
+        body: list([
+          'Following or subscribing earns points.',
+          `Gifted subs start ⚡ double XP for everyone. ${c('boost')} shows if one is running.`,
+          g.xpMultiplier !== 1 ? `<b>🔥 A ${g.xpMultiplier}× XP event is on right now!</b>` : 'The streamer can also run XP events.',
+        ]),
+      },
+    ];
+
+    // ---- Command reference, grouped ----
+    const COMMANDS = [
+      ['Skills', g.skills.map((s) => [s.command.replace(/^\W/, ''), `${s.icon} Train ${s.name}`])],
+      ['Tools & gear', [
+        ['gear', 'All your tools and backpack'],
+        ['upgrade <tool>', 'Better tool (every 50 levels): rod, pickaxe, axe, shovel, furnace'],
+        ['upgrade backpack', 'More backpack slots'],
+        ['equip <item>', 'Wear gear (unequip, equipped)'],
+      ]],
+      ['Farming, fire & food', [
+        ['plant [crop]', 'Plant seeds in empty plots'],
+        ['harvest', 'Collect grown crops'],
+        ['farm', 'Your plots'],
+        ['lightfire [log]', 'Light a fire (needs flint and steel)'],
+        ['cook [food]', 'Cook on your fire, no stamina needed'],
+        ['fire', 'How long your fire burns'],
+        ['eat [food]', 'Eat cooked food to heal'],
+      ]],
+      ['Combat', [
+        ['fight [monster]', 'Fight with your best combat skill'],
+        ['shoot [monster]', 'Fight with a bow (1 arrow)'],
+        ['cast [monster]', 'Fight with magic (staff + rune)'],
+        ['targets', 'Best monsters for you right now'],
+        ['monsters', 'Monster ratings for you'],
+        ['scout <monster>', 'How a fight would go'],
+        ['hp', 'Health and mana'],
+        ['drink [potion]', 'Drink a potion'],
+        ['heal', 'Spend mana to restore HP'],
+        ['buffs', 'Active potion effects'],
+        ['quiver', 'Your arrows'],
+      ]],
+      ['Points & items', [
+        ['sell all', 'Sell your loot (also !sellall)'],
+        ['sell trout 5', 'Sell a specific item'],
+        ['buy <item>', 'Buy from the shop (shop lists items)'],
+        ['buy arrows 50', 'Buy arrows'],
+        ['inv', 'Your backpack'],
+        ['points', 'Your points'],
+        ['give @name <item|points>', 'Give to another player'],
+      ]],
+      ['You & rankings', [
+        ['stats [name]', 'Levels and points'],
+        ['stamina', 'Your stamina bar'],
+        ['race [race]', 'Your race and its perks'],
+        ['top [skill]', 'Top 5 players'],
+        ['daily', 'Daily reward'],
+        ['tasks', "Today's tasks"],
+        ['title [name]', 'Show a title (achievements lists them)'],
+        ['season', "This season's leaders"],
+        ['museum', 'Museum progress (donate <item>)'],
+      ]],
+      ['Events', [
+        ['attack', 'Hit the raid boss (raid shows it)'],
+        ['catch / grab', 'Claim a random event'],
+        ['duel @name [bet]', 'Challenge a player (accept / decline)'],
+        ['boost', 'Is an XP boost running?'],
+      ]],
+      ['Casino', [
+        ['slots 500', '🎰 Slots (all, half, 1k also work)'],
+        ['roulette red 500', '🎡 Colors, odd/even, halves, dozens or a number'],
+        ['plinko 500 high', '🔻 Plinko: low, medium or high risk'],
+        ['bj 500', '🃏 Blackjack: hit, stand, double, split'],
+        ['crash 500 2x', '🚀 Crash, cashing out at 2x'],
+        ['mines 500 3', '💣 Mines, then pick 7 and cashout'],
+      ]],
+    ];
+    const cmdHtml = (cmd) => `<code>${esc(cmd.split(' / ').map((x) => P + x).join(' / '))}</code>`;
+
+    const strip = (html) => html.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').toLowerCase();
+    const topicHtml = (t, open) => `
+      <details class="topic" id="topic-${t.id}" ${open ? 'open' : ''}>
+        <summary><span class="topic-icon">${t.icon}</span><span class="topic-title">${esc(t.title)}</span><span class="topic-sum">${esc(t.summary)}</span></summary>
+        <div class="topic-body">${t.body}</div>
+      </details>`;
+    const commandsHtml = (q) => {
+      const groups = COMMANDS.map(([name, rows]) => [name, rows.filter(([cmd, desc]) => !q || `${cmd} ${desc}`.toLowerCase().includes(q))]).filter(([, rows]) => rows.length);
+      return groups.length
+        ? `<div class="cmd-groups">${groups
+            .map(([name, rows]) => `<section class="panel cmd-group"><h3>${esc(name)}</h3><dl class="kv">${rows.map(([cmd, desc]) => `<dt>${cmdHtml(cmd)}</dt><dd>${esc(desc)}</dd>`).join('')}</dl></section>`)
+            .join('')}</div>`
+        : '';
+    };
+
+    let tab = TABS.some(([id]) => id === query?.get('tab')) ? query.get('tab') : 'basics';
+    const openTopic = query?.get('topic');
+    let q = '';
+
     $app.innerHTML = `
-      <h1>How to play</h1>
-      <div class="grid grid-2">
-        <section class="panel">
-          <h2>Getting started</h2>
-          <ol class="steps">
-            <li>Type a skill command in chat, like <code>${esc(g.skills[0].command)}</code>. Your character is created automatically.</li>
-            <li>Each action gives XP and an item. You have <b>${g.staminaMax}</b> stamina charges: every action (skilling, fighting, farming, raid attacks) uses one (cooking on a lit fire is free), and the bar refills to full <b>${g.staminaMinutes} minutes</b> after you use the first. Check it with <code>${g.prefix}stamina</code>.</li>
-            <li>Every character starts as a random race with a random look. <a href="#/customize">Customize</a> your skin tone, face, hair, facial hair and outfit any time, and pick your race (once every ${g.raceChangeDays} days). ${g.racePerks ? 'Each race has perks and drawbacks' : 'Race perks are switched off right now'}: ${g.races.map((r) => `${r.icon} <b>${esc(r.name)}</b> (${[...r.pros.map(esc), ...r.cons.map((c) => `<span class="muted">${esc(c)}</span>`)].join(', ')})`).join(' · ')}. <code>${g.prefix}race</code> shows yours in chat.</li>
-            <li>Higher levels unlock better resources. Target one directly, e.g. <code>!mine iron</code> or <code>!chop oak</code>.</li>
-            <li>Mine ores, then <code>!smelt</code> them into <b>ingots</b> (one ore) and <b>alloys</b> (mixed ores, e.g. copper + tin = bronze). The ores come out of your backpack.</li>
-            <li>Your backpack holds <b>${g.backpack[0].capacity} items</b> to start. When it's full, <code>!sell</code>, <code>!smelt</code> or <code>!upgrade backpack</code> (up to ${g.backpack[g.backpack.length - 1].capacity} slots).</li>
-            <li>Just chatting earns <b>${g.chatPoints} points</b> (once every ${g.chatCooldown}s). <code>!sell</code> loot for even more.</li>
-            <li>Every skill goes all the way to <b>level 500</b>. Every 50 levels you can buy a better tool with points: <code>!upgrade rod</code>, <code>pickaxe</code>, <code>axe</code>, <code>shovel</code> or <code>furnace</code>. Better tools fail less, give bonus XP and better rare odds (furnaces can smelt two at once). <code>!gear</code> shows all your tools.</li>
-            ${g.xpMultiplier !== 1 ? `<li><b>🔥 ${g.xpMultiplier}× XP event is on right now!</b></li>` : ''}
-            <li><b>Smithing</b>: buy a 🔨 Smithing Hammer in the <a href="#/shop">shop</a> (keep it in your backpack), then turn alloys into weapons and armor: <code>!smith bronze sword</code>. <code>!equip</code> gear for attack and defence, or <code>!sell</code> it.</li>
-            <li><b>Skinning</b>: with a 🔪 Skinning Knife in your backpack (buy it in the <a href="#/shop">shop</a> or smith it at Smithing 20 from a Sterling Alloy), <code>!skin</code> animals for hides, from rabbits up to celestial fleece.</li>
-            <li><b>Farming</b>: everyone gets a free 🟫 farm plot. Buy seeds (and more plots, ${fmt((g.shop.find((x) => x.item === 'farm_plot') || {}).cost || 0)} pts each, up to 100) in the <a href="#/shop">shop</a>, <code>!plant carrot</code>, and <code>!harvest</code> when it's grown (carrots take 20 minutes, 1 crop per plot). ${g.skills.find((x) => x.type === 'farm')?.tiers.length || ''} crops to unlock up to level 500. Planting and harvesting each use a stamina charge.</li>
-            <li><b>Combat</b>: with a sword (shop or smithed), <code>!fight</code> monsters for Swords XP and loot. <code>!fight goblin</code> picks a target (<code>!targets</code> lists the best ones for your level, gear and HP), and you can pick any monster, but ones above your level hit much harder. <code>!monsters</code> rates them for you (⚪ too easy · 🟢 good match · 🟠 tough · 🔴 hard · ☠️ deadly) and <code>!scout troll</code> shows how a fight would go. A plain <code>!fight</code> picks your best safe match, and you're warned before a fight that would likely knock you out. Fights cost ❤️ HP (better weapons and armor mean less). At 0 HP you're knocked out: wait until you're back at full HP (24h) or <code>!drink</code> a health potion. <code>!heal</code> spends 🔷 mana to restore HP.</li>
-            <li><b>Archery &amp; Fletching</b>: <code>!fletch arrows</code> from 1 Oak Logs + 1 🪶 Feathers (from chickens) + 1 Iron Ingot, 10 at a time. Arrows go in a 🧺 Quiver (shop 250 pts, or <code>!fletch quiver</code> from 2 Rabbit Hides), which holds 500. Get a bow (shop 500 pts, or <code>!fletch oak shortbow</code> from 2 Oak Logs), then <code>!shoot</code> monsters for Archery XP: each fight uses one arrow, and better arrows hit harder. <code>!fight</code> uses whichever combat skill you're best at.</li>
-            <li><b>Firemaking</b>: buy a 🪨 Flint and Steel in the <a href="#/shop">shop</a> (${fmt((g.shop.find((x) => x.item === 'flint_and_steel') || {}).cost || 0)} pts, good for 250 fires), then <code>!lightfire</code> burns the best log in your backpack (or <code>!lightfire oak</code>). Better logs give more XP, and every fire leaves 🌫️ Ashes. Sometimes the fire won't catch; nothing is used up, just try again.</li>
-            <li><b>Cooking</b>: while your fire burns (5 minutes, longer with better logs), <code>!cook</code> the best raw food in your backpack, or name it: <code>!cook trout</code>, <code>!cook carrot</code>, <code>!cook rabbit</code>. Cooking uses no stamina, so cook as much as you like while the fire lasts. Fish, vegetables, Raw Chicken from fights and the meat you get from <code>!skin</code> all cook; each unlocks at the level it takes to get it. Food burns sometimes (less as you level). Cooked food sells for more, and <code>!eat</code> heals HP.</li>
-            <li><b>Crafting</b>: <code>!craft</code> hides from <code>!skin</code> into leather armor (a coif, chaps and body per hide type). Leather has a bit less defence than metal but adds to your attack when you <code>!shoot</code>. Also bigger quivers (Large 1,000, Huge 2,000 arrows) and Magic Runes (<code>!craft runes</code>: 1 Ashes + 1 Tin Ore makes 10).</li>
-            <li><b>Magic</b>: with a staff (shop, or <code>!fletch oak staff</code>), <code>!cast</code> spells at monsters for Magic XP. Each cast uses a Magic Rune and 1 mana; you learn stronger spells as you level (Wind Strike, Water Bolt at 20, Earth Blast at 40, Fire Wave at 60...). <code>!heal</code> also trains Magic.</li>
-            <li><b>Museum</b>: <code>!donate</code> your digging finds. Each pays 3x its value, and finishing a collection (coins, relics, fossils, royal treasures...) pays a big reward and a title. <code>!museum</code> shows your progress.</li>
-            <li><b>Every day</b>: <code>!daily</code> for points (more each day in a row, up to 7 days), and 3 daily tasks (<code>!tasks</code>) that pay when you finish them. <b>Achievements</b> unlock titles you can show with <code>!title</code>. <b>Seasons</b>: the Season leaderboard counts XP earned this season; the top 3 at the end win a permanent title. <b>Trading</b>: <code>!give @name iron ore 5</code> or <code>!give @name 500</code> (once you've played a little; points gifts have a daily limit).</li>
-            <li><b>Stream events</b>: when a ⚔️ <b>raid boss</b> appears, everyone types <code>!attack</code> to fight it together (<code>!raid</code> shows its HP). Beat it in time and the reward pool is split by damage; the top hitter is MVP. A 👺 treasure goblin (<code>!catch</code>) or 📦 supply drop (<code>!grab</code>) sometimes pops up: be quick! Following or subscribing earns points, and gifted subs start ⚡ double XP for everyone (<code>!boost</code>). Challenge a friend with <code>!duel @name 500</code>: they <code>!accept</code>, and the winner takes the bet (duels don't hurt your real HP).</li>
-            <li><b>Undead potions</b>: <code>!brew</code> Ashes with something dead into potions with timed effects, then <code>!drink</code> them. <code>!buffs</code> shows what's active.<ul>${(g.buffs || [])
-              .map((b) => `<li>${b.icon} <b>${esc(b.potion)}</b>: ${esc(b.text)} (${b.minutes} min)</li>`)
-              .join('')}</ul></li>
-            <li><b>Alchemy</b>: <code>!brew</code> potions from crops you farm, e.g. 2 Carrots make a Minor Health Potion. Or buy potions in the <a href="#/shop">shop</a>.</li>
-            <li>Your <b>character level</b> grows with the combined XP of all skills — train them all!</li>
-          </ol>
-        </section>
-        <section class="panel">
-          <h2>Chat commands</h2>
-          <dl class="kv">
-            ${g.skills.map((s) => `<dt><code>${esc(s.command)}</code></dt><dd>${s.icon} Train ${esc(s.name)}</dd>`).join('')}
-            <dt><code>!gear</code></dt><dd>Show all your tools and backpack</dd>
-            <dt><code>!&lt;tool&gt;</code></dt><dd>Show one tool: <code>!rod</code> <code>!pickaxe</code> <code>!axe</code> <code>!shovel</code> <code>!furnace</code></dd>
-            <dt><code>!upgrade &lt;tool&gt;</code></dt><dd>Upgrade a tool (every 50 levels, costs points)</dd>
-            <dt><code>!upgrade backpack</code></dt><dd>More backpack slots (costs points)</dd>
-            <dt><code>!plant [crop]</code></dt><dd>Plant seeds in empty plots</dd>
-            <dt><code>!harvest</code></dt><dd>Collect grown crops (<code>!farm</code> shows your plots)</dd>
-            <dt><code>!skin</code></dt><dd>Skin animals (needs a knife)</dd>
-            <dt><code>!smith &lt;item&gt;</code></dt><dd>Smith gear from alloys (needs a hammer)</dd>
-            <dt><code>!fight [monster]</code></dt><dd>Fight for Swords XP and loot (costs HP)</dd>
-            <dt><code>!hp</code></dt><dd>Show your health and mana</dd>
-            <dt><code>!drink [potion]</code></dt><dd>Drink a potion (revives you if knocked out)</dd>
-            <dt><code>!targets [bow]</code></dt><dd>The best monsters for you to fight right now</dd>
-            <dt><code>!buy arrows 50</code></dt><dd>Buy arrows for your quiver</dd>
-            <dt><code>!shoot [monster]</code></dt><dd>Fight with a bow (uses 1 arrow)</dd>
-            <dt><code>!fletch &lt;item&gt;</code></dt><dd>Make arrows, bows or a quiver (<code>!quiver</code> shows your arrows)</dd>
-            <dt><code>!monsters</code></dt><dd>Which monsters suit you (⚪ too easy to ☠️ deadly)</dd>
-            <dt><code>!scout &lt;monster&gt;</code></dt><dd>How a fight would go, without fighting</dd>
-            <dt><code>!lightfire [log]</code></dt><dd>Burn a log for Firemaking XP and Ashes (needs flint and steel)</dd>
-            <dt><code>!cook [food]</code></dt><dd>Cook on your fire, no stamina needed (<code>!fire</code> shows how long it lasts)</dd>
-            <dt><code>!eat [food]</code></dt><dd>Eat cooked food to heal HP</dd>
-            <dt><code>!attack</code></dt><dd>Hit the raid boss (<code>!raid</code> shows it)</dd>
-            <dt><code>!catch</code> / <code>!grab</code></dt><dd>Claim a random event</dd>
-            <dt><code>!duel @name [bet]</code></dt><dd>Duel another player (<code>!accept</code> / <code>!decline</code>)</dd>
-            <dt><code>!boost</code></dt><dd>Is a channel XP boost running?</dd>
-            <dt><code>!craft &lt;item&gt;</code></dt><dd>Leather armor, quivers and runes</dd>
-            <dt><code>!cast [monster]</code></dt><dd>Fight with magic (staff + runes)</dd>
-            <dt><code>!donate &lt;item&gt;</code></dt><dd>Give a digging find to the museum (<code>!museum</code>)</dd>
-            <dt><code>!daily</code> / <code>!tasks</code></dt><dd>Daily reward and today's tasks</dd>
-            <dt><code>!title [name]</code></dt><dd>Show a title you've unlocked (<code>!achievements</code>)</dd>
-            <dt><code>!season</code></dt><dd>This season's leaders and your rank</dd>
-            <dt><code>!give @name &lt;item|points&gt;</code></dt><dd>Give items or points to another player</dd>
-            <dt><code>!buffs</code></dt><dd>Your active potion effects</dd>
-            <dt><code>!heal</code></dt><dd>Spend half your mana to restore 25% HP</dd>
-            <dt><code>!equip &lt;item&gt;</code></dt><dd>Wear gear (<code>!unequip</code>, <code>!equipped</code>)</dd>
-            <dt><code>!buy &lt;item&gt;</code></dt><dd>Buy a hammer or sword (<code>!shop</code> lists them)</dd>
-            <dt><code>!stats [name]</code></dt><dd>Show levels and points</dd>
-            <dt><code>!inv</code></dt><dd>Show your backpack</dd>
-            <dt><code>!sell all</code> / <code>!sellall</code></dt><dd>Sell everything for points (gear, tools, seeds and potions are kept)</dd>
-            <dt><code>!sell trout 5</code></dt><dd>Sell a specific item</dd>
-            <dt><code>!points</code></dt><dd>Show your points</dd>
-            <dt><code>!top [skill]</code></dt><dd>Top 5 players</dd>
-            <dt><code>!slots 500</code></dt><dd>🎰 Spin the slots (<code>!slots all</code>, <code>!slots half</code>, <code>!slots 1k</code>)</dd>
-            <dt><code>!roulette red 500</code></dt><dd>🎡 Bet on red/black/green, odd/even, low/high, 1st/2nd/3rd or a number</dd>
-            <dt><code>!plinko 500 high</code></dt><dd>🔻 Drop a plinko ball (low, medium or high risk)</dd>
-            <dt><code>!bj 500</code></dt><dd>🃏 Blackjack, then <code>!hit</code>, <code>!stand</code> or <code>!double</code></dd>
-            <dt><code>!commands</code></dt><dd>List commands</dd>
-          </dl>
-        </section>
+      <div class="guide-head">
+        <div>
+          <h1 style="margin-bottom:4px">How to play</h1>
+          <p class="muted" style="margin:0">Pick a topic below. Everything is played by typing commands in Kick chat.</p>
+        </div>
+        <input id="guide-search" class="guide-search" type="search" placeholder="Search the guide… (e.g. arrows, stamina, iron)" autocomplete="off">
       </div>
-      <section class="panel" style="margin-top:16px">
-        <h2>🎒 Backpacks <code>!upgrade backpack</code></h2>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Level</th><th>Backpack</th><th class="num">Slots</th><th class="num">Cost</th></tr></thead>
-          <tbody>${g.backpack
-            .map((b) => `<tr><td><b>${b.level}</b></td><td>${b.icon} ${esc(b.name)}</td><td class="num">${b.capacity}</td><td class="num">${b.cost ? `${fmt(b.cost)} pts` : 'free'}</td></tr>`)
-            .join('')}</tbody></table></div>
-      </section>
-      <h2 style="margin:28px 0 12px">Skills &amp; unlocks</h2>
-      <div class="grid grid-guide">
-        ${g.skills
-          .map(
-            (s) => `<section class="panel${s.type === 'combat' || s.type === 'farm' || s.tiers.some((t) => t.stats || t.heal) ? ' span-all' : ''}"><h2>${s.icon} ${esc(s.name)} <code>${esc(s.command)}</code> <span class="muted" style="font-size:.8rem;font-weight:600">max level ${s.maxLevel}</span></h2>${tierTable(s)}${s.tool ? toolTable(s.tool, s) : ''}</section>`
-          )
-          .join('')}
-      </div>`;
+      ${g.xpMultiplier !== 1 ? `<div class="panel guide-banner">🔥 <b>${g.xpMultiplier}× XP event is on right now!</b></div>` : ''}
+      <div class="tabs guide-tabs" id="guide-tabs"></div>
+      <div id="guide-body"></div>`;
+    const $tabs = document.getElementById('guide-tabs');
+    const $body = document.getElementById('guide-body');
+
+    const draw = () => {
+      $tabs.style.display = q ? 'none' : '';
+      $tabs.innerHTML = TABS.map(([id, label]) => `<button class="tab ${id === tab ? 'active' : ''}" data-tab="${id}">${label}</button>`).join('');
+      if (q) {
+        // Search every topic and command at once; open the matches.
+        const hits = topics.filter((t) => strip(`${t.title} ${t.summary} ${t.body}`).includes(q));
+        const cmds = commandsHtml(q);
+        $body.innerHTML =
+          hits.length || cmds
+            ? `<p class="muted" style="margin-top:0">${hits.length} topic${hits.length === 1 ? '' : 's'} match “${esc(q)}”. Tap one to open it.</p>${hits.length ? `<div class="topics">${hits.map((t) => topicHtml(t, hits.length === 1)).join('')}</div>` : ''}${cmds ? `<h2 style="margin:22px 0 10px">Commands</h2>${cmds}` : ''}`
+            : `<div class="panel empty"><span class="ic">🔍</span>Nothing found for “${esc(q)}”.</div>`;
+        return;
+      }
+      if (tab === 'commands') {
+        $body.innerHTML = commandsHtml('');
+        return;
+      }
+      const mine = topics.filter((t) => t.tab === tab);
+      $body.innerHTML = `
+        <div class="guide-tools"><button class="btn btn-sm" data-expand>Expand all</button><button class="btn btn-sm" data-collapse>Collapse all</button></div>
+        <div class="topics">${mine.map((t) => topicHtml(t, t.id === openTopic)).join('')}</div>`;
+    };
+    draw();
+    if (openTopic) document.getElementById(`topic-${openTopic}`)?.scrollIntoView({ block: 'start' });
+
+    $tabs.onclick = (e) => {
+      const b = e.target.closest('[data-tab]');
+      if (!b) return;
+      tab = b.dataset.tab;
+      // Remember the tab in the URL without reloading the page.
+      history.replaceState(null, '', `#/guide?tab=${tab}`);
+      draw();
+    };
+    $body.onclick = (e) => {
+      if (e.target.closest('[data-expand]')) $body.querySelectorAll('details.topic').forEach((d) => (d.open = true));
+      if (e.target.closest('[data-collapse]')) $body.querySelectorAll('details.topic').forEach((d) => (d.open = false));
+    };
+    $body.addEventListener('toggle', (e) => {
+      if (e.target.matches?.('details.topic') && e.target.open && !q) history.replaceState(null, '', `#/guide?tab=${tab}&topic=${e.target.id.replace('topic-', '')}`);
+    }, true);
+    const $search = document.getElementById('guide-search');
+    $search.oninput = () => {
+      q = $search.value.trim().toLowerCase();
+      if (q.length === 1) return;
+      draw();
+    };
   };
 
   const ADMIN_TABS = [
