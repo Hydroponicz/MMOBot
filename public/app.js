@@ -169,7 +169,7 @@
               <div class="nm">${esc(i.name)}</div><div class="val">${i.usesLeft != null ? `${i.usesLeft} uses` : `${fmt(i.value * i.qty)} pts`}</div>
               ${
                 isMe
-                  ? `<div class="inv-actions">${i.gear ? `<button class="mini" data-act="equip" data-item="${esc(i.id)}">Equip</button>` : ''}${i.potion ? `<button class="mini" data-act="drink" data-item="${esc(i.id)}">Drink</button>` : ''}<button class="mini" data-act="sell" data-item="${esc(i.id)}" data-name="${esc(i.name)}" data-value="${i.value}">Sell</button></div>`
+                  ? `<div class="inv-actions">${i.gear ? `<button class="mini" data-act="equip" data-item="${esc(i.id)}">Equip</button>` : ''}${i.potion ? `<button class="mini" data-act="drink" data-item="${esc(i.id)}">Drink</button>` : ''}${i.food ? `<button class="mini" data-act="eat" data-item="${esc(i.id)}">Eat</button>` : ''}<button class="mini" data-act="sell" data-item="${esc(i.id)}" data-name="${esc(i.name)}" data-value="${i.value}">Sell</button></div>`
                   : ''
               }</div>`
           )
@@ -230,6 +230,7 @@
     if (i.attack) bits.push(`+${i.attack} attack, needs ${i.wieldSkill || 'Swords'} ${i.level}`);
     if (i.defence) bits.push(`+${i.defence} defence, needs Combat ${i.level}`);
     if (i.usesLeft != null) bits.push(`${i.usesLeft}/${i.uses} uses left`);
+    if (i.food) bits.push(`!eat it to heal ${i.food.heal} HP`);
     if (i.effect) bits.push(`drink for ${i.effect.name} (${i.effect.minutes} min): ${i.effect.text}`);
     return bits.join(' · ');
   }
@@ -630,8 +631,10 @@
       <p class="muted" style="font-size:.85rem">Any monster can be fought at any level, but ones above your level hit much harder: twice your level is a hard fight, three times will likely knock you out.</p>`;
       }
       const isProcess = s.type === 'process';
-      const hasStats = s.tiers.some((t) => t.stats);
-      return `
+      const hasStats = s.tiers.some((t) => t.stats || t.heal);
+      // Long lists (like Cooking's) start folded.
+      const fold = s.tiers.length > 40;
+      return `${fold ? `<details><summary class="btn btn-sm" style="margin-bottom:12px">Show all ${s.tiers.length}</summary>` : ''}
       <div class="table-wrap"><table>
         <thead><tr><th>Level</th><th>${isProcess ? 'Makes' : 'Resource'}</th>${isProcess ? '<th>Type</th><th>Needs (from your backpack)</th>' : ''}${hasStats ? '<th>Stats</th>' : ''}<th class="num">XP</th><th class="num">Sells for</th></tr></thead>
         <tbody>${s.tiers
@@ -639,10 +642,10 @@
             (t) => `<tr><td><b>${t.level}</b></td><td>${t.icon} ${esc(t.item)}</td>
             ${t.kind ? `<td><span class="kind kind-${esc(t.kind)}">${esc(t.kind)}</span></td>` : ''}
             ${t.inputs ? `<td class="wrap">${t.inputs.map((i) => `${i.qty}× ${i.icon} ${esc(i.item)}`).join(' + ')}</td>` : ''}
-            ${hasStats ? `<td class="wrap">${t.stats ? gearStat(t.stats) : ''}</td>` : ''}
+            ${hasStats ? `<td class="wrap">${t.stats ? gearStat(t.stats) : t.heal ? `❤️ heals ${fmt(t.heal)}` : ''}</td>` : ''}
             <td class="num">${t.xp}</td><td class="num">${fmt(t.value)} pts</td></tr>`
           )
-          .join('')}${rareRows(s, 0)}</tbody></table></div>`;
+          .join('')}${rareRows(s, 0)}</tbody></table></div>${fold ? '</details>' : ''}`;
     };
     const STAT_HEAD = {
       failChance: (t) => `<th class="num" title="Chance an action fails">${t.failWord === 'snap' ? 'Snap' : 'Miss'}</th>`,
@@ -687,6 +690,7 @@
             <li><b>Combat</b>: with a sword (shop or smithed), <code>!fight</code> monsters for Swords XP and loot. <code>!fight goblin</code> picks a target (<code>!targets</code> lists the best ones for your level, gear and HP), and you can pick any monster, but ones above your level hit much harder. <code>!monsters</code> rates them for you (⚪ too easy · 🟢 good match · 🟠 tough · 🔴 hard · ☠️ deadly) and <code>!scout troll</code> shows how a fight would go. A plain <code>!fight</code> picks your best safe match, and you're warned before a fight that would likely knock you out. Fights cost ❤️ HP (better weapons and armor mean less). At 0 HP you're knocked out: wait until you're back at full HP (24h) or <code>!drink</code> a health potion. <code>!heal</code> spends 🔷 mana to restore HP.</li>
             <li><b>Archery &amp; Fletching</b>: <code>!fletch arrows</code> from 1 Oak Logs + 1 🪶 Feathers (from chickens) + 1 Iron Ingot, 10 at a time. Arrows go in a 🧺 Quiver (shop 250 pts, or <code>!fletch quiver</code> from 2 Rabbit Hides), which holds 500. Get a bow (shop 500 pts, or <code>!fletch oak shortbow</code> from 2 Oak Logs), then <code>!shoot</code> monsters for Archery XP: each fight uses one arrow, and better arrows hit harder. <code>!fight</code> uses whichever combat skill you're best at.</li>
             <li><b>Firemaking</b>: buy a 🪨 Flint and Steel in the <a href="#/shop">shop</a> (${fmt((g.shop.find((x) => x.item === 'flint_and_steel') || {}).cost || 0)} pts, good for 250 fires), then <code>!lightfire</code> burns the best log in your backpack (or <code>!lightfire oak</code>). Better logs give more XP, and every fire leaves 🌫️ Ashes. Sometimes the fire won't catch; nothing is used up, just try again.</li>
+            <li><b>Cooking</b>: while your fire burns (5 minutes, longer with better logs), <code>!cook</code> the best raw food in your backpack, or name it: <code>!cook trout</code>, <code>!cook carrot</code>, <code>!cook rabbit</code>. Fish, vegetables, Raw Chicken from fights and the meat you get from <code>!skin</code> all cook; each unlocks at the level it takes to get it. Food burns sometimes (less as you level). Cooked food sells for more, and <code>!eat</code> heals HP.</li>
             <li><b>Undead potions</b>: <code>!brew</code> Ashes with something dead into potions with timed effects, then <code>!drink</code> them. <code>!buffs</code> shows what's active.<ul>${(g.buffs || [])
               .map((b) => `<li>${b.icon} <b>${esc(b.potion)}</b>: ${esc(b.text)} (${b.minutes} min)</li>`)
               .join('')}</ul></li>
@@ -716,6 +720,8 @@
             <dt><code>!monsters</code></dt><dd>Which monsters suit you (⚪ too easy to ☠️ deadly)</dd>
             <dt><code>!scout &lt;monster&gt;</code></dt><dd>How a fight would go, without fighting</dd>
             <dt><code>!lightfire [log]</code></dt><dd>Burn a log for Firemaking XP and Ashes (needs flint and steel)</dd>
+            <dt><code>!cook [food]</code></dt><dd>Cook on your fire (<code>!fire</code> shows how long it lasts)</dd>
+            <dt><code>!eat [food]</code></dt><dd>Eat cooked food to heal HP</dd>
             <dt><code>!buffs</code></dt><dd>Your active potion effects</dd>
             <dt><code>!heal</code></dt><dd>Spend half your mana to restore 25% HP</dd>
             <dt><code>!equip &lt;item&gt;</code></dt><dd>Wear gear (<code>!unequip</code>, <code>!equipped</code>)</dd>
@@ -746,7 +752,7 @@
       <div class="grid grid-guide">
         ${g.skills
           .map(
-            (s) => `<section class="panel${s.type === 'combat' || s.type === 'farm' || s.tiers.some((t) => t.stats) ? ' span-all' : ''}"><h2>${s.icon} ${esc(s.name)} <code>${esc(s.command)}</code> <span class="muted" style="font-size:.8rem;font-weight:600">max level ${s.maxLevel}</span></h2>${tierTable(s)}${s.tool ? toolTable(s.tool, s) : ''}</section>`
+            (s) => `<section class="panel${s.type === 'combat' || s.type === 'farm' || s.tiers.some((t) => t.stats || t.heal) ? ' span-all' : ''}"><h2>${s.icon} ${esc(s.name)} <code>${esc(s.command)}</code> <span class="muted" style="font-size:.8rem;font-weight:600">max level ${s.maxLevel}</span></h2>${tierTable(s)}${s.tool ? toolTable(s.tool, s) : ''}</section>`
           )
           .join('')}
       </div>`;

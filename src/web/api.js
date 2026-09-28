@@ -69,6 +69,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   router.post('/me/equip', requireLogin, act((req) => engine.equip(req.user, [String(req.body?.item || '')])));
   router.post('/me/drink', requireLogin, act((req) => engine.drink(req.user, [String(req.body?.item || '')])));
   router.post('/me/heal', requireLogin, act((req) => engine.healSpell(req.user)));
+  router.post('/me/eat', requireLogin, act((req) => engine.eat(req.user, [String(req.body?.item || '')])));
   router.post('/me/unequip', requireLogin, act((req) => engine.unequip(req.user, [String(req.body?.slot || '')])));
   router.post('/me/sell', requireLogin, act((req) => {
     const qty = req.body?.qty === 'all' ? 'all' : String(Math.max(1, Number.parseInt(req.body?.qty, 10) || 1));

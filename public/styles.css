@@ -27,6 +27,7 @@
   --fletching: #eab308;
   --archery: #2dd4bf;
   --firemaking: #f97316;
+  --cooking: #fbbf24;
 }
 
 * { box-sizing: border-box; }
@@ -496,3 +497,6 @@ tr.locked td { opacity: 0.55; }
 .buff { padding: 4px 10px; border-radius: 99px; background: rgba(167, 139, 250, 0.15); border: 1px solid rgba(167, 139, 250, 0.4); font-size: 0.85rem; font-weight: 600; }
 .buff small { color: var(--muted); margin-left: 2px; }
 .kind-undead { background: rgba(148, 163, 184, 0.18); color: #cbd5e1; }
+.kind-fish { background: rgba(56, 189, 248, 0.15); color: var(--fishing); }
+.kind-vegetable { background: rgba(132, 204, 22, 0.15); color: var(--farming); }
+.kind-meat { background: rgba(248, 113, 113, 0.15); color: var(--swords); }

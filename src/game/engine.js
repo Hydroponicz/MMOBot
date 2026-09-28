@@ -64,6 +64,8 @@ const INFO_COMMANDS = {
   hp: ['vitalsInfo', 'hp'], health: ['vitalsInfo', 'hp'], mana: ['vitalsInfo', 'hp'], vitals: ['vitalsInfo', 'hp'],
   drink: ['drink', 'drink'], quaff: ['drink', 'drink'], potion: ['drink', 'drink'],
   heal: ['healSpell', 'heal'],
+  eat: ['eat', 'eat'], food: ['eat', 'eat'],
+  fire: ['fireInfo', 'eat'],
   buffs: ['buffsInfo', 'hp'], effects: ['buffsInfo', 'hp'],
   monsters: ['monstersInfo', 'monsters'], mobs: ['monstersInfo', 'monsters'],
   targets: ['targets', 'targets'], target: ['targets', 'targets'],
@@ -112,8 +114,9 @@ for (const id of SKILL_IDS) {
     for (const item of m.loot) GATHER_HINT[item] ??= `!${SKILLS[id].command} ${m.name.toLowerCase()}`;
   }
 }
-// Firemaking leaves ashes.
+// Firemaking leaves ashes; skinning gives meat.
 GATHER_HINT.ashes = '!lightfire';
+for (const r of SKILLS.skinning.resources) if (r.meat) GATHER_HINT[r.meat] = `!skin ${ITEMS[r.item].name.split(' ')[0].toLowerCase()}`;
 // Name of anything in a skill's unlock list (items, recipes or monsters).
 const unlockName = (r) => (r.item ? ITEMS[r.item].name : r.name);
 
@@ -312,7 +315,16 @@ class GameEngine extends EventEmitter {
     }
     if (!drop) drop = target || this.pickResource(unlocked);
 
-    return this.reward(user, skillId, drop.item, drop.xp, { rare });
+    const result = this.reward(user, skillId, drop.item, drop.xp, { rare });
+    // Skinned animals also give their meat, if there's room for it.
+    if (drop.meat) {
+      const bag = this.backpack(user.id);
+      if (bag.used < bag.capacity) {
+        this.repo.addItem(user.id, drop.meat, 1);
+        result.reply = result.reply.replace(/!/, ` and ${itemLabel(drop.meat)}!`);
+      } else result.reply += ` (no room for the ${ITEMS[drop.meat].name})`;
+    }
+    return result;
   }
 
   // "you need a 🔪 Skinning Knife in your backpack to skin! !buy knife (500 pts) or !smith skinning knife (Smithing 20: 1 Steel Alloy)"
@@ -354,6 +366,9 @@ class GameEngine extends EventEmitter {
     const level = skillLevel(skillId, this.repo.getSkills(user.id)[skillId]);
     const inv = this.repo.getInventory(user.id);
     if (skill.requires && !inv[skill.requires]) return { consumed: false, reply: this.missingToolMessage(skill) };
+    if (skill.needsFire && !this.fireLeft(user.id)) {
+      return { consumed: false, reply: `🔥 you need a fire to ${skill.command} on! !lightfire first (a Flint and Steel and logs), then !${skill.command} while it burns.` };
+    }
     const hasInputs = (r) => Object.entries(r.inputs).every(([item, qty]) => (inv[item] || 0) >= qty);
     const needs = (r) => Object.entries(r.inputs).map(([i, q]) => `${q} ${ITEMS[i].name}`).join(' + ');
     const missing = (r) => {
@@ -379,7 +394,7 @@ class GameEngine extends EventEmitter {
           const eg = skill.example || 'bronze sword (sword, helmet, shield, platelegs, platebody) or !smith skinning knife';
           return { consumed: false, reply: `unknown item. Try e.g. !${skill.command} ${eg}` };
         }
-        const opts = skill.recipes.filter((r) => r.level <= level).map((r) => ITEMS[r.item].name.split(' ')[0].toLowerCase());
+        const opts = [...new Set(skill.recipes.filter((r) => r.level <= level).map((r) => r.word || ITEMS[r.item].name.split(' ')[0].toLowerCase()))].slice(-8);
         return { consumed: false, reply: `unknown recipe. You can ${skill.command}: ${opts.join(', ')} (e.g. !${skill.command} ${opts[opts.length - 1]})` };
       }
       recipe = skill.recipes.find((r) => r.item === id);
@@ -413,7 +428,14 @@ class GameEngine extends EventEmitter {
       if (q.arrows + (recipe.yield || 1) > q.capacity) return { consumed: false, reply: `🧺 your quiver is full (${fmt(q.arrows)}/${fmt(q.capacity)} arrows). !shoot some first.` };
     }
     for (const [item, qty] of Object.entries(recipe.inputs)) this.repo.removeItem(user.id, item, qty);
-    return this.reward(user, skillId, recipe.item, recipe.xp, { rare: false, qty: recipe.yield || 1 });
+    const fire = skill.needsFire ? ` 🔥 Fire: ${minutesLeft(this.fireLeft(user.id))} left.` : '';
+    // Cooking: likely to burn at the recipe's level, rarely 50+ levels above it. Burnt food is lost.
+    if (skill.burnable && this.rng() < clamp(0.3 - (level - recipe.level) * 0.0056, 0.02, 0.3)) {
+      const raw = Object.keys(recipe.inputs)[0];
+      return { consumed: true, reply: `🔥 oops, you burned the ${ITEMS[raw].name}! It's ruined. Keep practising, you burn less as you level.${fire}` };
+    }
+    const done = this.reward(user, skillId, recipe.item, recipe.xp, { rare: false, qty: recipe.yield || 1 });
+    return { ...done, reply: `${done.reply}${fire}` };
   }
 
   // !lightfire [log]: burn a log from your backpack with your Flint and Steel. Uses the best log you
@@ -459,13 +481,62 @@ class GameEngine extends EventEmitter {
     this.repo.addItem(user.id, 'ashes', 1);
     if (wornOut) this.repo.removeItem(user.id, 'flint_and_steel', 1);
     this.repo.setEquipment(user.id, 'flint_used', wornOut ? 0 : used);
+    // The fire burns for a while: 5 minutes, plus a minute per log tier. Cook on it with !cook.
+    const minutes = 5 + SKILLS.firemaking.resources.indexOf(log);
+    const until = Math.max(this.now() + minutes * 60_000, this.now() + this.fireLeft(user.id));
+    this.repo.setSetting(this.fireKey(user.id), until);
     const xpGain = this.xpFor(log.xp);
     this.emitActivity(user, { kind: 'action', skill: 'firemaking', item: log.item, xp: xpGain, text: `burned ${ITEMS[log.item].name}` });
     const gained = this.grantXp(user, 'firemaking', xpGain);
     const flintNote = wornOut
       ? ` 🪨 Your Flint and Steel wore out! !buy flint${flint ? ` (${fmt(flint.cost)} pts)` : ''} for another.`
       : ` 🪨 ${maxUses - used}/${maxUses} uses left.`;
-    return { consumed: true, reply: `🔥 you lit a fire with ${itemLabel(log.item)} and got ${itemLabel('ashes')}! ${gained.text}${flintNote}` };
+    return {
+      consumed: true,
+      reply: `🔥 you lit a fire with ${itemLabel(log.item)} and got ${itemLabel('ashes')}! ${gained.text} It burns for ${minutesLeft(until - this.now())}: !cook on it.${flintNote}`,
+    };
+  }
+
+  // ---- Fires (for cooking) --------------------------------------------------------
+  fireKey(userId) {
+    return `fire:${userId}`;
+  }
+
+  // Milliseconds your fire keeps burning (0 = no fire).
+  fireLeft(userId) {
+    return Math.max(0, (this.repo.getSetting(this.fireKey(userId)) || 0) - this.now());
+  }
+
+  // !fire
+  fireInfo(user) {
+    const left = this.fireLeft(user.id);
+    return left ? `🔥 your fire burns for another ${minutesLeft(left)}. !cook while it lasts.` : 'no fire going. !lightfire to light one (needs a Flint and Steel and logs).';
+  }
+
+  // !eat [food]: cooked food heals HP. With no name, eats the smallest food that fills you up (or
+  // your biggest). Food can't get you up from a knockout; only health potions can.
+  eat(user, args) {
+    const now = this.now();
+    const inv = this.repo.getInventory(user.id);
+    const owned = Object.keys(inv).filter((id) => ITEMS[id]?.food && inv[id] > 0).sort((a, b) => ITEMS[a].food.heal - ITEMS[b].food.heal);
+    const vit = this.vitals(user.id, now);
+    if (vit.ko) return `${this.knockedOutMessage(user.id, vit, now)} (Food can't get you up.)`;
+    let id;
+    if (args.length) {
+      id = findItem(args.join(' '), owned);
+      if (!id) return owned.length ? `you don't have that. Your food: ${owned.map((i) => ITEMS[i].name).join(', ')}` : 'you have no cooked food. !lightfire then !cook fish, vegetables or meat.';
+    } else {
+      if (!owned.length) return 'you have no cooked food. !lightfire then !cook fish, vegetables or meat.';
+      const missing = vit.maxHp - vit.hp;
+      id = owned.find((i) => ITEMS[i].food.heal >= missing) || owned[owned.length - 1];
+    }
+    if (vit.hp >= vit.maxHp) return `you're already at full health. ${this.vitalsLine(vit)}`;
+    const hp = Math.min(vit.maxHp, vit.hp + ITEMS[id].food.heal);
+    this.repo.transaction(() => {
+      this.repo.removeItem(user.id, id, 1);
+      this.repo.setVitals(user.id, { hp, mana: vit.mana, koUntil: 0 }, now);
+    });
+    return `${ITEMS[id].icon} you ate ${/^[AEIOU]/.test(ITEMS[id].name) ? 'an' : 'a'} ${ITEMS[id].name} (+${fmt(Math.round(hp - vit.hp))} HP). ${this.vitalsLine(this.vitals(user.id, now))}`;
   }
 
   // Uses left on a player's Flint and Steel (null if they don't have one).
@@ -485,7 +556,9 @@ class GameEngine extends EventEmitter {
       if (bagNow.used + 1 < bagNow.capacity) qty = 2;
     }
     this.repo.addItem(user.id, item, qty);
-    const text = `${skill.verb} ${rare ? 'a RARE ' : ''}${ITEMS[item].name}`;
+    // "cooked Rabbit Meat", not "cooked Cooked Rabbit Meat".
+    const name = ITEMS[item].name.replace(new RegExp(`^${skill.verb} `, 'i'), '');
+    const text = `${skill.verb} ${rare ? 'a RARE ' : ''}${name}`;
     this.emitActivity(user, { kind: rare ? 'rare' : 'action', skill: skillId, item, xp: xpGain, text });
     const gained = this.grantXp(user, skillId, xpGain);
     const reply = `${skill.icon} you ${skill.verb} ${rare ? 'a RARE ' : ''}${itemLabel(item, qty)}!${qty > baseQty ? ' (double!)' : ''} ${gained.text}`;
@@ -753,7 +826,7 @@ class GameEngine extends EventEmitter {
       text: `defeated a ${monster.name}${rare ? ` and found a RARE ${ITEMS[loot].name}` : ''}`,
     });
     const gained = this.grantXp(user, pick.skillId, xpGain);
-    const low = hpLeft < vit.maxHp * 0.25 ? ' ⚠️ low HP! !drink a potion or !heal' : '';
+    const low = hpLeft < vit.maxHp * 0.25 ? ' ⚠️ low HP! !eat, !drink a potion or !heal' : '';
     let easy = '';
     if (rating.id === 'easy') {
       const better = this.bestMonster(skill, odds, vit.maxHp);
@@ -2295,6 +2368,7 @@ class GameEngine extends EventEmitter {
             value: r.item ? this.sellValue(r.item) : undefined,
             kind: r.kind,
             hp: r.hp,
+            heal: r.item ? ITEMS[r.item].food?.heal : undefined,
             grow: r.grow ? Math.max(1, Math.round(r.grow * (this.cfg.growMultiplier ?? 1))) : undefined,
             seedCost: r.seed ? this.seedPrice(r) : undefined,
             loot: r.loot ? r.loot.map((i) => ({ item: ITEMS[i].name, icon: ITEMS[i].icon, value: this.sellValue(i) })) : undefined,

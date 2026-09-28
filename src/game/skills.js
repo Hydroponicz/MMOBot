@@ -501,6 +501,20 @@ const SKILLS = {
     failMessages: ["the sparks didn't catch", 'the wind blew your fire out', 'the logs are too damp'],
     resources: [], // one per log type, filled in below
   },
+  cooking: {
+    name: 'Cooking',
+    icon: '🍳',
+    command: 'cook',
+    verb: 'cooked',
+    type: 'process',
+    maxLevel: 500,
+    // Cook on your own fire (!lightfire first). Food can burn: likely at the recipe's level, rare
+    // well above it. Cooked food heals with !eat.
+    needsFire: true,
+    burnable: true,
+    failMessages: ['you burned it'],
+    recipes: [], // fish, vegetables and meat, filled in below
+  },
   smelting: {
     name: 'Smelting',
     icon: '🔥',
@@ -878,6 +892,57 @@ for (const [id, name, icon, level, inputs, restores] of POTION_LIST) {
 // ---- Firemaking --------------------------------------------------------------------------
 // Every log can be burned from the Firemaking level it takes to chop it. Better logs give more XP.
 SKILLS.firemaking.resources = SKILLS.woodcutting.resources.map((r) => ({ item: r.item, level: r.level, xp: Math.round(r.xp * 1.25) }));
+
+// ---- Meat and cooking -----------------------------------------------------------------------
+// Skinning an animal also gives its raw meat (the `meat` on each skinning resource).
+const MEATS = [
+  // hide, meat id, animal
+  ['rabbit_hide', 'raw_rabbit', 'Rabbit'],
+  ['squirrel_pelt', 'raw_squirrel', 'Squirrel'],
+  ['fox_pelt', 'raw_fox', 'Fox'],
+  ['deer_hide', 'raw_venison', 'Venison'],
+  ['boar_hide', 'raw_boar', 'Boar'],
+  ['bear_pelt', 'raw_bear', 'Bear'],
+  ['bison_hide', 'raw_bison', 'Bison'],
+  ['tiger_pelt', 'raw_tiger', 'Tiger'],
+  ['crocodile_skin', 'raw_crocodile', 'Crocodile'],
+  ['polar_bear_pelt', 'raw_polar_bear', 'Polar Bear'],
+  ['snow_leopard_pelt', 'raw_snow_leopard', 'Snow Leopard'],
+  ['mammoth_hide', 'raw_mammoth', 'Mammoth'],
+  ['wyvern_hide', 'raw_wyvern', 'Wyvern'],
+  ['basilisk_skin', 'raw_basilisk', 'Basilisk'],
+  ['chimera_hide', 'raw_chimera', 'Chimera'],
+  ['griffin_pelt', 'raw_griffin', 'Griffin'],
+  ['behemoth_hide', 'raw_behemoth', 'Behemoth'],
+  ['kraken_skin', 'raw_kraken', 'Kraken'],
+  ['celestial_fleece', 'raw_celestial_lamb', 'Celestial Lamb'],
+];
+const meatName = (animal) => (/Venison|Lamb/.test(animal) ? animal : `${animal} Meat`);
+for (const [hide, id, animal] of MEATS) {
+  const r = SKILLS.skinning.resources.find((x) => x.item === hide);
+  if (!r) throw new Error(`no skinning resource ${hide}`);
+  ITEMS[id] = { name: `Raw ${meatName(animal)}`, icon: '🥩', value: Math.max(2, Math.round(ITEMS[hide].value * 0.8)) };
+  r.meat = id;
+}
+
+// Cooking: every fish, vegetable and raw meat, unlocked at the level it takes to get it. Cooked food
+// sells for more and heals with !eat (better food heals more).
+const foodHeal = (level) => Math.round(12 + level * 3.5);
+const addFood = (raw, id, name, icon, level, xp, kind, word) => {
+  if (ITEMS[id]) throw new Error(`food id ${id} clashes with an existing item`);
+  ITEMS[id] = { name, icon, value: Math.round(ITEMS[raw].value * 1.6) + 1, keep: true, food: { heal: foodHeal(level) } };
+  SKILLS.cooking.recipes.push({ item: id, level, kind, word, xp: Math.round(xp * 1.1), inputs: { [raw]: 1 } });
+};
+for (const r of SKILLS.fishing.resources) addFood(r.item, `cooked_${r.item}`, `Cooked ${ITEMS[r.item].name}`, ITEMS[r.item].icon, r.level, r.xp, 'fish', ITEMS[r.item].name.toLowerCase());
+for (const r of SKILLS.farming.resources.filter((c) => c.kind === 'vegetable')) {
+  addFood(r.item, `roasted_${r.item}`, `Roasted ${ITEMS[r.item].name}`, ITEMS[r.item].icon, r.level, r.xp, 'vegetable', ITEMS[r.item].name.toLowerCase());
+}
+for (const [hide, id, animal] of MEATS) {
+  const r = SKILLS.skinning.resources.find((x) => x.item === hide);
+  addFood(id, `cooked_${id.replace(/^raw_/, '')}`, `Cooked ${meatName(animal)}`, '🍖', r.level, r.xp, 'meat', animal.toLowerCase());
+}
+addFood('raw_chicken', 'cooked_chicken', 'Cooked Chicken', '🍗', 1, 10, 'meat', 'chicken');
+SKILLS.cooking.recipes.sort((a, b) => a.level - b.level);
 
 // ---- Undead potions ------------------------------------------------------------------------
 // Brewed with Alchemy from Ashes plus something dead. Each one gives a timed effect (a "buff")

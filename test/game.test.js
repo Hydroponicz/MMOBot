@@ -128,7 +128,7 @@ test('!stats, !inv, !top, !points and !commands respond', () => {
   assert.match(say('!top'), /1\. Alice/);
   assert.match(say('!top fishing'), /Fishing: 1\. Alice Lv2/);
   assert.match(say('!points'), /points/);
-  assert.match(say('!commands'), /!fish !mine !chop !dig !skin !plant !harvest !lightfire !smelt !smith !fletch !brew !fight !shoot/);
+  assert.match(say('!commands'), /!fish !mine !chop !dig !skin !plant !harvest !lightfire !cook !smelt !smith !fletch !brew !fight !shoot/);
   assert.equal(say('!unknowncommand'), null);
 });
 
@@ -136,7 +136,7 @@ test('profile exposes everything the website needs', () => {
   const { repo, engine, say } = setup();
   say('!fish');
   const p = engine.profile(repo.getUserByName('alice').id);
-  assert.equal(p.skills.length, 13);
+  assert.equal(p.skills.length, 14);
   assert.equal(p.skills[0].id, 'fishing');
   assert.equal(p.skills[0].level, 2);
   assert.equal(p.skills[0].rank, 1);
@@ -735,6 +735,82 @@ test("undead potions: Vampire Draught heals after wins, Lich's Elixir cheats one
   assert.equal(engine.hasBuff(u.id, 'deathless'), false, 'only once');
 });
 
+test('cooking: needs a lit fire; cooks fish, vegetables and meat; food can burn', () => {
+  // rolls: [lightfire fail roll, cook burn roll]
+  const { repo, engine, say, tick } = setup({ rolls: [0.99, 0.99, 0.0] });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addItem(u.id, 'shrimp', 2);
+  assert.match(say('!cook'), /🔥 you need a fire to cook on! !lightfire first/);
+  repo.addItem(u.id, 'flint_and_steel', 1);
+  repo.addItem(u.id, 'logs', 1);
+  assert.match(say('!lightfire'), /It burns for 5m: !cook on it\./);
+  assert.match(engine.fireInfo(u), /your fire burns for another 5m/);
+  tick();
+  assert.match(say('!cook'), /🍳 you cooked 🦐 Cooked Shrimp! \+11 XP.* 🔥 Fire: 5m left\./);
+  tick();
+  // Burnt: the raw food is gone, nothing made.
+  assert.match(say('!cook shrimp'), /🔥 oops, you burned the Shrimp! It's ruined/);
+  const inv = repo.getInventory(u.id);
+  assert.equal(inv.shrimp, undefined);
+  assert.equal(inv.cooked_shrimp, 1);
+  tick();
+  assert.match(say('!cook trout'), /need 🍳 Cooking level 20 for Cooked Trout/);
+  assert.match(say('!cook lasagna'), /unknown recipe. You can cook: .*shrimp/);
+
+  // Vegetables and meat too.
+  repo.addItem(u.id, 'carrot', 1);
+  assert.match(say('!cook carrot'), /you cooked 🥕 Roasted Carrot!/);
+  tick();
+  repo.addItem(u.id, 'raw_chicken', 1);
+  assert.match(say('!cook chicken'), /you cooked 🍗 Cooked Chicken!/);
+
+  // The fire goes out.
+  tick(6 * 60);
+  repo.addItem(u.id, 'raw_rabbit', 1);
+  assert.match(say('!cook'), /you need a fire/);
+});
+
+test('cooking: better food gives more XP, and the burn chance falls with level', () => {
+  const { repo, engine, say } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addXp(u.id, 'cooking', xpForLevel(30));
+  repo.setSetting(`fire:${u.id}`, 2_000_000_000);
+  repo.addItem(u.id, 'shrimp', 1);
+  repo.addItem(u.id, 'salmon', 1);
+  assert.match(say('!cook'), /Cooked Salmon! \+61 XP/, 'the best food first');
+  const { SKILLS } = require('../src/game/skills');
+  const salmon = SKILLS.cooking.recipes.find((r) => r.item === 'cooked_salmon');
+  const shrimp = SKILLS.cooking.recipes.find((r) => r.item === 'cooked_shrimp');
+  assert.ok(salmon.xp > shrimp.xp);
+  assert.match(engine.handleChat({ kickUserId: '1', username: 'Alice', content: '!cook shrimp' }).reply, /catching your breath/);
+});
+
+test('skinning gives meat; !eat heals with cooked food', () => {
+  const { repo, engine, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addItem(u.id, 'skinning_knife', 1);
+  assert.match(say('!skin'), /skinned 🐇 Rabbit Hide and 🥩 Raw Rabbit Meat!/);
+  assert.equal(repo.getInventory(u.id).raw_rabbit, 1);
+  // A full backpack keeps the hide and skips the meat.
+  repo.addItem(u.id, 'logs', 6); // knife + hide + meat + 6 logs = 9 of 10 slots
+  tick();
+  assert.match(say('!skin'), /skinned 🐇 Rabbit Hide!.*\(no room for the Raw Rabbit Meat\)/);
+
+  assert.match(say('!eat'), /you have no cooked food/);
+  repo.addItem(u.id, 'cooked_shrimp', 2);
+  repo.addItem(u.id, 'cooked_salmon', 1);
+  assert.match(say('!eat'), /already at full health/);
+  repo.setVitals(u.id, { hp: 50, mana: 0, koUntil: 0 }, 1_000_000 + 31_000);
+  assert.match(say('!eat'), /🦐 you ate a Cooked Shrimp \(\+10 HP\)\. ❤️ 60\/60 HP/, 'the smallest food that fills you up');
+  repo.setVitals(u.id, { hp: 5, mana: 0, koUntil: 0 }, 1_000_000 + 31_000);
+  assert.match(say('!eat salmon'), /ate a Cooked Salmon \(\+55 HP\)/);
+  repo.setVitals(u.id, { hp: 0, mana: 0, koUntil: 9_000_000_000 }, 1_000_000);
+  assert.match(say('!eat'), /knocked out.*Food can't get you up/);
+  assert.match(say('!sell all'), /sold/);
+  assert.equal(repo.getInventory(u.id).cooked_shrimp, 1, 'cooked food is kept by !sell all');
+  assert.equal(engine.vitals(u.id).ko, true);
+});
+
 test('!drink picks the right potion, !heal spends mana, potions can be bought and brewed', () => {
   const { repo, engine, say, tick } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
@@ -812,7 +888,7 @@ test('!skin needs a skinning knife (buy it or smith it at Smithing 20 from a Ste
   repo.addXp(u.id, 'smithing', xpForLevel(20));
   assert.match(say('!smith knife'), /smithed 🔪 Skinning Knife! \+55 XP/);
   tick();
-  assert.match(say('!skin'), /🔪 you skinned 🐇 Rabbit Hide! \+10 XP/);
+  assert.match(say('!skin'), /🔪 you skinned 🐇 Rabbit Hide and 🥩 Raw Rabbit Meat! \+10 XP/);
   assert.equal(repo.getInventory(u.id).skinning_knife, 1, 'the knife is not used up');
   assert.match(say('!sell all'), /kept your gear & tools/);
 });
