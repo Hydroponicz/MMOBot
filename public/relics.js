@@ -351,7 +351,10 @@
         }
         return null;
       };
-      return Array.from({ length: WIN_AT + 6 }, (_, i) => (i === WIN_AT ? (winner.star ? null : winner) : pickRandom()));
+      // While spinning, the winning tile is drawn exactly like the filler: the plain catalog skin, with no
+      // float, exterior, SoulTrak™ badge, pattern or wear, so nothing gives it away before it stops.
+      const plain = winner.star ? null : { ...c.skins.find((s) => s.id === winner.skin), color: RAR[winner.rarity].color };
+      return Array.from({ length: WIN_AT + 6 }, (_, i) => (i === WIN_AT ? plain : pickRandom()));
     }
 
     async function openCases(c, count) {
@@ -417,10 +420,8 @@
         reels.forEach((el, k) => {
           el.style.transition = 'none';
           el.style.transform = `translateX(${targets[k]}px)`;
-          const win = el.children[WIN_AT];
-          win.classList.add('winner');
-          // Reveal the real ★ relic in the reel.
-          if (r.relics[k].star) win.outerHTML = tile(r.relics[k], { cls: 'winner' });
+          // Now reveal the real relic (float, exterior, pattern, SoulTrak™) in the reel.
+          el.children[WIN_AT].outerHTML = tile(r.relics[k], { cls: 'winner' });
         });
         showResult();
       };
