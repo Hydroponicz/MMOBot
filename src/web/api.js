@@ -1,7 +1,10 @@
 // JSON API consumed by the website (public/app.js) and the OBS overlay.
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const express = require('express');
-const { ITEMS, SKILLS, SKILL_IDS, maxLevel } = require('../game/skills');
+const { ITEMS, SKILLS, SKILL_IDS, maxLevel, findItem } = require('../game/skills');
 const { levelForXp, progress, CHARACTER_MAX_LEVEL, CHARACTER_SKILL_COUNT } = require('../game/xp');
 const { makeIsAdmin } = require('./auth');
 const { SettingsError } = require('../settings');
@@ -262,6 +265,78 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     const reason = String(req.body?.reason || '').slice(0, 200);
     logger.info(`[admin] ${req.user.username} ${applied >= 0 ? 'gave' : 'took'} ${Math.abs(applied)} points ${applied >= 0 ? 'to' : 'from'} ${user.username}${reason ? ` (${reason})` : ''}`);
     res.json({ player: repo.getUser(user.id) });
+  });
+
+  // Give (qty > 0) or take (qty < 0) items: { item: "iron ore" | "iron_ore", qty }.
+  router.post('/admin/players/:id/items', requireAdmin, (req, res) => {
+    const user = repo.getUser(Number(req.params.id));
+    if (!user) return res.status(404).json({ error: 'player not found' });
+    const item = findItem(String(req.body?.item || ''));
+    const qty = Number(req.body?.qty);
+    if (!item) return res.status(400).json({ error: 'unknown item' });
+    if (!Number.isInteger(qty) || qty === 0 || Math.abs(qty) > 1e6) return res.status(400).json({ error: 'enter a whole number, e.g. 5 or -2' });
+    const have = repo.getInventory(user.id)[item] || 0;
+    const applied = Math.max(qty, -have);
+    if (applied > 0) repo.addItem(user.id, item, applied);
+    else if (applied < 0) repo.removeItem(user.id, item, -applied);
+    logger.info(`[admin] ${req.user.username} ${applied >= 0 ? 'gave' : 'took'} ${Math.abs(applied)}x ${ITEMS[item].name} ${applied >= 0 ? 'to' : 'from'} ${user.username}`);
+    res.json({ ok: true, item: ITEMS[item].name, applied, now: repo.getInventory(user.id)[item] || 0 });
+  });
+
+  // Take a player out of the game (their chat is ignored) or let them back in.
+  router.post('/admin/players/:id/ban', requireAdmin, (req, res) => {
+    const user = repo.getUser(Number(req.params.id));
+    if (!user) return res.status(404).json({ error: 'player not found' });
+    const banned = req.body?.banned ? 1 : 0;
+    repo.setUserField(user.id, 'banned', banned);
+    logger.info(`[admin] ${req.user.username} ${banned ? 'banned' : 'unbanned'} ${user.username} from the game`);
+    res.json({ ok: true, banned });
+  });
+
+  // Wipe a player's progress (skills, items, gear, plots, points).
+  router.post('/admin/players/:id/reset', requireAdmin, (req, res) => {
+    const user = repo.getUser(Number(req.params.id));
+    if (!user) return res.status(404).json({ error: 'player not found' });
+    repo.transaction(() => repo.resetPlayer(user.id));
+    for (const key of ['bj', 'crash', 'mines', 'buffs', 'fire', 'daily', 'ach', 'museum']) repo.deleteSetting(`${key}:${user.id}`);
+    logger.warn(`[admin] ${req.user.username} reset ${user.username}'s progress`);
+    res.json({ ok: true });
+  });
+
+  // ---- Admin: economy ----------------------------------------------------------
+  router.get('/admin/economy', requireAdmin, (req, res) => {
+    engine.flushEconomy?.();
+    const flows = repo.getSetting('economy_stats') || {};
+    res.json({ totals: repo.economyTotals(), flows, since: flows.since || null, topEarners: repo.topEarners(10) });
+  });
+
+  // ---- Admin: backup and restore -------------------------------------------
+  // Download a consistent copy of the whole database.
+  router.get('/admin/backup', requireAdmin, (req, res) => {
+    const file = path.join(os.tmpdir(), `mmobot-backup-${Date.now()}.db`);
+    try {
+      engine.flushEconomy?.();
+      repo.backupTo(file);
+    } catch (err) {
+      return res.status(500).json({ error: `backup failed: ${err.message}` });
+    }
+    logger.info(`[admin] ${req.user.username} downloaded a backup`);
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+    res.download(file, `mmobot-${stamp}.db`, () => fs.rm(file, { force: true }, () => {}));
+  });
+
+  // Upload a backup: it replaces the database on the next start, and the server restarts itself.
+  router.post('/admin/restore', requireAdmin, express.raw({ type: '*/*', limit: '512mb' }), (req, res) => {
+    const buf = req.body;
+    if (!Buffer.isBuffer(buf) || buf.length < 100 || buf.subarray(0, 16).toString('latin1') !== 'SQLite format 3\u0000') {
+      return res.status(400).json({ error: "that isn't a MMOBot backup (.db) file" });
+    }
+    if (config.dbPath === ':memory:') return res.status(400).json({ error: 'no database file to restore into' });
+    fs.writeFileSync(`${config.dbPath}.restore`, buf);
+    logger.warn(`[admin] ${req.user.username} uploaded a backup (${Math.round(buf.length / 1024)} KB); restarting to restore it`);
+    res.json({ ok: true, restarting: true });
+    // Exit with an error code so Railway (restart on failure) starts it again with the backup.
+    if (!config.noRestartOnRestore) setTimeout(() => process.exit(1), 800);
   });
 
   // Pops a sample event onto every open overlay (and the live feeds) so OBS setup can be checked.

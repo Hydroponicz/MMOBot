@@ -46,6 +46,7 @@ function webhookRouter({ bot, kick, repo, config, logger = console }) {
       username: sender.username,
       avatarUrl: sender.profile_picture || null,
       content: payload.content || '',
+      badges: (sender.identity?.badges || []).map((b) => b.type || b.text || '').filter(Boolean),
     });
   });
 

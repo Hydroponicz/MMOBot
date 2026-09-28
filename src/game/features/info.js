@@ -105,6 +105,7 @@ module.exports = {
         sum += this.sellValue(id) * qty;
       }
       this.repo.addPoints(user.id, sum);
+      this.track('sold', sum);
       return sum;
     });
     const count = entries.reduce((s, [, q]) => s + q, 0);

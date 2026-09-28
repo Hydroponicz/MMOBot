@@ -89,6 +89,7 @@ if (require.main === module) {
   const shutdown = (signal) => {
     logger.info(`${signal} received, shutting down`);
     timers.forEach(clearInterval);
+    engine.flushEconomy?.();
     server.close(() => {
       repo.close();
       process.exit(0);

@@ -1363,3 +1363,48 @@ test('return to player is close to a real casino', () => {
   assert.ok(slots / N > 0.9 && slots / N < 1, `slots RTP ${slots / N}`);
   assert.ok(plinko / N > 0.95 && plinko / N < 1.02, `plinko RTP ${plinko / N}`);
 });
+
+test('chat points: short messages, repeats and new chatters earn nothing; subscribers earn more', () => {
+  const { Settings } = require('../src/settings');
+  const repo = openDb(':memory:');
+  const settings = new Settings({ config: { ...baseConfig, adminUsers: [], kick: { channel: 's' } }, repo });
+  let t = 1_000_000;
+  const engine = new GameEngine({ repo, config: baseConfig, settings, rng: () => 0.99, now: () => t });
+  const say = (content, badges) => engine.handleChat({ kickUserId: '1', username: 'Alice', content, badges });
+  const pts = () => repo.getUserByName('alice').points;
+  say('a');
+  assert.equal(pts(), 0, 'too short');
+  say('[emote:1:KEKW]');
+  assert.equal(pts(), 0, 'just an emote');
+  say('hello chat');
+  assert.equal(pts(), 5);
+  t += 61_000;
+  say('hello chat');
+  assert.equal(pts(), 5, 'a repeat');
+  say('good game', ['subscriber']);
+  assert.equal(pts(), 15, 'subscribers earn 2x');
+  assert.equal(repo.getUserByName('alice').subscriber, 1);
+  settings.update('general', { chatPointsNewUserMinutes: 60 });
+  t += 61_000;
+  engine.handleChat({ kickUserId: '2', username: 'Bob', content: 'first message here' });
+  assert.equal(repo.getUserByName('bob').points, 0, 'new chatters wait');
+});
+
+test('the bot combines replies that are waiting into one message', async () => {
+  const { ChatBot } = require('../src/bot/bot');
+  const { engine } = setup();
+  const sent = [];
+  const bot = new ChatBot({ engine, kick: { botAccount: () => null, sendChat: async (t) => sent.push(t) }, logger: { info() {}, error() {} } });
+  bot.minGapMs = 5;
+  bot.say('@A one');
+  bot.say('@B two');
+  bot.say('@C three');
+  await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(sent, ['@A one', '@B two | @C three']);
+  assert.ok(bot.isOwnReply('@B two | @C three'), 'a combined reply is still recognised as ours');
+  bot.say('x'.repeat(300));
+  bot.say('y'.repeat(300));
+  bot.say('z'.repeat(10));
+  await new Promise((r) => setTimeout(r, 80));
+  assert.equal(sent.length, 4, 'never over 500 characters');
+});

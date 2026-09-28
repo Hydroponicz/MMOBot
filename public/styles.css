@@ -500,3 +500,5 @@ tr.locked td { opacity: 0.55; }
 .kind-fish { background: rgba(56, 189, 248, 0.15); color: var(--fishing); }
 .kind-vegetable { background: rgba(132, 204, 22, 0.15); color: var(--farming); }
 .kind-meat { background: rgba(248, 113, 113, 0.15); color: var(--swords); }
+td.up, b.up { color: var(--accent); }
+td.down, b.down { color: var(--danger); }

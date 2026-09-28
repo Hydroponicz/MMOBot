@@ -762,6 +762,8 @@
     ['overview', '📡 Overview'],
     ['settings', '⚙️ Settings'],
     ['players', '👥 Players'],
+    ['economy', '💰 Economy'],
+    ['tools', '🧰 Tools'],
     ['logs', '📜 Logs'],
   ];
 
@@ -1142,7 +1144,7 @@
           <button class="btn btn-primary">Search</button>
         </form>
         <div class="table-wrap" style="margin-top:14px"><table>
-          <thead><tr><th>Player</th><th class="num">Points</th><th class="num">Messages</th><th class="num">Actions</th><th>Last seen</th><th>Give / take points</th></tr></thead>
+          <thead><tr><th>Player</th><th class="num">Points</th><th class="num">Messages</th><th class="num">Actions</th><th>Last seen</th><th>Give / take points</th><th>Give / take items</th><th></th></tr></thead>
           <tbody>${
             players.length
               ? players
@@ -1156,10 +1158,18 @@
                 <input type="number" name="delta" step="1" placeholder="+500 or -100" style="max-width:130px" aria-label="Points to add or remove">
                 <input type="text" name="reason" placeholder="reason (optional)" style="max-width:170px" aria-label="Reason">
                 <button class="btn btn-sm">Apply</button></form></td>
+              <td><form class="form-row items-form" data-id="${p.id}" data-name="${esc(p.username)}">
+                <input type="text" name="item" placeholder="item, e.g. iron ore" style="max-width:140px" aria-label="Item">
+                <input type="number" name="qty" step="1" placeholder="5 or -2" style="max-width:80px" aria-label="Amount">
+                <button class="btn btn-sm">Apply</button></form></td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-sm" data-ban="${p.id}" data-banned="${p.banned ? 1 : 0}" data-name="${esc(p.username)}">${p.banned ? 'Unban' : 'Ban'}</button>
+                <button class="btn btn-sm" data-reset="${p.id}" data-name="${esc(p.username)}" style="color:var(--danger)">Reset</button>
+              </td>
             </tr>`
                   )
                   .join('')
-              : `<tr><td colspan="6" class="empty">No players found.</td></tr>`
+              : `<tr><td colspan="8" class="empty">No players found.</td></tr>`
           }</tbody>
         </table></div>
       </section>`;
@@ -1167,6 +1177,45 @@
       e.preventDefault();
       location.hash = `#/admin?tab=players&q=${encodeURIComponent(e.target.q.value.trim())}`;
     };
+    $app.querySelectorAll('.items-form').forEach((f) => {
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        const qty = Number(f.qty.value);
+        if (!f.item.value.trim() || !Number.isInteger(qty) || !qty) return toast('Enter an item and a whole number, e.g. 5 or -2');
+        try {
+          const r = await api(`/admin/players/${f.dataset.id}/items`, { method: 'POST', body: { item: f.item.value, qty } });
+          toast(`${r.applied >= 0 ? 'Gave' : 'Took'} ${Math.abs(r.applied)}x ${r.item} (${f.dataset.name} now has ${r.now})`);
+          f.reset();
+        } catch (err) {
+          toast(`Failed: ${err.message}`);
+        }
+      };
+    });
+    $app.querySelectorAll('[data-ban]').forEach((b) => {
+      b.onclick = async () => {
+        const banned = b.dataset.banned !== '1';
+        if (!confirm(`${banned ? 'Ban' : 'Unban'} ${b.dataset.name} ${banned ? 'from' : 'back into'} the game?${banned ? ' Their chat will be ignored by the bot.' : ''}`)) return;
+        try {
+          await api(`/admin/players/${b.dataset.ban}/ban`, { method: 'POST', body: { banned } });
+          toast(banned ? 'Banned' : 'Unbanned');
+          route();
+        } catch (err) {
+          toast(`Failed: ${err.message}`);
+        }
+      };
+    });
+    $app.querySelectorAll('[data-reset]').forEach((b) => {
+      b.onclick = async () => {
+        if (prompt(`This wipes ALL of ${b.dataset.name}'s progress: skills, items, gear, plots and points. Type RESET to confirm.`) !== 'RESET') return;
+        try {
+          await api(`/admin/players/${b.dataset.reset}/reset`, { method: 'POST', body: {} });
+          toast('Player reset');
+          route();
+        } catch (err) {
+          toast(`Failed: ${err.message}`);
+        }
+      };
+    });
     $app.querySelectorAll('.points-form').forEach((f) => {
       f.onsubmit = async (e) => {
         e.preventDefault();
@@ -1183,6 +1232,76 @@
         }
       };
     });
+  };
+
+  // ---- Admin: economy --------------------------------------------------------
+  adminPages.economy = async (query, header) => {
+    const e = await api('/admin/economy');
+    const f = e.flows;
+    const row = (label, v, cls = '') => `<tr><td>${label}</td><td class="num ${cls}">${fmt(v || 0)}</td></tr>`;
+    const casinoNet = (f.casinoWagered || 0) - (f.casinoPaid || 0);
+    $app.innerHTML = `
+      ${header}
+      <div class="stat-row" style="margin-bottom:16px">
+        <div class="stat"><div class="v">${fmt(e.totals.points)}</div><div class="k">points held now</div></div>
+        <div class="stat"><div class="v">${fmt(e.totals.lifetime)}</div><div class="k">points ever earned</div></div>
+        <div class="stat"><div class="v">${fmt(e.totals.players)}</div><div class="k">players</div></div>
+      </div>
+      <div class="grid grid-2">
+        <section class="panel">
+          <h2>Where points come from and go</h2>
+          <p class="muted" style="font-size:.85rem">Counted since ${e.since ? new Date(e.since).toLocaleDateString() : 'this was added'}.</p>
+          <table><tbody>
+            ${row('💬 Earned chatting', f.chat, 'up')}
+            ${row('⛏️ Earned from actions', f.actions, 'up')}
+            ${row('💰 Earned selling items', f.sold, 'up')}
+            ${row('🎁 Rewards (events, raids, dailies, follows/subs)', f.rewards, 'up')}
+            ${row('🛒 Spent in the shop and on upgrades', f.shop, 'down')}
+            ${row('🎰 Bet in the casino', f.casinoWagered)}
+            ${row('🎰 Paid out by the casino', f.casinoPaid)}
+            <tr><td><b>Casino result</b> (positive = players lost points)</td><td class="num"><b class="${casinoNet >= 0 ? 'down' : 'up'}">${casinoNet >= 0 ? '' : '+'}${fmt(-casinoNet)}</b></td></tr>
+            ${row('🤝 Traded between players', f.traded)}
+          </tbody></table>
+        </section>
+        <section class="panel">
+          <h2>Biggest earners</h2>
+          <table><thead><tr><th>Player</th><th class="num">Has now</th><th class="num">Ever earned</th></tr></thead><tbody>
+            ${e.topEarners.map((p) => `<tr><td><a href="${playerLink(p.username)}">${esc(p.username)}</a></td><td class="num">${fmt(p.points)}</td><td class="num">${fmt(p.lifetime_points)}</td></tr>`).join('')}
+          </tbody></table>
+        </section>
+      </div>`;
+  };
+
+  // ---- Admin: tools (backup / restore) -------------------------------------
+  adminPages.tools = async (query, header) => {
+    $app.innerHTML = `
+      ${header}
+      <div class="grid grid-2">
+        <section class="panel">
+          <h2>💾 Back up</h2>
+          <p class="muted">Download a copy of the whole game database (players, items, settings, logs). Keep one before big changes; Railway volumes have no export button.</p>
+          <a class="btn btn-primary" href="/api/admin/backup" download>Download backup</a>
+        </section>
+        <section class="panel">
+          <h2>♻️ Restore</h2>
+          <p class="muted">Replace <b>everything</b> with a backup file. The server restarts to load it (a few seconds). The current database is kept next to it as <code>.before-restore</code>.</p>
+          <div class="form-row"><input type="file" id="restore-file" accept=".db" aria-label="Backup file"><button class="btn" id="restore-go" style="color:var(--danger)">Restore</button></div>
+        </section>
+      </div>`;
+    $app.querySelector('#restore-go').onclick = async () => {
+      const file = $app.querySelector('#restore-file').files[0];
+      if (!file) return toast('Choose a backup file first');
+      if (prompt('This replaces ALL game data with the backup. Type RESTORE to confirm.') !== 'RESTORE') return;
+      try {
+        const res = await fetch('/api/admin/restore', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/octet-stream' }, body: file });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        toast('Restoring… the site will be back in a few seconds');
+        setTimeout(() => location.reload(), 6000);
+      } catch (err) {
+        toast(`Failed: ${err.message}`);
+      }
+    };
   };
 
   // ---- Admin: logs -------------------------------------------------------

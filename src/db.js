@@ -98,6 +98,12 @@ CREATE TABLE IF NOT EXISTS processed_messages (
 
 function openDb(dbPath) {
   if (dbPath !== ':memory:') fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  // A backup uploaded on the admin page waits here until the next start, then replaces the database.
+  const restore = `${dbPath}.restore`;
+  if (dbPath !== ':memory:' && fs.existsSync(restore)) {
+    for (const f of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) if (fs.existsSync(f)) fs.renameSync(f, `${f}.before-restore`);
+    fs.renameSync(restore, dbPath);
+  }
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
   db.exec(SCHEMA);
@@ -116,6 +122,12 @@ function migrate(db) {
   if (!cols.includes('mana')) db.exec('ALTER TABLE users ADD COLUMN mana REAL');
   if (!cols.includes('mana_at')) db.exec('ALTER TABLE users ADD COLUMN mana_at INTEGER NOT NULL DEFAULT 0');
   if (!cols.includes('ko_until')) db.exec('ALTER TABLE users ADD COLUMN ko_until INTEGER NOT NULL DEFAULT 0');
+  // banned: an admin took them out of the game. subscriber: had a sub badge on their last message.
+  // season_xp: XP earned this season (seasonal leaderboard). title: the title they show.
+  if (!cols.includes('banned')) db.exec('ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0');
+  if (!cols.includes('subscriber')) db.exec('ALTER TABLE users ADD COLUMN subscriber INTEGER NOT NULL DEFAULT 0');
+  if (!cols.includes('season_xp')) db.exec('ALTER TABLE users ADD COLUMN season_xp INTEGER NOT NULL DEFAULT 0');
+  if (!cols.includes('title')) db.exec("ALTER TABLE users ADD COLUMN title TEXT NOT NULL DEFAULT ''");
 }
 
 function createRepo(db) {
@@ -187,7 +199,7 @@ function createRepo(db) {
     pruneLogs: db.prepare('DELETE FROM logs WHERE ts < ? OR id <= (SELECT MAX(id) FROM logs) - 50000'),
     logSources: db.prepare('SELECT DISTINCT source FROM logs ORDER BY source'),
     searchUsers: db.prepare(
-      `SELECT id, username, points, message_count, actions_count, last_seen_at FROM users
+      `SELECT id, username, points, message_count, actions_count, last_seen_at, banned FROM users
        WHERE username_lower LIKE ? ESCAPE '\\' ORDER BY last_seen_at DESC LIMIT 25`
     ),
     totals: db.prepare(
@@ -289,6 +301,30 @@ function createRepo(db) {
     plant: (userId, plot, crop, plantedAt, readyAt) => stmt.plant.run(userId, plot, crop, plantedAt, readyAt),
     clearPlot: (userId, plot) => stmt.clearPlot.run(userId, plot),
     setFarmAt: (userId, ts) => stmt.setFarmAt.run(ts, userId),
+    // Simple per-player fields (whitelisted, so the column name is never user input).
+    setUserField(userId, field, value) {
+      if (!['banned', 'subscriber', 'title'].includes(field)) throw new Error(`can't set users.${field}`);
+      db.prepare(`UPDATE users SET ${field} = ? WHERE id = ?`).run(value, userId);
+    },
+    addSeasonXp: (userId, xp) => db.prepare('UPDATE users SET season_xp = season_xp + ? WHERE id = ?').run(xp, userId),
+    resetSeason: () => db.prepare('UPDATE users SET season_xp = 0').run(),
+    seasonLeaders: (limit = 10) =>
+      db.prepare('SELECT id, username, avatar_url, season_xp FROM users WHERE season_xp > 0 AND banned = 0 ORDER BY season_xp DESC LIMIT ?').all(limit),
+    // Everything a player owns and has done, for admin resets and the economy page.
+    resetPlayer(userId) {
+      for (const sql of [
+        'UPDATE skills SET xp = 0 WHERE user_id = ?',
+        'DELETE FROM inventory WHERE user_id = ?',
+        'DELETE FROM equipment WHERE user_id = ?',
+        'DELETE FROM worn_gear WHERE user_id = ?',
+        'DELETE FROM farm_plots WHERE user_id = ?',
+        "UPDATE users SET points = 0, hp = NULL, mana = NULL, ko_until = 0, season_xp = 0, title = '' WHERE id = ?",
+      ]) db.prepare(sql).run(userId);
+    },
+    economyTotals: () =>
+      db.prepare('SELECT COUNT(*) AS players, COALESCE(SUM(points), 0) AS points, COALESCE(SUM(lifetime_points), 0) AS lifetime FROM users WHERE banned = 0').get(),
+    topEarners: (limit = 10) => db.prepare('SELECT id, username, points, lifetime_points FROM users ORDER BY lifetime_points DESC LIMIT ?').all(limit),
+    backupTo: (file) => db.exec(`VACUUM INTO '${String(file).replace(/'/g, "''")}'`),
     setVitals: (userId, { hp, mana, koUntil }, ts) => stmt.setVitals.run(hp, ts, mana, ts, koUntil, userId),
 
     addPoints: (userId, amount) => stmt.addPoints.run(amount, amount, userId),

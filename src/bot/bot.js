@@ -57,7 +57,12 @@ class ChatBot {
     this.sending = true;
     try {
       while (this.queue.length) {
-        const text = this.queue.shift();
+        // In a busy chat, replies that are waiting go out together ("@A ... | @B ...") instead of
+        // one every 1.2s, so nobody's reply arrives minutes late.
+        const parts = [this.queue.shift()];
+        while (this.queue.length && `${parts.join(' | ')} | ${this.queue[0]}`.length <= 500) parts.push(this.queue.shift());
+        const text = parts.join(' | ');
+        if (parts.length > 1) this.recentReplies.set(text.trim(), Date.now());
         try {
           const sent = await this.kick.sendChat(text);
           if (sent) this.stats.sent++;

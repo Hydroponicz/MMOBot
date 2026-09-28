@@ -75,6 +75,8 @@ module.exports = {
     const payout = payoutOf(bet, multiplier);
     const net = payout - bet;
     this.repo.transaction(() => this.repo.addPoints(user.id, net));
+    this.track('casinoWagered', bet);
+    this.track('casinoPaid', payout);
     this.lastBet.set(user.id, this.now());
     if (multiplier >= 10 || net >= 10000) {
       this.emitActivity(user, { kind: 'jackpot', text: `won ${fmt(payout)} pts on ${game}${what ? ` (${what})` : ''}! 🎉` });
@@ -165,6 +167,7 @@ module.exports = {
     const game = { hands: [{ cards: [draw(), draw()], stake: b.bet, doubled: false }], active: 0, dealer: [draw(), draw()] };
     this.repo.transaction(() => {
       this.repo.addPoints(user.id, -b.bet);
+      this.track('casinoWagered', b.bet);
       this.repo.setSetting(this.bjKey(user.id), game);
     });
     this.lastBet.set(user.id, this.now());
@@ -197,6 +200,7 @@ module.exports = {
       if (hand.cards.length !== 2 || hand.doubled) return refuse('you can only double on your first two cards.');
       if (balance() < hand.stake) return refuse(`doubling needs another ${fmt(hand.stake)} pts.`);
       this.repo.addPoints(user.id, -hand.stake);
+      this.track('casinoWagered', hand.stake);
       Object.assign(hand, { stake: hand.stake * 2, doubled: true, cards: [...hand.cards, draw()] });
       return this.bjNext(user, withHands);
     }
@@ -205,6 +209,7 @@ module.exports = {
       if (hands.length >= casino.MAX_HANDS) return refuse(`you can split into at most ${casino.MAX_HANDS} hands.`);
       if (balance() < hand.stake) return refuse(`splitting needs another ${fmt(hand.stake)} pts.`);
       this.repo.addPoints(user.id, -hand.stake);
+      this.track('casinoWagered', hand.stake);
       const aces = hand.cards[0].rank === 'A';
       const make = (card) => {
         const cards = [card, draw()];
@@ -232,6 +237,7 @@ module.exports = {
     const stake = done.hands.reduce((sum, h) => sum + h.stake, 0);
     this.repo.transaction(() => {
       if (payout) this.repo.addPoints(user.id, payout);
+      this.track('casinoPaid', payout);
       this.repo.deleteSetting(this.bjKey(user.id));
     });
     const bj = done.hands.some((h) => h.status === 'blackjack');
@@ -274,6 +280,7 @@ module.exports = {
     const round = { stake: b.bet, crash: casino.crashPoint(this.rng), startedAt: this.now(), target };
     this.repo.transaction(() => {
       this.repo.addPoints(user.id, -b.bet);
+      this.track('casinoWagered', b.bet);
       this.repo.setSetting(this.crashKey(user.id), round);
     });
     this.lastBet.set(user.id, this.now());
@@ -304,6 +311,7 @@ module.exports = {
     const payout = payoutOf(round.stake, multiplier);
     this.repo.transaction(() => {
       if (payout) this.repo.addPoints(user.id, payout);
+      this.track('casinoPaid', payout);
       this.repo.deleteSetting(this.crashKey(user.id));
     });
     if (multiplier >= 10 || payout - round.stake >= 10000) {
@@ -365,6 +373,7 @@ module.exports = {
     const game = { stake: b.bet, mines: casino.placeMines(this.rng, count), revealed: [] };
     this.repo.transaction(() => {
       this.repo.addPoints(user.id, -b.bet);
+      this.track('casinoWagered', b.bet);
       this.repo.setSetting(this.minesKey(user.id), game);
     });
     this.lastBet.set(user.id, this.now());
@@ -396,6 +405,7 @@ module.exports = {
     const payout = payoutOf(game.stake, multiplier);
     this.repo.transaction(() => {
       if (payout) this.repo.addPoints(user.id, payout);
+      this.track('casinoPaid', payout);
       this.repo.deleteSetting(this.minesKey(user.id));
     });
     if (multiplier >= 10 || payout - game.stake >= 10000) {

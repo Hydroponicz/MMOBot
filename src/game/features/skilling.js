@@ -376,7 +376,7 @@ module.exports = {
   },
 
   xpFor(baseXp, tool) {
-    return Math.max(1, Math.round(baseXp * (1 + (tool?.xpBonus || 0)) * this.cfg.xpMultiplier));
+    return Math.max(1, Math.round(baseXp * (1 + (tool?.xpBonus || 0)) * this.cfg.xpMultiplier * this.boostMultiplier('xp')));
   },
 
   // Adds XP and action points; returns "+X XP, +Y pts" plus level-up / progress text for the reply.
@@ -390,6 +390,7 @@ module.exports = {
     const points = Math.round(Math.max(1, xpGain / 10) * this.cfg.pointsMultiplier);
     this.repo.addXp(user.id, skillId, xpGain);
     if (points > 0) this.repo.addPoints(user.id, points);
+    this.track('actions', points);
 
     const xpAfter = before[skillId] + xpGain;
     const levelAfter = skillLevel(skillId, xpAfter);

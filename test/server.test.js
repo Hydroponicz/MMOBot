@@ -238,3 +238,83 @@ test('overlay: the live stream is unbuffered, and the admin test event reaches i
   assert.match(await waitFor(/testing the overlay/), /event: activity\ndata: .*"kind":"test".*"username":"streamer"/);
   assert.equal(s.repo.recentActivity(0, 10).length, 0, 'test events are not saved');
 });
+
+async function adminServer(t, configOverrides = {}) {
+  const { createSessions } = require('../src/web/session');
+  const repo = openDb(configOverrides.dbPath || ':memory:');
+  const config = makeConfig(configOverrides);
+  const ctx = createApp({ config, repo, logger: { log() {}, info() {}, warn() {}, error() {} } });
+  const server = await new Promise((r) => {
+    const s = ctx.app.listen(0, () => r(s));
+  });
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const owner = repo.upsertUser({ kickUserId: '99', username: 'streamer' });
+  let cookie;
+  createSessions({ secret: config.sessionSecret, secure: false }).write({ cookie: (n, v) => (cookie = `${n}=${v}`) }, 'mmo_session', { uid: owner.id }, 60_000);
+  const api = (p, opts = {}) =>
+    fetch(url + p, { ...opts, headers: { cookie, 'Content-Type': 'application/json', ...(opts.headers || {}) }, body: opts.raw ?? (opts.body && JSON.stringify(opts.body)) });
+  return { ...ctx, repo, url, api };
+}
+
+test('admin tools: give/take items, ban, reset a player', async (t) => {
+  const s = await adminServer(t);
+  const u = s.repo.upsertUser({ kickUserId: '5', username: 'Viewer' });
+  const give = await (await s.api(`/api/admin/players/${u.id}/items`, { method: 'POST', body: { item: 'iron ore', qty: 5 } })).json();
+  assert.deepEqual(give, { ok: true, item: 'Iron Ore', applied: 5, now: 5 });
+  const take = await (await s.api(`/api/admin/players/${u.id}/items`, { method: 'POST', body: { item: 'iron_ore', qty: -9 } })).json();
+  assert.equal(take.applied, -5, 'never below zero');
+  assert.equal((await s.api(`/api/admin/players/${u.id}/items`, { method: 'POST', body: { item: 'unobtainium', qty: 1 } })).status, 400);
+
+  await s.api(`/api/admin/players/${u.id}/ban`, { method: 'POST', body: { banned: true } });
+  assert.equal(s.engine.handleChat({ kickUserId: '5', username: 'Viewer', content: '!fish' }).reply, null, 'banned players are ignored');
+  assert.equal(s.repo.getUser(u.id).points, 0, 'and earn no chat points');
+  const found = await (await s.api('/api/admin/players?q=view')).json();
+  assert.equal(found.players[0].banned, 1);
+  await s.api(`/api/admin/players/${u.id}/ban`, { method: 'POST', body: { banned: false } });
+  assert.match(s.engine.handleChat({ kickUserId: '5', username: 'Viewer', content: '!fish' }).reply, /@Viewer/);
+
+  s.repo.addPoints(u.id, 500);
+  await s.api(`/api/admin/players/${u.id}/reset`, { method: 'POST', body: {} });
+  assert.equal(s.repo.getUser(u.id).points, 0);
+  assert.deepEqual(s.repo.getInventory(u.id), {});
+  assert.equal(s.repo.getSkills(u.id).fishing, 0);
+});
+
+test('admin tools: backup downloads the database; restore replaces it on the next start', async (t) => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mmobot-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const dbPath = path.join(dir, 'game.db');
+  const s = await adminServer(t, { dbPath, noRestartOnRestore: true });
+  s.repo.upsertUser({ kickUserId: '5', username: 'SavedPlayer' });
+
+  const res = await s.api('/api/admin/backup');
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-disposition'), /mmobot-.*\.db/);
+  const backup = Buffer.from(await res.arrayBuffer());
+  assert.equal(backup.subarray(0, 15).toString(), 'SQLite format 3');
+
+  assert.equal((await s.api('/api/admin/restore', { method: 'POST', raw: Buffer.from('not a database'), headers: { 'Content-Type': 'application/octet-stream' } })).status, 400);
+  const ok = await s.api('/api/admin/restore', { method: 'POST', raw: backup, headers: { 'Content-Type': 'application/octet-stream' } });
+  assert.deepEqual(await ok.json(), { ok: true, restarting: true });
+  assert.ok(fs.existsSync(`${dbPath}.restore`));
+  // Next start picks it up.
+  const again = openDb(dbPath);
+  assert.equal(again.getUserByName('savedplayer').username, 'SavedPlayer');
+  assert.ok(!fs.existsSync(`${dbPath}.restore`));
+  assert.ok(fs.existsSync(`${dbPath}.before-restore`));
+});
+
+test('admin economy page adds up where points come from and go', async (t) => {
+  const s = await adminServer(t);
+  s.engine.handleChat({ kickUserId: '5', username: 'Viewer', content: 'hello everyone' });
+  s.engine.handleChat({ kickUserId: '5', username: 'Viewer', content: '!fish' });
+  const e = await (await s.api('/api/admin/economy')).json();
+  assert.equal(e.flows.chat, 5);
+  assert.ok(e.flows.actions >= 1);
+  assert.equal(e.topEarners.length, 2);
+  assert.ok(e.totals.points >= 6);
+});

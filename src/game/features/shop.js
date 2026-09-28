@@ -219,6 +219,7 @@ module.exports = {
       return `the ${what} costs ${fmt(cost)} pts, you have ${fmt(balance)} (${fmt(cost - balance)} more needed). Earn points with skills, !sell and chatting.`;
     }
     if (cost > 0) this.repo.addPoints(user.id, -cost);
+    this.track('shop', cost);
     return null;
   },
 

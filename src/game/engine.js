@@ -55,6 +55,7 @@ class GameEngine extends EventEmitter {
     this.lastBet = new Map(); // userId -> time of last casino bet (casino cooldown)
     this.betWarned = new Map();
     this.fightWarned = new Map(); // userId -> { monster, at }: "type it again to fight anyway"
+    this.lastChat = new Map(); // userId -> their last message (no points for repeats)
   }
 
   get cfg() {
@@ -62,11 +63,19 @@ class GameEngine extends EventEmitter {
   }
 
   // Entry point for every chat message. Returns { reply } where reply may be null.
-  handleChat({ kickUserId, username, avatarUrl = null, content }) {
+  // badges: Kick's badge types on the message (e.g. "subscriber", "founder", "moderator").
+  handleChat({ kickUserId, username, avatarUrl = null, content, badges = null }) {
     if (!kickUserId || !username || typeof content !== 'string') return { reply: null };
     const user = this.repo.upsertUser({ kickUserId, username, avatarUrl });
+    // Banned from the game by an admin: chat is ignored entirely.
+    if (user.banned) return { reply: null };
+    if (Array.isArray(badges)) {
+      const sub = badges.some((b) => ['subscriber', 'founder', 'sub_gifter'].includes(String(b).toLowerCase())) ? 1 : 0;
+      if (sub !== user.subscriber) this.repo.setUserField(user.id, 'subscriber', sub);
+      user.subscriber = sub;
+    }
     this.repo.chatTick(user.id);
-    this.awardChatPoints(user);
+    this.awardChatPoints(user, content);
 
     const { prefix, disabledCommands = [] } = this.cfg;
     // Emotes in a command are decoration: "!mine [emote:1:KEKW] iron" is "!mine iron".
@@ -146,11 +155,50 @@ class GameEngine extends EventEmitter {
     return (this._targetCache[command] = set);
   }
 
-  awardChatPoints(user) {
+  // Points for chatting, rate-limited. To make farming with spam or alt accounts pointless: very
+  // short messages and a repeat of your last message earn nothing, and brand-new chatters can be
+  // made to wait before earning. Subscribers earn more.
+  awardChatPoints(user, content = '') {
     const now = this.now();
-    if (now - user.last_chat_points_at < this.cfg.chatCooldown * 1000) return;
-    this.repo.addPoints(user.id, this.cfg.chatPoints);
+    const c = this.cfg;
+    const text = emotes.stripEmotes(content).toLowerCase();
+    const last = this.lastChat.get(user.id);
+    this.lastChat.set(user.id, text);
+    if (this.lastChat.size > 5000) this.lastChat.delete(this.lastChat.keys().next().value);
+    if (text.replace(/\s/g, '').length < (c.chatPointsMinChars ?? 0)) return;
+    if (c.chatPointsNoRepeats !== false && text && text === last) return;
+    if (c.chatPointsNewUserMinutes && Date.now() - user.created_at < c.chatPointsNewUserMinutes * 60_000) return;
+    if (now - user.last_chat_points_at < c.chatCooldown * 1000) return;
+    const points = Math.round(c.chatPoints * (user.subscriber ? (c.subChatMultiplier ?? 1) : 1) * this.boostMultiplier('points'));
+    this.repo.addPoints(user.id, points);
     this.repo.setChatPointsAt(user.id, now);
+    this.track('chat', points);
+  }
+
+  // A running economy counter for the admin Economy page (chat, actions, sold, shop, casino...).
+  track(kind, amount) {
+    if (!amount) return;
+    this.econ ??= this.repo.getSetting('economy_stats') || { since: this.now() };
+    this.econ[kind] = (this.econ[kind] || 0) + amount;
+    this.econDirty = true;
+    // Written at most every few seconds (and by flushEconomy on shutdown).
+    if (!this.econTimer) {
+      this.econTimer = setTimeout(() => this.flushEconomy(), 5000);
+      this.econTimer.unref?.();
+    }
+  }
+
+  flushEconomy() {
+    clearTimeout(this.econTimer);
+    this.econTimer = null;
+    if (this.econDirty && this.econ) this.repo.setSetting('economy_stats', this.econ);
+    this.econDirty = false;
+  }
+
+  // Channel-wide boosts (e.g. double XP after gifted subs). kind: 'xp' or 'points'.
+  boostMultiplier(kind) {
+    const b = this.repo.getSetting('global_boost');
+    return b && b.until > this.now() && b.kind === kind ? b.multiplier : 1;
   }
 
   emitActivity(user, entry) {
