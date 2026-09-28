@@ -80,6 +80,9 @@ module.exports = {
   sell(user, args) {
     const inv = this.repo.getInventory(user.id);
     if (!args.length) return 'usage: !sell <item> [amount] or !sell all';
+    const named = args.filter((w) => !/^(\d+|all)$/i.test(w)).join(' ');
+    const bound = named && findItem(named, Object.keys(inv).filter((i) => ITEMS[i]?.bound || ITEMS[i]?.pet));
+    if (bound) return `your ${ITEMS[bound].name} can't be sold.`;
 
     let entries;
     let kept = 0;

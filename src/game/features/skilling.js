@@ -452,6 +452,7 @@ module.exports = {
         text += ` 🔧 You can now !upgrade ${skill.tool.id}!`;
       }
       this.emitActivity(user, { kind: 'levelup', skill: skillId, text: `reached ${skill.name} level ${levelAfter}` });
+      if (levelAfter >= maxLevel(skillId)) this.recordFirst('max', skillId, user);
     } else {
       text += ` (${skill.name} ${levelAfter}, ${progress(xpAfter, maxLevel(skillId)).percent}%)`;
     }

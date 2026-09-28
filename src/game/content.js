@@ -32,6 +32,43 @@ for (const [id, name, icon, slot, style, cost] of COSMETICS) {
 }
 const COSMETIC_SLOTS = ['hat', 'cape', 'aura'];
 
+// Season winners' cosmetics: can't be bought, sold or traded ("bound").
+const SEASON_COSMETICS = [
+  // place, id, name, icon, slot, style
+  [1, 'champion_crown', "Champion's Crown", '👑', 'hat', 'champion'],
+  [1, 'victor_aura', 'Victor Aura', '🏆', 'aura', '#ff4ad8'],
+  [2, 'silver_laurel', 'Silver Laurel', '🥈', 'hat', 'laurel-silver'],
+  [3, 'bronze_laurel', 'Bronze Laurel', '🥉', 'hat', 'laurel-bronze'],
+];
+for (const [, id, name, icon, slot, style] of SEASON_COSMETICS) {
+  ITEMS[id] = { name, icon, value: 0, keep: true, bound: true, cosmetic: { slot, style } };
+}
+
+// Limited-time cosmetics: one is in the shop each week (by UTC week number), then it's gone again.
+const LIMITED_COSMETICS = [
+  ['pumpkin_head', 'Pumpkin Head', '🎃', 'hat', 'pumpkin', 15000],
+  ['reindeer_antlers', 'Reindeer Antlers', '🦌', 'hat', 'antlers', 15000],
+  ['flower_crown', 'Flower Crown', '🌸', 'hat', 'flowers', 12000],
+  ['samurai_helm', 'Samurai Helm', '⛩️', 'hat', 'samurai', 25000],
+  ['starry_cape', 'Starry Night Cape', '🌌', 'cape', '#1b2a6b', 20000],
+  ['rainbow_aura', 'Rainbow Aura', '🌈', 'aura', '#ff6ad5', 45000],
+];
+for (const [id, name, icon, slot, style, cost] of LIMITED_COSMETICS) {
+  ITEMS[id] = { name, icon, value: Math.round(cost / 4), keep: true, limited: true, cosmetic: { slot, style } };
+}
+const LIMITED_SHOP = LIMITED_COSMETICS.map(([item, , , slot, , cost]) => ({
+  item,
+  cost,
+  category: 'limited',
+  description: `This week only! A limited ${slot} that leaves the shop when the week ends (UTC). Wear it on the Customize page.`,
+}));
+
+// Dungeon-only loot (see features/social.js).
+ITEMS.shadow_gem = { name: 'Shadow Gem', icon: '💠', value: 2500 };
+ITEMS.rune_shard = { name: 'Ancient Rune Shard', icon: '🔷', value: 700 };
+ITEMS.dungeon_relic = { name: 'Dungeon Relic', icon: '🗝️', value: 1500 };
+ITEMS.delver_cape = { name: "Delver's Cape", icon: '🦇', value: 20000, keep: true, cosmetic: { slot: 'cape', style: '#3a1f4d' } };
+
 // ---- Pets: very rare drops from actions in their skill. The active pet follows your character
 // and gives +5% XP in its skill. ----------------------------------------------------------------
 const PET_BONUS = 0.05;
@@ -218,4 +255,4 @@ const QUESTS = [
   },
 ];
 
-module.exports = { COSMETICS, COSMETIC_SLOTS, PETS, PET_BONUS, RACE_ITEMS, QUESTS };
+module.exports = { COSMETICS, COSMETIC_SLOTS, SEASON_COSMETICS, LIMITED_COSMETICS, LIMITED_SHOP, PETS, PET_BONUS, RACE_ITEMS, QUESTS };

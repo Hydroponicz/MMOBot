@@ -558,9 +558,10 @@ test('fights are rated for you: !scout, !monsters, too-easy tips and a best-matc
     repo.addItem(u.id, `mithril_${piece}`, 1);
     say(`!equip mithril ${piece}`);
   }
-  assert.match(say('!monsters'), /Monsters for you: .*🟢 Skeleton 40 · 🟢 Orc 55 · 🔴 Troll 70 · ☠️ Ogre 85/);
-  assert.match(say('!scout chicken'), /⚪ Too easy: 🐔 Chicken \(level 1, 15 HP\) vs you \(Swords 40, Mithril Sword, \+53 def\): ~1 round,.*Barely worth it/);
-  assert.match(say('!scout troll'), /🔴 Hard: 🧌 Troll \(level 70, 490 HP\).*you'd lose ~\d+ HP \(4\d% of max\).*Better weapon\/armor/);
+  assert.match(say('!monsters'), /Monsters for you: .*🟢 Skeleton 40 · 🟢 Orc 55 · 🟠 Troll 70 · ☠️ Ogre 85/);
+  assert.match(say('!scout chicken'), /⚪ Too easy: 🐔 Chicken \(level 1, 15 HP\) vs you \(Swords 40, Mithril Sword, \+58 def\): ~1 round,.*Barely worth it/);
+  // (A full mithril set gets +10% defence, which makes the Troll tough rather than hard.)
+  assert.match(say('!scout troll'), /🟠 Tough: 🧌 Troll \(level 70, 490 HP\).*you'd lose ~\d+ HP \(4\d% of max\)/);
   assert.match(say('!scout ogre'), /☠️ Deadly/);
   assert.match(say('!scout'), /Monsters for you/);
 
@@ -572,7 +573,7 @@ test('fights are rated for you: !scout, !monsters, too-easy tips and a best-matc
   tick();
   // A hard fight with little HP left gets a warning first.
   repo.setVitals(u.id, { hp: 30, mana: 0, koUntil: 0 }, 1_000_000 + 62_000);
-  assert.match(say('!fight troll'), /🔴 a 🧌 Troll \(level 70\) will probably knock you out: it would deal ~\d+ damage and you have 30 HP/);
+  assert.match(say('!fight troll'), /🟠 a 🧌 Troll \(level 70\) will probably knock you out: it would deal ~\d+ damage and you have 30 HP/);
   assert.match(say('!fight'), /you defeated a .*(Bandit|Wolf|Goblin|Skeleton)/, 'the default picks something your HP can take');
 });
 
@@ -586,7 +587,7 @@ test('!targets recommends monsters from your level, gear and HP', () => {
     repo.addItem(u.id, `mithril_${piece}`, 1);
     say(`!equip mithril ${piece}`);
   }
-  assert.match(say('!targets'), /🎯 Best fights for you \(Swords 40, Mithril Sword, \+53 def\): 🟢 👹 Orc 55 \(105 XP, ~13% HP\) · 🟢 💀 Skeleton 40 \(75 XP, ~5% HP\) · 🟢 🥷 Bandit 30 \(55 XP, ~1% HP\) · 🟢 🐺 Wolf 20/);
+  assert.match(say('!targets'), /🎯 Best fights for you \(Swords 40, Mithril Sword, \+58 def\): 🟢 👹 Orc 55 \(105 XP, ~12% HP\) · 🟢 💀 Skeleton 40 \(75 XP, ~5% HP\) · 🟢 🥷 Bandit 30 \(55 XP, ~1% HP\) · 🟢 🐺 Wolf 20/);
   assert.match(say('!targets'), /Try !fight orc$/);
   repo.setVitals(u.id, { hp: 20, mana: 0, koUntil: 0 }, 1_000_000);
   assert.match(say('!targets'), /⚠️ You're at 20\/450 HP: !drink a potion or !heal for the tougher ones\. Try !fight bandit$/);
@@ -1541,7 +1542,7 @@ test('crafting: leather armor from hides (with an archery bonus), bigger quivers
   say('!craft rabbit coif');
   for (const piece of ['body', 'chaps', 'coif']) say(`!equip rabbit ${piece}`);
   const st = engine.combatStats(u.id);
-  assert.equal(st.defence, 6);
+  assert.equal(st.defence, 7, '6 defence + 10% for the full rabbit leather set');
   assert.equal(st.archeryBonus, 3, 'each piece adds to archery');
   repo.addItem(u.id, 'oak_shortbow', 1);
   repo.addItem(u.id, 'quiver', 1);
@@ -1670,7 +1671,7 @@ test('seasons: season XP counts up; ending a season gives the top 3 a title and 
   assert.match(say('!season', 'Alice', '1'), /🏁 Season 1: 🥇 .* XP · 🥈 .* XP\. You: \d+ XP \(#\d\)/);
   const r = engine.endSeason();
   assert.equal(r.winners.length, 2);
-  assert.match(said.at(-1), /Season 1 is over! 🥇 @\w+ 🥈 @\w+ win a permanent title\. Season 2 starts now/);
+  assert.match(said.at(-1), /Season 1 is over! 🥇 @\w+ 🥈 @\w+ win a permanent title and a season-only cosmetic\. Season 2 starts now/);
   assert.equal(repo.getUser(a.id).season_xp, 0);
   assert.equal(engine.season().number, 2);
   assert.ok(engine.titles(a.id).some((t) => /Season 1 (Champion|Runner-up)/.test(t)));
@@ -1794,7 +1795,7 @@ test('activity events carry the player look and item icon for the overlay', () =
 function extrasSetup(game = {}, petRng = () => 0.99) {
   const repo = openDb(':memory:');
   let t = 1_000_000;
-  const cfg = { ...baseConfig, game: { ...baseConfig.game, staminaMax: 100, ...game } };
+  const cfg = { ...baseConfig, game: { ...baseConfig.game, staminaMax: 100, chatPoints: 0, ...game } };
   const engine = new GameEngine({ repo, config: cfg, rng: () => 0.99, petRng, now: () => t });
   const say = (content, username = 'Alice', kickUserId = '1') => engine.handleChat({ kickUserId, username, content }).reply;
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
@@ -1984,4 +1985,164 @@ test('stamina can refill one charge at a time', () => {
   assert.equal(engine.stamina(u.id).charges, 1, 'partial progress is kept');
   wait(150_000);
   assert.equal(engine.stamina(u.id).charges, 3);
+});
+
+test('seasons end automatically; winners get titles and bound cosmetics', () => {
+  const { repo, engine, say, u, wait } = extrasSetup({ seasonDays: 30 });
+  const bob = repo.upsertUser({ kickUserId: '2', username: 'Bob' });
+  engine.tick();
+  say('!fish');
+  say('!chop', 'Bob', '2');
+  assert.match(say('!season'), /Ends in 30d/);
+  wait(31 * 86_400_000);
+  engine.tick();
+  assert.equal(engine.season().number, 2);
+  const winner = repo.getInventory(u.id).champion_crown ? u : bob;
+  assert.equal(repo.getInventory(winner.id).champion_crown, 1);
+  assert.equal(repo.getInventory(winner.id).victor_aura, 1);
+  const crown = winner === u ? say('!sell champion crown') : say('!sell champion crown', 'Bob', '2');
+  assert.match(crown, /can't be sold/);
+  assert.equal(engine.marketSell(winner, { item: 'champion_crown', qty: 1, price: 10 }).ok, false);
+  assert.equal(engine.publicHall().seasons[0].number, 1);
+});
+
+test('hall of fame: first to max level, first pet finders, biggest casino wins', () => {
+  const { repo, engine, u } = extrasSetup({ petDropMultiplier: 1 }, () => 0);
+  repo.addXp(u.id, 'fishing', xpForLevel(500) - 5);
+  engine.handleChat({ kickUserId: '1', username: 'Alice', content: '!fish' });
+  const h = engine.publicHall();
+  assert.equal(h.max.find((m) => m.skill === 'fishing').first.username, 'Alice');
+  assert.equal(h.pets[0].username, 'Alice');
+  engine.recordCasinoWin(u, 50_000, 'won 50,000 pts on slots');
+  engine.recordCasinoWin(u, 90_000, 'won 90,000 pts on crash');
+  assert.equal(engine.publicHall().casino[0].amount, 90_000);
+  assert.match(engine.hallInfo(), /Hall of fame/);
+});
+
+test('stream streaks reward coming back; last seen is saved', () => {
+  const { repo, engine, say, u } = extrasSetup();
+  for (let s = 1; s <= 5; s++) {
+    repo.setSetting('stream_no', s);
+    engine.streakSeen = null;
+    say('hi there');
+  }
+  assert.deepEqual(engine.streamStreak(u.id), { streak: 5, best: 5, unit: 'streams' });
+  assert.ok(repo.getUser(u.id).points >= 500, 'streak reward at 5');
+  assert.ok(repo.getUser(u.id).last_seen_at > 0);
+  repo.setSetting('stream_no', 7);
+  assert.equal(engine.streamStreak(u.id).streak, 0, 'missing a stream breaks it');
+});
+
+test('bounties: posted points go to the first finder; refunds on cancel', () => {
+  const { repo, engine, say, u } = extrasSetup({ tradeMinHours: 0, tradeMinActions: 0 });
+  repo.addPoints(u.id, 10_000);
+  assert.match(say('!bounty copper ore 1000'), /bounty posted: 1,000 pts for 🟠 Copper Ore/);
+  assert.equal(repo.getUser(u.id).points, 9_000);
+  assert.match(say('!bounty tin ore 500'), /already have a bounty/);
+  assert.match(say('!bounties'), /Copper Ore 1,000 pts \(by Alice\)/);
+  say('!mine copper'); // your own bounty can't be claimed by you
+  assert.equal(engine.bounties().length, 1);
+  const bob = repo.upsertUser({ kickUserId: '2', username: 'Bob' });
+  say('!mine copper', 'Bob', '2');
+  assert.equal(engine.bounties().length, 0);
+  assert.ok(repo.getUser(bob.id).points >= 1000);
+  say('!bounty tin ore 500');
+  assert.match(say('!bounty cancel'), /refunded/);
+  assert.match(say('!bounty party hat 500'), /usage/, 'shop items can\'t have bounties');
+});
+
+test('dungeons: parties of 2-5 clear rooms for XP, loot and a boss treasure', () => {
+  const { repo, engine, say, wait } = extrasSetup();
+  const said = [];
+  engine.on('announce', (t) => said.push(t));
+  assert.match(say('!dungeon'), /need a weapon/);
+  for (const [id, name] of [['1', 'Alice'], ['2', 'Bob']]) {
+    const x = repo.upsertUser({ kickUserId: id, username: name });
+    repo.addXp(x.id, 'swords', xpForLevel(60));
+    repo.addItem(x.id, 'mithril_sword', 1);
+  }
+  assert.equal(say('!dungeon'), null);
+  assert.match(said.pop(), /gathering a party for a DUNGEON/);
+  assert.match(say('!dungeon', 'Bob', '2'), /joined the dungeon party \(2\/5\)/);
+  wait(61_000);
+  engine.rng = () => 0.1; // lucky party
+  engine.tick();
+  assert.match(said.pop(), /DUNGEON CLEARED!/);
+  const bob = repo.getUserByName('bob');
+  const inv = repo.getInventory(bob.id);
+  assert.ok(inv.shadow_gem || inv.dungeon_relic || inv.rune_shard, 'a boss treasure');
+  // A party of one doesn't go.
+  say('!dungeon');
+  wait(61_000);
+  engine.tick();
+  assert.match(said.pop(), /Not enough adventurers/);
+});
+
+test('guilds: create, join, deposit, weekly goal pays the bank, leader leaving hands it over', () => {
+  const { repo, engine, say, u } = extrasSetup();
+  repo.addPoints(u.id, 20_000);
+  assert.match(say('!guild'), /not in a guild/);
+  assert.match(say('!guild create Iron Wolves'), /founded \[IW\] Iron Wolves/);
+  assert.equal(repo.getUser(u.id).points, 10_000);
+  const bob = repo.upsertUser({ kickUserId: '2', username: 'Bob' });
+  assert.match(say('!guild join iron wolves', 'Bob', '2'), /Welcome to \[IW\]/);
+  assert.match(say('!guild deposit 1000'), /bank: 1,000/);
+  assert.match(say('!guild pay @Bob 400'), /Paid Bob 400/);
+  assert.match(say('!guild'), /2 members.*bank 600 pts.*0\/200 actions/);
+  const g = repo.guildOf(u.id);
+  repo.guildSet(g.id, 'week', engine.weekIndex());
+  repo.guildSet(g.id, 'week_actions', 199);
+  say('!fish');
+  assert.equal(repo.guildOf(u.id).bank, 600 + 6000);
+  assert.match(say('!guild top'), /1\. \[IW\] Iron Wolves \(2/);
+  assert.match(say('!guild leave'), /Bob leads it now/);
+  assert.equal(repo.guildOf(bob.id).owner_id, bob.id);
+  assert.match(say('!guild leave', 'Bob', '2'), /closed \[IW\] Iron Wolves and took the 6,600 pts/);
+  assert.equal(repo.guildList().length, 0);
+});
+
+test('armor sets add 10% defence; enchanting adds 4% per level and can fail', () => {
+  const repo = openDb(':memory:');
+  const rolls = [0.95, 0.1];
+  const engine = new GameEngine({ repo, config: { ...baseConfig, game: { ...baseConfig.game, staminaMax: 100 } }, rng: () => (rolls.length ? rolls.shift() : 0.99), now: () => 1_000_000 });
+  const say = (content) => engine.handleChat({ kickUserId: '1', username: 'Alice', content }).reply;
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  for (const piece of ['helmet', 'platebody']) {
+    repo.addItem(u.id, `bronze_${piece}`, 1);
+    say(`!equip bronze ${piece}`);
+  }
+  const before = engine.combatStats(u.id).defence;
+  assert.equal(engine.combatStats(u.id).set, null);
+  repo.addItem(u.id, 'bronze_platelegs', 1);
+  say('!equip bronze platelegs');
+  const st = engine.combatStats(u.id);
+  assert.equal(st.set.name, 'Bronze');
+  assert.equal(st.defence, Math.round((before + 4) * 1.1));
+  repo.addItem(u.id, 'ashes', 30);
+  repo.addPoints(u.id, 100_000);
+  assert.match(say('!enchant bronze helmet'), /fizzled \(90% chance\)/);
+  assert.match(say('!enchant bronze helmet'), /success! .*Bronze Helmet is now \+1/);
+  assert.equal(engine.enchantLevel(u.id, 'bronze_helmet'), 1);
+  assert.equal(engine.gearName(u.id, 'bronze_helmet'), 'Bronze Helmet +1');
+  assert.match(say('!enchant bronze helmet'), /Ashes|success|fizzled/);
+});
+
+test('the shop has one limited cosmetic each week', () => {
+  const { engine } = extrasSetup();
+  const week = 7 * 86_400_000;
+  const now = Date.UTC(2026, 8, 28);
+  const a = engine.limitedItem(now);
+  const b = engine.limitedItem(now + week);
+  assert.notEqual(a.item, b.item);
+  assert.ok(a.endsAt > now && a.endsAt <= now + week);
+  assert.ok(engine.shopItems().some((x) => x.category === 'limited'));
+});
+
+test('economy alerts flag points piling up', () => {
+  const { engine } = extrasSetup();
+  engine.track('actions', 50_000);
+  engine.track('shop', 1_000);
+  engine.econ.days['2000-01-01'] = { actions: 1 };
+  const { alerts } = engine.economyAlerts();
+  assert.match(alerts[0].title, /Points are piling up/);
 });

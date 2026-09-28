@@ -49,7 +49,8 @@ module.exports = {
   shopItems() {
     const live = this.settings.all.shop;
     const byItem = new Map((live || []).map((row) => [row.item, row]));
-    return SHOP.map((x) => ({ ...x, ...(byItem.get(x.item) || {}), ...ITEMS[x.item], item: x.item }));
+    // Plus this week's limited cosmetic.
+    return [...SHOP.map((x) => ({ ...x, ...(byItem.get(x.item) || {}), ...ITEMS[x.item], item: x.item })), this.limitedItem()];
   },
 
   shopList() {

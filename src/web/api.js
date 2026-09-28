@@ -107,6 +107,29 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   router.post('/market/:id/buy', requireLogin, marketAct((req) => engine.marketBuy(req.user, req.params.id)));
   router.post('/market/:id/cancel', requireLogin, marketAct((req) => engine.marketCancel(req.user, req.params.id)));
 
+  // ---- Guilds -------------------------------------------------------------------------------
+  router.get('/guilds', (req, res) => {
+    const mine = req.user ? repo.guildOf(req.user.id) : null;
+    res.json({ guilds: engine.guildList(), mine: engine.publicGuild(mine, true), cost: engine.guildCost(), points: req.user ? repo.getUser(req.user.id).points : null });
+  });
+  router.get('/guilds/:id', (req, res) => {
+    const g = repo.guildGet(Number(req.params.id));
+    if (!g) return res.status(404).json({ error: 'no such guild' });
+    res.json({ guild: engine.publicGuild(g, true) });
+  });
+  router.post('/guilds', requireLogin, marketAct((req) => engine.guildCreate(req.user, req.body?.name, req.body?.tag)));
+  router.post('/guilds/:id/join', requireLogin, marketAct((req) => engine.guildJoinId(req.user, req.params.id)));
+  router.post('/guild/leave', requireLogin, marketAct((req) => engine.guildLeave(req.user)));
+  router.post('/guild/deposit', requireLogin, marketAct((req) => engine.guildDeposit(req.user, req.body?.amount)));
+  router.post('/guild/pay', requireLogin, marketAct((req) => engine.guildPay(req.user, req.body?.username, req.body?.amount)));
+  router.post('/guild/kick', requireLogin, marketAct((req) => engine.guildKick(req.user, req.body?.username)));
+
+  // ---- Hall of fame and bounties -----------------------------------------------------------
+  router.get('/hall', (req, res) => res.json(engine.publicHall()));
+  router.get('/bounties', (req, res) =>
+    res.json({ bounties: engine.bounties().map((b) => ({ ...b, name: ITEMS[b.item].name, icon: ITEMS[b.item].icon })) })
+  );
+
   // ---- Notifications --------------------------------------------------------------------
   router.get('/me/notifications', requireLogin, (req, res) => res.json(engine.notifications(req.user.id)));
   router.post('/me/notifications/read', requireLogin, (req, res) => {
@@ -436,7 +459,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   router.get('/admin/economy', requireAdmin, (req, res) => {
     engine.flushEconomy?.();
     const flows = repo.getSetting('economy_stats') || {};
-    res.json({ totals: repo.economyTotals(), flows, since: flows.since || null, topEarners: repo.topEarners(10) });
+    res.json({ totals: repo.economyTotals(), flows, since: flows.since || null, topEarners: repo.topEarners(10), health: engine.economyAlerts() });
   });
 
   // ---- Admin: backup and restore -------------------------------------------

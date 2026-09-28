@@ -54,11 +54,15 @@ module.exports = {
   combatStats(userId) {
     const worn = this.repo.getWorn(userId);
     const weapon = worn.weapon && ITEMS[worn.weapon] ? worn.weapon : null;
-    const armor = GEAR_SLOTS.filter((sl) => sl !== 'weapon').map((sl) => ITEMS[worn[sl]]);
-    const defence = armor.reduce((sum, it) => sum + (it?.defence || 0), 0);
+    const armorIds = GEAR_SLOTS.filter((sl) => sl !== 'weapon' && ITEMS[worn[sl]]).map((sl) => worn[sl]);
+    const armor = armorIds.map((id) => ITEMS[id]);
+    // Enchantments add to each piece; a full matching set adds 10% on top.
+    const set = this.armorSet(worn);
+    const defence = Math.round(armorIds.reduce((sum, id) => sum + (ITEMS[id].defence || 0) * this.enchantMult(userId, id), 0) * (set ? set.defence : 1));
     // Leather armor helps archers.
     const archeryBonus = armor.reduce((sum, it) => sum + (it?.archeryBonus || 0), 0);
-    return { worn, weapon, attack: weapon ? ITEMS[weapon].attack : 0, defence, archeryBonus, level: this.combatLevel(userId) };
+    const attack = weapon ? Math.round(ITEMS[weapon].attack * this.enchantMult(userId, weapon) * (set ? set.attack : 1)) : 0;
+    return { worn, weapon, attack, defence, archeryBonus, set, level: this.combatLevel(userId) };
   },
 
   // Look at every weapon the player owns (worn or in the backpack), take the combat skill they're
@@ -113,7 +117,7 @@ module.exports = {
     const st = this.combatStats(userId);
     // Arrows, spells, and leather armor's archery bonus add to the weapon's attack.
     const attack =
-      ITEMS[pick.weapon].attack + (pick.arrow ? ITEMS[pick.arrow].attack : 0) + (pick.spell ? pick.spell.attack : 0) + (pick.skillId === 'archery' ? st.archeryBonus : 0);
+      ITEMS[pick.weapon].attack * this.enchantMult(userId, pick.weapon) * (st.set ? st.set.attack : 1) + (pick.arrow ? ITEMS[pick.arrow].attack : 0) + (pick.spell ? pick.spell.attack : 0) + (pick.skillId === 'archery' ? st.archeryBonus : 0);
     const perk = this.perks(userId);
     return {
       // Banshee Fury: +25% attack. Race perks scale attack and defence.

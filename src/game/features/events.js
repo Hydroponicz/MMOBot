@@ -113,6 +113,7 @@ module.exports = {
       if (live && !was?.live) {
         this.schedule = null; // start the event timers fresh
         this.resetStreamStats();
+        this.repo.setSetting('stream_no', (this.repo.getSetting('stream_no') || 0) + 1);
         if (this.cfg.autoGoalTarget > 0 && !this.goalState()) this.startGoal({ target: this.cfg.autoGoalTarget, multiplier: 2, minutes: 30 });
       }
       return null;
@@ -439,6 +440,7 @@ module.exports = {
     const now = this.now();
     const c = this.cfg;
     this.communityTick();
+    this.socialTick();
     const ev = this.repo.getSetting('random_event');
     if (ev && now > ev.endsAt) {
       this.repo.deleteSetting('random_event');

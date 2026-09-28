@@ -202,6 +202,12 @@ module.exports = {
     }
     if (['action', 'rare'].includes(entry.kind) && entry.skill) this.progressDaily(user, entry);
     this.questProgress(user, entry);
+    this.claimBounty(user, entry);
+    this.guildProgress(user, entry);
+    if (entry.kind === 'jackpot') {
+      const m = /(?:won|cashed out) ([\d,]+) pts/.exec(entry.text || '');
+      if (m) this.recordCasinoWin(user, Number(m[1].replace(/,/g, '')), entry.text);
+    }
     this.goalProgress(entry);
     this.noteStreamActivity(user, entry);
   },
@@ -251,7 +257,10 @@ module.exports = {
     const top = this.repo.seasonLeaders(3);
     const me = this.repo.getUser(user.id);
     const rank = me.season_xp > 0 ? this.repo.seasonRank(me.season_xp) : null;
-    return `🏁 Season ${s.number}: ${top.map((r, i) => `${['🥇', '🥈', '🥉'][i]} ${r.username} ${fmt(r.season_xp)} XP`).join(' · ') || 'no XP earned yet'}. You: ${fmt(me.season_xp)} XP${rank ? ` (#${rank})` : ''}.`;
+    const ends = this.seasonEndsAt(s);
+    const msLeft = ends ? ends - this.now() : 0;
+    const left = ends ? ` Ends in ${msLeft > 2 * 86_400_000 ? `${Math.ceil(msLeft / 86_400_000)}d` : minutesLeft(msLeft)}; top 3 win a title and a season-only cosmetic.` : '';
+    return `🏁 Season ${s.number}: ${top.map((r, i) => `${['🥇', '🥈', '🥉'][i]} ${r.username} ${fmt(r.season_xp)} XP`).join(' · ') || 'no XP earned yet'}. You: ${fmt(me.season_xp)} XP${rank ? ` (#${rank})` : ''}.${left}`;
   },
 
   // Ends the season: the top 3 get a permanent title, season XP resets.
@@ -269,10 +278,11 @@ module.exports = {
     const history = this.repo.getSetting('seasons') || [];
     history.push({ number: s.number, startedAt: s.startedAt, endedAt: this.now(), winners: winners.map((w) => ({ username: w.username, xp: w.season_xp })) });
     this.repo.setSetting('seasons', history);
+    this.giveSeasonCosmetics(winners, s.number);
     this.repo.resetSeason();
     this.repo.setSetting('season', { number: s.number + 1, startedAt: this.now() });
     const text = winners.length
-      ? `🏁 Season ${s.number} is over! ${winners.map((w, i) => `${['🥇', '🥈', '🥉'][i]} @${w.username}`).join(' ')} win a permanent title. Season ${s.number + 1} starts now: everyone's back to 0!`
+      ? `🏁 Season ${s.number} is over! ${winners.map((w, i) => `${['🥇', '🥈', '🥉'][i]} @${w.username}`).join(' ')} win a permanent title${winners.length ? ' and a season-only cosmetic' : ''}. Season ${s.number + 1} starts now: everyone's back to 0!`
       : `🏁 Season ${s.number + 1} starts now!`;
     this.announce(text);
     return { ok: true, text, winners };
@@ -321,6 +331,7 @@ module.exports = {
     const inv = this.repo.getInventory(user.id);
     const id = findItem(words.join(' '), Object.keys(inv).filter((i) => ITEMS[i] && inv[i] > 0));
     if (!id) return `you don't have "${words.join(' ')}". ${p}inv shows your backpack.`;
+    if (ITEMS[id].bound || ITEMS[id].pet) return `your ${ITEMS[id].name} can't be given away.`;
     qty = Math.min(qty, inv[id]);
     const item = ITEMS[id];
     if (!item.ammo && !item.seedFor) {

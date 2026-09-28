@@ -151,6 +151,7 @@ module.exports = {
     if (!pet || mult <= 0 || this.repo.getInventory(user.id)[pet.id]) return null;
     if (this.petRng() >= pet.chance * mult * this.luck(user.id)) return null;
     this.repo.addItem(user.id, pet.id, 1);
+    this.recordFirst('pets', pet.id, user);
     // Their first pet follows them straight away.
     const a = this.appearance(user.id);
     if (!a.look.pet || a.look.pet === 'none') this.repo.setAppearance(user.id, a.race, { ...a.look, pet: pet.id }, a.raceChangedAt);

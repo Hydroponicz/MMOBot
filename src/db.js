@@ -87,6 +87,26 @@ CREATE TABLE IF NOT EXISTS market_listings (
 );
 CREATE INDEX IF NOT EXISTS idx_market_item ON market_listings(item);
 
+-- Guilds: a bank of points, a weekly goal, members.
+CREATE TABLE IF NOT EXISTS guilds (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  tag TEXT NOT NULL,
+  owner_id INTEGER NOT NULL,
+  bank INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  week INTEGER NOT NULL DEFAULT 0,
+  week_actions INTEGER NOT NULL DEFAULT 0,
+  week_done INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS guild_members (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  guild_id INTEGER NOT NULL REFERENCES guilds(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'member',
+  joined_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_guild_members ON guild_members(guild_id);
+
 -- Website notifications (market sales, pets, quests...). Things like "crops ready" are worked out live.
 CREATE TABLE IF NOT EXISTS notifications (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,6 +176,7 @@ function migrate(db) {
   if (!cols.includes('race')) db.exec('ALTER TABLE users ADD COLUMN race TEXT');
   if (!cols.includes('look')) db.exec('ALTER TABLE users ADD COLUMN look TEXT');
   if (!cols.includes('race_changed_at')) db.exec('ALTER TABLE users ADD COLUMN race_changed_at INTEGER NOT NULL DEFAULT 0');
+  if (!cols.includes('last_seen_at')) db.exec('ALTER TABLE users ADD COLUMN last_seen_at INTEGER NOT NULL DEFAULT 0');
   if (!cols.includes('stamina_at')) db.exec('ALTER TABLE users ADD COLUMN stamina_at INTEGER NOT NULL DEFAULT 0');
 }
 
@@ -332,6 +353,43 @@ function createRepo(db) {
     setFarmAt: (userId, ts) => stmt.setFarmAt.run(ts, userId),
     setAppearance: (userId, race, look, raceChangedAt) =>
       db.prepare('UPDATE users SET race = ?, look = ?, race_changed_at = ? WHERE id = ?').run(race, JSON.stringify(look), raceChangedAt, userId),
+    // Guilds
+    guildCreate(name, tag, ownerId, ts) {
+      const id = Number(db.prepare('INSERT INTO guilds (name, tag, owner_id, created_at) VALUES (?, ?, ?, ?)').run(name, tag, ownerId, ts).lastInsertRowid);
+      db.prepare("INSERT INTO guild_members (user_id, guild_id, role, joined_at) VALUES (?, ?, 'owner', ?)").run(ownerId, id, ts);
+      return id;
+    },
+    guildGet: (id) => db.prepare('SELECT * FROM guilds WHERE id = ?').get(id) || null,
+    guildByName: (name) => db.prepare('SELECT * FROM guilds WHERE name = ?').get(name) || null,
+    guildOf: (userId) => db.prepare('SELECT g.* FROM guilds g JOIN guild_members m ON m.guild_id = g.id WHERE m.user_id = ?').get(userId) || null,
+    guildMembers: (guildId) =>
+      db
+        .prepare(
+          `SELECT m.user_id, m.role, m.joined_at, u.username, u.season_xp,
+             (SELECT COALESCE(SUM(xp), 0) FROM skills WHERE user_id = m.user_id) AS xp
+           FROM guild_members m JOIN users u ON u.id = m.user_id WHERE m.guild_id = ? ORDER BY xp DESC`
+        )
+        .all(guildId),
+    guildJoin: (userId, guildId, ts, role = 'member') => db.prepare('INSERT INTO guild_members (user_id, guild_id, role, joined_at) VALUES (?, ?, ?, ?)').run(userId, guildId, role, ts),
+    guildLeave: (userId) => db.prepare('DELETE FROM guild_members WHERE user_id = ?').run(userId),
+    guildDelete(id) {
+      db.prepare('DELETE FROM guild_members WHERE guild_id = ?').run(id);
+      db.prepare('DELETE FROM guilds WHERE id = ?').run(id);
+    },
+    guildSet(id, field, value) {
+      if (!['bank', 'owner_id', 'week', 'week_actions', 'week_done'].includes(field)) throw new Error(`can't set guilds.${field}`);
+      db.prepare(`UPDATE guilds SET ${field} = ? WHERE id = ?`).run(value, id);
+    },
+    guildSetRole: (userId, role) => db.prepare('UPDATE guild_members SET role = ? WHERE user_id = ?').run(role, userId),
+    guildList: () =>
+      db
+        .prepare(
+          `SELECT g.*, COUNT(m.user_id) AS members, COALESCE(SUM(u.season_xp), 0) AS season_xp,
+             (SELECT COALESCE(SUM(s.xp), 0) FROM skills s JOIN guild_members m2 ON m2.user_id = s.user_id WHERE m2.guild_id = g.id) AS xp
+           FROM guilds g LEFT JOIN guild_members m ON m.guild_id = g.id LEFT JOIN users u ON u.id = m.user_id
+           GROUP BY g.id ORDER BY xp DESC`
+        )
+        .all(),
     // Market
     marketAdd: (sellerId, item, qty, price, ts) =>
       Number(db.prepare('INSERT INTO market_listings (seller_id, item, qty, price, created_at) VALUES (?, ?, ?, ?, ?)').run(sellerId, item, qty, price, ts).lastInsertRowid),
@@ -350,6 +408,7 @@ function createRepo(db) {
     notifications: (userId, limit = 20) => db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT ?').all(userId, limit),
     readNotifications: (userId) => db.prepare('UPDATE notifications SET read = 1 WHERE user_id = ? AND read = 0').run(userId),
     pruneNotifications: (before) => db.prepare('DELETE FROM notifications WHERE created_at < ?').run(before),
+    setLastSeen: (userId, ts) => db.prepare('UPDATE users SET last_seen_at = ? WHERE id = ?').run(ts, userId),
     setStamina: (userId, stamina, at) => db.prepare('UPDATE users SET stamina = ?, stamina_at = ? WHERE id = ?').run(stamina, at, userId),
     // Simple per-player fields (whitelisted, so the column name is never user input).
     setUserField(userId, field, value) {

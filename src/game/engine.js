@@ -81,6 +81,7 @@ class GameEngine extends EventEmitter {
     }
     this.repo.chatTick(user.id);
     this.noteChatter(user);
+    this.noteStreamPresence(user);
     this.awardChatPoints(user, content);
 
     const { prefix, disabledCommands = [] } = this.cfg;
@@ -187,6 +188,13 @@ class GameEngine extends EventEmitter {
     if (!amount) return;
     this.econ ??= this.repo.getSetting('economy_stats') || { since: this.now() };
     this.econ[kind] = (this.econ[kind] || 0) + amount;
+    // Per-day totals too (last 35 days), for the economy alerts.
+    const day = new Date(this.now()).toISOString().slice(0, 10);
+    this.econ.days ??= {};
+    this.econ.days[day] ??= {};
+    this.econ.days[day][kind] = (this.econ.days[day][kind] || 0) + amount;
+    const keys = Object.keys(this.econ.days).sort();
+    for (const k of keys.slice(0, Math.max(0, keys.length - 35))) delete this.econ.days[k];
     this.econDirty = true;
     // Written at most every few seconds (and by flushEconomy on shutdown).
     if (!this.econTimer) {
@@ -357,12 +365,16 @@ class GameEngine extends EventEmitter {
               return { id: m.id, name: m.name, icon: m.icon, level: m.level, hp: m.hp, xp: this.xpFor(m.xp), rating: o.rating.id, label: o.rating.label, ratingIcon: o.rating.icon, cost: o.canWin ? Math.round(o.cost * 100) : null };
             });
           })(),
-          worn: GEAR_SLOTS.map((slot) => ({ slot, item: st.worn[slot] ? { id: st.worn[slot], ...ITEMS[st.worn[slot]] } : null })),
+          worn: GEAR_SLOTS.map((slot) => ({ slot, item: st.worn[slot] ? { id: st.worn[slot], ...ITEMS[st.worn[slot]], enchant: this.enchantLevel(userId, st.worn[slot]) } : null })),
+          set: st.set ? { name: st.set.name, defence: Math.round((st.set.defence - 1) * 100), attack: Math.round((st.set.attack - 1) * 100) } : null,
         };
       })(),
       stamina: this.stamina(userId),
       appearance: this.publicAppearance(userId),
       quests: this.publicQuests(userId),
+      lastSeen: user.last_seen_at || null,
+      guild: (({ id, name, tag } = {}) => (id ? { id, name, tag } : null))(this.repo.guildOf(userId) || {}),
+      streamStreak: this.streamStreak(userId),
     };
   }
 
@@ -455,7 +467,7 @@ function isChatCommand(word) {
 }
 
 // Feature modules add their methods to the engine.
-for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events', 'museum', 'progression', 'character', 'community', 'market']) {
+for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events', 'museum', 'progression', 'character', 'community', 'market', 'gear', 'social', 'guilds']) {
   Object.assign(GameEngine.prototype, require(`./features/${mod}`));
 }
 

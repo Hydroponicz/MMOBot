@@ -7,7 +7,7 @@ const MAX_LISTINGS = 20;
 const dayOf = (ms) => new Date(ms).toISOString().slice(0, 10);
 
 // Items that can't go on the market: pets are yours for good.
-const tradable = (id) => ITEMS[id] && !ITEMS[id].pet;
+const tradable = (id) => ITEMS[id] && !ITEMS[id].pet && !ITEMS[id].bound;
 // Items that don't use backpack slots.
 const bagless = (it) => it.seedFor || it.ammo || it.cosmetic || it.pet;
 
@@ -94,6 +94,7 @@ module.exports = {
     });
     if (!ok) return { ok: false, error: 'that listing is gone.' };
     this.track('traded', l.price);
+    this.track('fees', fee);
     this.notify(l.seller_id, `🏪 ${user.username} bought your ${l.qty}x ${it.icon} ${it.name} for ${fmt(l.price)} pts (you got ${fmt(l.price - fee)} after the ${fmt(fee)} pts fee).`);
     this.emitActivity(user, { kind: 'trade', item: l.item, text: `bought ${l.qty}x ${it.name} on the market for ${fmt(l.price)} pts` });
     return { ok: true, message: `Bought ${itemLabel(l.item, l.qty)} for ${fmt(l.price)} pts!` };
@@ -113,6 +114,56 @@ module.exports = {
   marketInfo() {
     const n = this.repo.marketList({ limit: 1000 }).length;
     return `🏪 ${n ? `${n} listing${n === 1 ? '' : 's'}` : 'nothing'} on the player market. Buy and sell at ${this.siteUrl}/#/market`;
+  },
+
+  // ---- Economy alerts (admin) --------------------------------------------------------------------
+  // Looks at the last 7 days of points coming in and going out, and at who holds the points.
+  economyAlerts() {
+    this.flushEconomy?.();
+    const econ = this.repo.getSetting('economy_stats') || {};
+    const days = Object.entries(econ.days || {})
+      .sort(([a], [b]) => (a < b ? 1 : -1))
+      .slice(0, 7)
+      .map(([, v]) => v);
+    const sum = (k) => days.reduce((s, d) => s + (d[k] || 0), 0);
+    const earned = sum('chat') + sum('actions') + sum('sold') + sum('rewards');
+    const spent = sum('shop') + sum('fees') + Math.max(0, sum('casinoWagered') - sum('casinoPaid'));
+    const alerts = [];
+    const week = { days: days.length, earned, spent };
+    if (days.length >= 2 && earned > 1000 && earned > spent * 1.5) {
+      alerts.push({
+        level: earned > spent * 3 ? 'bad' : 'warn',
+        title: `Points are piling up: ${fmt(earned)} earned vs ${fmt(spent)} spent in the last ${days.length} days (${(earned / Math.max(1, spent)).toFixed(1)}x).`,
+        tips: [
+          'Lower the sell price or action points multiplier (Settings → Economy).',
+          'Raise the market fee, or raise shop and upgrade prices.',
+          'Put an expensive cosmetic in the spotlight, or start a world boss so points go to rewards people want.',
+        ],
+      });
+    }
+    if (days.length >= 2 && spent > 1000 && spent > earned * 1.5) {
+      alerts.push({
+        level: 'warn',
+        title: `Players are spending faster than they earn: ${fmt(spent)} out vs ${fmt(earned)} in over ${days.length} days.`,
+        tips: ['Run an XP or chat-points boost, or a channel goal.', 'Raise the points multiplier a little, or lower shop prices.'],
+      });
+    }
+    const wagered = sum('casinoWagered');
+    if (wagered > 10_000 && sum('casinoPaid') > wagered) {
+      alerts.push({ level: 'warn', title: `The casino paid out ${fmt(sum('casinoPaid') - wagered)} pts more than it took this week.`, tips: ['That happens with a few lucky wins; if it keeps up, lower the max bet (Settings → Casino).'] });
+    }
+    const top = this.repo.topEarners(100).sort((a, b) => b.points - a.points);
+    const totals = this.repo.economyTotals();
+    const n = Math.max(1, Math.ceil(totals.players * 0.01));
+    const held = top.slice(0, n).reduce((s, u) => s + u.points, 0);
+    if (totals.players >= 20 && totals.points > 0 && held / totals.points > 0.5) {
+      alerts.push({
+        level: 'warn',
+        title: `The top ${n} player${n === 1 ? '' : 's'} hold ${Math.round((held / totals.points) * 100)}% of all points.`,
+        tips: ['Big sinks for rich players help: cosmetics, enchanting, guild creation, world boss bounties.', 'Check the Players page for anything unusual.'],
+      });
+    }
+    return { week, alerts };
   },
 
   // ---- Notifications ------------------------------------------------------------------------
