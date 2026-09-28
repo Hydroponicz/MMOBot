@@ -207,6 +207,11 @@ class GameEngine extends EventEmitter {
   }
 
   emitActivity(user, entry) {
+    // (Bulk actions like !cook all post one summary instead of an entry per item.)
+    if (this.quietActivity && ['action', 'rare'].includes(entry.kind)) {
+      this.onActivity?.(user, entry);
+      return;
+    }
     const id = this.repo.logActivity({ userId: user.id, ...entry });
     // The overlay draws the player's character doing the action, so it gets their look and the item's icon.
     const look = this.characterView(user.id);
@@ -355,6 +360,7 @@ class GameEngine extends EventEmitter {
       })(),
       stamina: this.stamina(userId),
       appearance: this.publicAppearance(userId),
+      quests: this.publicQuests(userId),
     };
   }
 
@@ -441,7 +447,7 @@ function isChatCommand(word) {
 }
 
 // Feature modules add their methods to the engine.
-for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events', 'museum', 'progression', 'character']) {
+for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events', 'museum', 'progression', 'character', 'community', 'market']) {
   Object.assign(GameEngine.prototype, require(`./features/${mod}`));
 }
 

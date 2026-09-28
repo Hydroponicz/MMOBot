@@ -138,10 +138,20 @@ module.exports = {
     const max = Math.max(1, (this.cfg.staminaMax ?? 3) + this.perks(userId).stamina);
     const u = this.repo.getUser(userId);
     if (!u || u.stamina === null || u.stamina === undefined) return { charges: max, max, refillAt: null, startedAt: null };
-    const refillAt = u.stamina_at + this.staminaRefillMs(userId, now);
+    const refill = this.staminaRefillMs(userId, now);
+    if (this.cfg.staminaGradual) {
+      // Gradual: one charge back every refill/max, so an empty bar is still full after the refill time.
+      const per = refill / max;
+      const gained = Math.floor(Math.max(0, now - u.stamina_at) / per);
+      const charges = Math.min(max, u.stamina + gained);
+      if (charges >= max) return { charges: max, max, refillAt: null, startedAt: null };
+      const anchor = u.stamina_at + gained * per;
+      return { charges, max, refillAt: anchor + (max - charges) * per, nextAt: anchor + per, startedAt: anchor };
+    }
+    const refillAt = u.stamina_at + refill;
     // (Also full when the max went down, e.g. a Halfling who changed race.)
     if (now >= refillAt || u.stamina >= max) return { charges: max, max, refillAt: null, startedAt: null };
-    return { charges: clamp(u.stamina, 0, max), max, refillAt, startedAt: u.stamina_at };
+    return { charges: clamp(u.stamina, 0, max), max, refillAt, nextAt: refillAt, startedAt: u.stamina_at };
   },
 
   // Returns null when the user has a charge, or the "out of stamina" reply ('' = already warned).
@@ -151,7 +161,9 @@ module.exports = {
     // Warn once per refill window so spamming doesn't flood chat.
     if (this.cooldownWarned.get(user.id) === s.startedAt) return '';
     this.cooldownWarned.set(user.id, s.startedAt);
-    return `you're catching your breath 😮‍💨 out of stamina (0/${s.max}), full again in ${this.waitText(s.refillAt - now)}.`;
+    return this.cfg.staminaGradual
+      ? `you're catching your breath 😮‍💨 out of stamina (0/${s.max}), next charge in ${this.waitText(s.nextAt - now)}.`
+      : `you're catching your breath 😮‍💨 out of stamina (0/${s.max}), full again in ${this.waitText(s.refillAt - now)}.`;
   },
 
   spendStamina(user, now = this.now()) {

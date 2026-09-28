@@ -50,6 +50,7 @@ module.exports = {
   runAction(user, skillId, args) {
     // A bare "!smith" just lists what you can make, so it doesn't need (or use) stamina.
     if (SKILLS[skillId].pickBest === false && !args.length) return this.process(user, skillId, args).reply;
+    if (skillId === 'cooking' && String(args[0] || '').toLowerCase() === 'all') return this.cookAll(user);
     const now = this.now();
     // Cooking is free once a fire is lit: it's limited by the fire's time left and your raw food.
     const free = !!SKILLS[skillId].needsFire;
@@ -73,6 +74,38 @@ module.exports = {
       return r;
     });
     return result.reply;
+  },
+
+  // !cook all: cook every raw food in the backpack (up to 100) while the fire burns, in one message.
+  cookAll(user) {
+    if (!this.fireLeft(user.id)) return this.process(user, 'cooking', []).reply;
+    const before = { ...this.repo.getInventory(user.id) };
+    const xpBefore = this.repo.getSkills(user.id).cooking;
+    let cooked = 0;
+    let burnt = 0;
+    let last = '';
+    // One summary line on the feed and overlay instead of a scene per fish.
+    this.quietActivity = true;
+    try {
+      for (let i = 0; i < 100; i++) {
+        const r = this.repo.transaction(() => this.process(user, 'cooking', []));
+        if (!r.consumed) {
+          last = r.reply;
+          break;
+        }
+        if (/burned the/.test(r.reply)) burnt++;
+        else cooked++;
+      }
+    } finally {
+      this.quietActivity = false;
+    }
+    if (!cooked && !burnt) return last;
+    const after = this.repo.getInventory(user.id);
+    const made = Object.keys(after).filter((id) => ITEMS[id]?.food && (after[id] || 0) > (before[id] || 0));
+    const list = made.map((id) => itemLabel(id, after[id] - (before[id] || 0))).join(', ');
+    const xp = this.repo.getSkills(user.id).cooking - xpBefore;
+    this.emitActivity(user, { kind: 'action', summary: true, skill: 'cooking', item: made[0] || null, xp, text: `cooked ${cooked} food${burnt ? ` (burned ${burnt})` : ''}` });
+    return `🍳 cooked ${cooked}${burnt ? ` (burned ${burnt})` : ''}: ${list || 'nothing'}! +${fmt(xp)} Cooking XP (Cooking ${skillLevel('cooking', this.repo.getSkills(user.id).cooking)}). 🔥 Fire: ${minutesLeft(this.fireLeft(user.id))} left.`;
   },
 
   gather(user, skillId, args) {

@@ -53,6 +53,7 @@ module.exports = {
       this.repo.addPoints(user.id, total);
     });
     this.track('rewards', total);
+    this.emitActivity(user, { kind: 'donate', item: id, text: `donated ${ITEMS[id].name} to the museum 🏛️` });
     if (done) {
       this.emitActivity(user, { kind: 'rare', item: id, text: `completed the museum's ${collection.name}! 🏛️` });
       this.unlockAchievement?.(user, `museum_${collection.id}`);

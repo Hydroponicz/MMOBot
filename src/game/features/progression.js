@@ -191,6 +191,8 @@ module.exports = {
 
   // From emitActivity: things that are easiest to spot in the feed.
   onActivity(user, entry) {
+    // A bulk summary (!cook all): each item already counted on its own.
+    if (entry.summary) return;
     if (entry.kind === 'death') this.unlockAchievement(user, 'back_from_dead');
     if (entry.kind === 'jackpot' && /\((\d+(\.\d+)?)x\)|10x|on crash|mines|BLACKJACK/.test(entry.text || '')) {
       // Casino wins of 10x+ are announced as jackpots; blackjack/crash/mines jackpots may be big-money
@@ -199,6 +201,9 @@ module.exports = {
       if (!m || Number(m[1]) >= 10) this.unlockAchievement(user, 'jackpot');
     }
     if (['action', 'rare'].includes(entry.kind) && entry.skill) this.progressDaily(user, entry);
+    this.questProgress(user, entry);
+    this.goalProgress(entry);
+    this.noteStreamActivity(user, entry);
   },
 
   // !achievements
@@ -211,9 +216,7 @@ module.exports = {
   },
 
   titles(userId) {
-    return Object.values(this.achievements(userId).unlocked)
-      .map((a) => a.title)
-      .filter(Boolean);
+    return [...Object.values(this.achievements(userId).unlocked).map((a) => a.title), ...this.questTitles(userId)].filter(Boolean);
   },
 
   // !title [name|none]

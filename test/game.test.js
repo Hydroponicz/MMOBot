@@ -1709,7 +1709,7 @@ test('stamina: 3 charges, used by any action, full again 5 minutes after the fir
   t += 60_000;
   assert.match(say('!mine'), /you mined/);
   assert.match(say('!chop'), /you chopped|you cut/);
-  assert.deepEqual(engine.stamina(u.id), { charges: 0, max: 3, refillAt: 1_000_000 + 300_000, startedAt: 1_000_000 });
+  assert.deepEqual(engine.stamina(u.id), { charges: 0, max: 3, refillAt: 1_000_000 + 300_000, nextAt: 1_000_000 + 300_000, startedAt: 1_000_000 });
   assert.match(say('!fish'), /out of stamina \(0\/3\), full again in 4m/);
   assert.equal(say('!fish'), null, 'warns once per refill');
   assert.equal(engine.profile(u.id).stamina.charges, 0);
@@ -1863,4 +1863,123 @@ test('race-only items: only that race can make them', () => {
   engine.setAppearance(u, { race: 'dwarf' });
   assert.match(say('!smith dwarven warhammer'), /you \w+ 🔨 Dwarven Warhammer/);
   assert.equal(repo.getInventory(u.id).dwarven_warhammer, 1);
+});
+
+test('quests: steps count matching actions; finishing a chain pays and gives a title', () => {
+  const { repo, engine, say, u } = extrasSetup();
+  const said = [];
+  engine.on('announce', (t) => said.push(t));
+  assert.match(say('!quest'), /The Blacksmith's Apprentice \(step 1\/5\): Mine Copper Ore 0\/10/);
+  // Walk the chain by feeding matching activity.
+  const act = (entry, n = 1) => { for (let i = 0; i < n; i++) engine.questProgress(u, { kind: 'action', ...entry }); };
+  act({ skill: 'mining', item: 'copper_ore' }, 10);
+  assert.match(said.pop(), /✅ Mine Copper Ore! Next .*Mine Tin Ore \(0\/10\)/);
+  act({ skill: 'mining', item: 'copper_ore' }, 3);
+  assert.match(say('!quest'), /step 2\/5\): Mine Tin Ore 0\/10/, 'wrong item does not count');
+  act({ skill: 'mining', item: 'tin_ore' }, 10);
+  act({ skill: 'smelting', item: 'bronze_bar' }, 5);
+  act({ skill: 'smithing', item: 'bronze_sword' }, 1);
+  const before = repo.getUser(u.id).points;
+  act({ skill: 'swords', item: 'goblin_ear', monster: 'goblin' }, 3);
+  assert.equal(repo.getUser(u.id).points - before, 2000);
+  assert.ok(engine.titles(u.id).includes('the Apprentice'));
+  assert.match(say('!quest'), /Hearth & Home \(step 1\/4\)/);
+  assert.equal(engine.publicQuests(u.id)[0].status, 'done');
+  assert.equal(engine.notifications(u.id).saved[0].text.includes('Quest complete'), true);
+});
+
+test('channel goals: chat actions fill it; reaching it starts an XP boost', () => {
+  const { engine, say } = extrasSetup();
+  assert.equal(engine.startGoal({ skill: 'fishing', target: 3, multiplier: 2, minutes: 10 }).ok, true);
+  assert.equal(engine.startGoal({ target: 0 }).ok, false);
+  say('!mine');
+  assert.match(say('!goal'), /0\/3 Fishing actions/);
+  say('!fish');
+  say('!fish', 'Bob', '2');
+  assert.equal(engine.activeBoost(), null);
+  say('!fish');
+  assert.equal(engine.goalState().done, true);
+  assert.equal(engine.activeBoost().multiplier, 2);
+  assert.match(say('!goal'), /goal reached/);
+});
+
+test('world boss: lasts days, keeps its HP, pays a bigger pool; normal raids still run', () => {
+  const { repo, engine, say, u, wait } = extrasSetup({ worldBossHpMultiplier: 100, worldBossDays: 7, raidRewardPoints: 1000 });
+  repo.addXp(u.id, 'swords', xpForLevel(60));
+  repo.addItem(u.id, 'mithril_sword', 1);
+  const r = engine.startRaid({ world: true, monsterId: 'troll' });
+  assert.equal(r.ok, true);
+  assert.equal(r.raid.world, true);
+  assert.equal(engine.startRaid({ world: true }).ok, false);
+  assert.match(say('!attack'), /you hit the 👹 Troll|you hit the .* Troll/);
+  wait(3 * 86_400_000);
+  engine.tick();
+  assert.ok(engine.raidState(), 'still up after 3 days');
+  assert.match(say('!raid'), /🌍 World boss/);
+  assert.equal(engine.startRaid({ monsterId: 'wolf', hpMultiplier: 1 }).ok, true, 'a normal raid can start alongside');
+  assert.ok(!engine.raidState().world, 'the normal raid is fought first');
+  engine.finishRaid(false);
+  assert.equal(engine.raidState().world, true);
+  wait(5 * 86_400_000);
+  engine.tick();
+  assert.equal(engine.raidState(), null, 'escaped after 7 days');
+});
+
+test('market: list, buy with a fee, cancel; limits', () => {
+  const { repo, engine, u } = extrasSetup({ tradeMinHours: 0, tradeMinActions: 0, marketFee: 0.1 });
+  const bob = repo.upsertUser({ kickUserId: '2', username: 'Bob' });
+  repo.addItem(u.id, 'iron_ore', 5);
+  assert.equal(engine.marketSell(u, { item: 'iron_ore', qty: 6, price: 100 }).ok, false);
+  assert.match(engine.marketSell(u, { item: 'iron_ore', qty: 2, price: 1e9 }).error, /too expensive/);
+  const listed = engine.marketSell(u, { item: 'iron_ore', qty: 2, price: 100 });
+  assert.equal(listed.ok, true);
+  assert.equal(repo.getInventory(u.id).iron_ore, 3, 'listed items leave the backpack');
+  assert.equal(engine.marketListings()[0].seller, 'Alice');
+  assert.match(engine.marketBuy(bob, listed.id).error, /need 100 pts/);
+  repo.addPoints(bob.id, 150);
+  const alicePts = repo.getUser(u.id).points;
+  assert.equal(engine.marketBuy(bob, listed.id).ok, true);
+  assert.equal(repo.getInventory(bob.id).iron_ore, 2);
+  assert.equal(repo.getUser(bob.id).points, 50);
+  assert.equal(repo.getUser(u.id).points - alicePts, 90, '10% fee');
+  assert.match(engine.notifications(u.id).saved[0].text, /Bob bought your 2x/);
+  assert.equal(engine.notifications(u.id).unread >= 1, true);
+  engine.readNotifications(u.id);
+  assert.equal(engine.notifications(u.id).saved[0].read, true);
+  assert.equal(engine.marketBuy(bob, listed.id).ok, false, 'sold listings are gone');
+  const again = engine.marketSell(u, { item: 'iron_ore', qty: 3, price: 30 });
+  assert.equal(engine.marketCancel(bob, again.id).ok, false);
+  assert.equal(engine.marketCancel(u, again.id).ok, true);
+  assert.equal(repo.getInventory(u.id).iron_ore, 3);
+  repo.addItem(u.id, 'pet_wolf', 1);
+  assert.equal(engine.marketSell(u, { item: 'pet_wolf', qty: 1, price: 10 }).ok, false, 'pets are not for sale');
+});
+
+test('!cook all cooks every raw food on one fire in one message', () => {
+  const { repo, engine, say, u } = extrasSetup();
+  repo.addItem(u.id, 'shrimp', 5);
+  repo.addItem(u.id, 'carrot', 2);
+  assert.match(say('!cook all'), /you need a fire/);
+  repo.setSetting(`fire:${u.id}`, 2_000_000_000);
+  const seen = [];
+  engine.on('activity', (a) => seen.push(a));
+  assert.match(say('!cook all'), /🍳 cooked 7: .*Cooked Shrimp.*Roasted Carrot.*Cooking XP/);
+  assert.equal(repo.getInventory(u.id).shrimp, undefined);
+  assert.equal(seen.filter((a) => a.kind === 'action' && a.skill === 'cooking').length, 1, 'one feed entry for the batch');
+  assert.equal(engine.stamina(u.id).charges, 100, 'no stamina used');
+});
+
+test('stamina can refill one charge at a time', () => {
+  const { engine, say, u, wait } = extrasSetup({ staminaMax: 3, staminaMinutes: 3, staminaGradual: true });
+  say('!fish');
+  say('!fish');
+  say('!fish');
+  assert.match(say('!fish'), /out of stamina \(0\/3\), next charge in 1m/);
+  wait(60_000);
+  assert.equal(engine.stamina(u.id).charges, 1);
+  say('!fish');
+  wait(90_000);
+  assert.equal(engine.stamina(u.id).charges, 1, 'partial progress is kept');
+  wait(150_000);
+  assert.equal(engine.stamina(u.id).charges, 3);
 });

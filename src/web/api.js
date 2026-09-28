@@ -81,6 +81,48 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     return engine.sell(req.user, [String(req.body?.item || ''), qty]);
   }));
 
+  // ---- Player market ----------------------------------------------------------------
+  router.get('/market', (req, res) => {
+    const me = req.user ? repo.getUser(req.user.id) : null;
+    const inv = me ? repo.getInventory(me.id) : {};
+    res.json({
+      listings: engine.marketListings(),
+      fee: engine.cfg.marketFee ?? 0.05,
+      points: me ? me.points : null,
+      blocked: me ? engine.marketBlocked(me.id) : null,
+      inventory: Object.entries(inv)
+        .filter(([id, q]) => q > 0 && ITEMS[id] && !ITEMS[id].pet)
+        .map(([id, qty]) => ({ id, qty, name: ITEMS[id].name, icon: ITEMS[id].icon, value: engine.sellValue(id), max: engine.marketMaxUnitPrice(id) })),
+    });
+  });
+  const marketAct = (fn) => (req, res) => {
+    const r = fn(req);
+    if (!r.ok) return res.status(400).json({ error: r.error });
+    logger.info(`[site] ${req.user.username}: ${req.path} → ${r.message}`);
+    res.json(r);
+  };
+  router.post('/market/sell', requireLogin, marketAct((req) => engine.marketSell(req.user, req.body || {})));
+  router.post('/market/:id/buy', requireLogin, marketAct((req) => engine.marketBuy(req.user, req.params.id)));
+  router.post('/market/:id/cancel', requireLogin, marketAct((req) => engine.marketCancel(req.user, req.params.id)));
+
+  // ---- Notifications --------------------------------------------------------------------
+  router.get('/me/notifications', requireLogin, (req, res) => res.json(engine.notifications(req.user.id)));
+  router.post('/me/notifications/read', requireLogin, (req, res) => {
+    engine.readNotifications(req.user.id);
+    res.json({ ok: true });
+  });
+
+  // ---- Channel goal (admin) ---------------------------------------------------------------
+  router.post('/admin/goal', requireAdmin, (req, res) => {
+    const r = engine.startGoal(req.body || {});
+    if (!r.ok) return res.status(400).json({ error: r.error });
+    res.json(r);
+  });
+  router.post('/admin/goal/end', requireAdmin, (req, res) => {
+    engine.stopGoal();
+    res.json({ ok: true });
+  });
+
   // Character customizer: the options, races and (logged in) your current look.
   router.get('/appearance', (req, res) => {
     res.json({ ...engine.appearanceOptions(), mine: req.user ? engine.publicAppearance(req.user.id) : null });
@@ -95,7 +137,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   router.get('/player/:name', (req, res) => {
     const user = repo.getUserByName(req.params.name);
     if (!user) return res.status(404).json({ error: 'player not found' });
-    res.json({ profile: engine.profile(user.id), activity: repo.userActivity(user.id, 25) });
+    res.json({ profile: engine.profile(user.id), activity: withFaces(repo.userActivity(user.id, 25)) });
   });
 
   router.get('/leaderboard/:kind', (req, res) => {
@@ -118,8 +160,16 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     res.json({ kind, rows });
   });
 
+  // Each row gets the player's character look, for the faces in the feed.
+  const withFaces = (rows) => {
+    const looks = new Map();
+    return rows.map((r) => {
+      if (!looks.has(r.user_id)) looks.set(r.user_id, engine.characterView(r.user_id));
+      return { ...r, appearance: looks.get(r.user_id) };
+    });
+  };
   router.get('/activity', (req, res) => {
-    res.json({ activity: repo.recentActivity(Number(req.query.after) || 0, 30) });
+    res.json({ activity: withFaces(repo.recentActivity(Number(req.query.after) || 0, 30)) });
   });
 
   // Live activity feed (Server-Sent Events) for the website and the OBS overlay.
@@ -137,10 +187,18 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     // Raid boss HP and channel boosts, for the overlay and site banners.
     const sendRaid = (raid) => res.write(`event: raid\ndata: ${JSON.stringify(raid)}\n\n`);
     const sendBoost = (boost) => res.write(`event: boost\ndata: ${JSON.stringify(boost)}\n\n`);
+    // Channel goal progress and this stream's top players, for the overlay.
+    const sendGoal = (goal) => res.write(`event: goal\ndata: ${JSON.stringify(goal)}\n\n`);
+    const sendStats = (stats) => res.write(`event: streamstats\ndata: ${JSON.stringify(stats)}\n\n`);
     const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
     engine.on('activity', send);
     engine.on('raid', sendRaid);
     engine.on('boost', sendBoost);
+    engine.on('goal', sendGoal);
+    engine.on('streamstats', sendStats);
+    const goal = engine.publicGoal();
+    if (goal) sendGoal(goal);
+    sendStats(engine.publicStreamStats());
     const raid = engine.publicRaid();
     if (raid.active) sendRaid(raid);
     const boost = engine.activeBoost();
@@ -150,6 +208,8 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       engine.off('activity', send);
       engine.off('raid', sendRaid);
       engine.off('boost', sendBoost);
+      engine.off('goal', sendGoal);
+      engine.off('streamstats', sendStats);
     });
   });
 
@@ -346,7 +406,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     logger.info(`[admin] ${req.user.username} ${req.method} ${req.path}`);
     res.json({ ok: true, ...(r || {}) });
   };
-  router.post('/admin/raid', requireAdmin, adminAct((req) => engine.startRaid({ monsterId: req.body?.monster || null, hpMultiplier: Number(req.body?.hpMultiplier) || null })));
+  router.post('/admin/raid', requireAdmin, adminAct((req) => engine.startRaid({ monsterId: req.body?.monster || null, hpMultiplier: Number(req.body?.hpMultiplier) || null, world: !!req.body?.world })));
   router.post('/admin/raid/end', requireAdmin, adminAct(() => ({ text: engine.finishRaid(false) })));
   router.post('/admin/boost', requireAdmin, adminAct((req) => {
     const multiplier = Number(req.body?.multiplier);

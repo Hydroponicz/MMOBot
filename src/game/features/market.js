@@ -1,0 +1,147 @@
+// GameEngine methods: the player market (website) and website notifications. Mixed into
+// GameEngine.prototype by engine.js.
+const { ITEMS } = require('../skills');
+const { fmt, itemLabel } = require('./shared');
+
+const MAX_LISTINGS = 20;
+const dayOf = (ms) => new Date(ms).toISOString().slice(0, 10);
+
+// Items that can't go on the market: pets are yours for good.
+const tradable = (id) => ITEMS[id] && !ITEMS[id].pet;
+// Items that don't use backpack slots.
+const bagless = (it) => it.seedFor || it.ammo || it.cosmetic || it.pet;
+
+module.exports = {
+  // ---- Market ----------------------------------------------------------------------------
+  // Highest price allowed per item, so the market can't be used to pass points between accounts.
+  marketMaxUnitPrice(id) {
+    return Math.max(500, ITEMS[id].value * 50);
+  },
+
+  marketBlocked(userId) {
+    const c = this.cfg;
+    if (c.tradingEnabled === false) return 'trading is switched off right now.';
+    const u = this.repo.getUser(userId);
+    const newbie = (c.tradeMinHours && this.now() - u.created_at < c.tradeMinHours * 3_600_000) || u.actions_count < (c.tradeMinActions || 0);
+    return newbie ? `you can use the market once you've played a while (${c.tradeMinActions} actions and ${c.tradeMinHours}h since you first chatted).` : null;
+  },
+
+  marketListings(sellerId = null) {
+    return this.repo.marketList({ sellerId }).map((l) => ({
+      id: l.id,
+      seller: l.seller,
+      sellerId: l.seller_id,
+      item: l.item,
+      name: ITEMS[l.item]?.name || l.item,
+      icon: ITEMS[l.item]?.icon || '❔',
+      qty: l.qty,
+      price: l.price,
+      each: Math.round(l.price / l.qty),
+      value: this.sellValue(l.item),
+      createdAt: l.created_at,
+    }));
+  },
+
+  // List items for a total price. They leave your backpack until sold or cancelled.
+  marketSell(user, { item, qty, price }) {
+    const blocked = this.marketBlocked(user.id);
+    if (blocked) return { ok: false, error: blocked };
+    const id = String(item || '');
+    if (!tradable(id)) return { ok: false, error: "that item can't be sold on the market." };
+    const have = this.repo.getInventory(user.id)[id] || 0;
+    qty = Math.floor(Number(qty));
+    price = Math.floor(Number(price));
+    if (!(qty >= 1)) return { ok: false, error: 'how many?' };
+    if (qty > have) return { ok: false, error: `you only have ${have} ${ITEMS[id].name}.` };
+    if (!(price >= 1)) return { ok: false, error: 'set a price of at least 1 point.' };
+    const max = this.marketMaxUnitPrice(id) * qty;
+    if (price > max) return { ok: false, error: `that's too expensive: at most ${fmt(max)} pts for ${qty} ${ITEMS[id].name}.` };
+    if (this.repo.marketCount(user.id) >= MAX_LISTINGS) return { ok: false, error: `you can have ${MAX_LISTINGS} listings at once. Cancel one first.` };
+    // Unequip it if that was the last one being worn.
+    const worn = this.repo.getWorn(user.id);
+    const slot = Object.keys(worn).find((s) => worn[s] === id);
+    if (slot && have - qty < 1) this.repo.takeOff(user.id, slot);
+    const listingId = this.repo.transaction(() => {
+      this.repo.removeItem(user.id, id, qty);
+      return this.repo.marketAdd(user.id, id, qty, price, this.now());
+    });
+    this.emitActivity(user, { kind: 'market', item: id, text: `put ${qty}x ${ITEMS[id].name} on the market for ${fmt(price)} pts` });
+    return { ok: true, id: listingId, message: `Listed ${itemLabel(id, qty)} for ${fmt(price)} pts.` };
+  },
+
+  marketBuy(user, listingId) {
+    const blocked = this.marketBlocked(user.id);
+    if (blocked) return { ok: false, error: blocked };
+    const l = this.repo.marketGet(Number(listingId));
+    if (!l) return { ok: false, error: 'that listing is gone (someone may have bought it).' };
+    if (l.seller_id === user.id) return { ok: false, error: "that's your own listing. Cancel it instead." };
+    const it = ITEMS[l.item];
+    if (this.repo.getUser(user.id).points < l.price) return { ok: false, error: `you need ${fmt(l.price)} pts.` };
+    if (it.ammo === 'bow') {
+      const q = this.quiver(user.id);
+      if (q.arrows + l.qty > q.capacity) return { ok: false, error: `no room in your quiver (${fmt(q.arrows)}/${fmt(q.capacity)}).` };
+    } else if (!bagless(it)) {
+      const bag = this.backpack(user.id);
+      if (bag.used + l.qty > bag.capacity) return { ok: false, error: `no room in your backpack (${bag.used}/${bag.capacity}).` };
+    }
+    const fee = Math.floor(l.price * (this.cfg.marketFee ?? 0.05));
+    const ok = this.repo.transaction(() => {
+      if (!this.repo.marketDelete(l.id)) return false;
+      this.repo.addPoints(user.id, -l.price);
+      this.repo.addPoints(l.seller_id, l.price - fee);
+      this.repo.addItem(user.id, l.item, l.qty);
+      return true;
+    });
+    if (!ok) return { ok: false, error: 'that listing is gone.' };
+    this.track('traded', l.price);
+    this.notify(l.seller_id, `🏪 ${user.username} bought your ${l.qty}x ${it.icon} ${it.name} for ${fmt(l.price)} pts (you got ${fmt(l.price - fee)} after the ${fmt(fee)} pts fee).`);
+    this.emitActivity(user, { kind: 'trade', item: l.item, text: `bought ${l.qty}x ${it.name} on the market for ${fmt(l.price)} pts` });
+    return { ok: true, message: `Bought ${itemLabel(l.item, l.qty)} for ${fmt(l.price)} pts!` };
+  },
+
+  marketCancel(user, listingId) {
+    const l = this.repo.marketGet(Number(listingId));
+    if (!l || l.seller_id !== user.id) return { ok: false, error: 'not your listing.' };
+    this.repo.transaction(() => {
+      this.repo.marketDelete(l.id);
+      this.repo.addItem(user.id, l.item, l.qty);
+    });
+    return { ok: true, message: `${itemLabel(l.item, l.qty)} is back in your backpack.` };
+  },
+
+  // !market
+  marketInfo() {
+    const n = this.repo.marketList({ limit: 1000 }).length;
+    return `🏪 ${n ? `${n} listing${n === 1 ? '' : 's'}` : 'nothing'} on the player market. Buy and sell at ${this.siteUrl}/#/market`;
+  },
+
+  // ---- Notifications ------------------------------------------------------------------------
+  notify(userId, text) {
+    this.repo.addNotification(userId, text, this.now());
+  },
+
+  // Saved notifications plus live reminders (crops ready, daily reward, stamina, raids).
+  notifications(userId) {
+    const now = this.now();
+    const live = [];
+    const ready = this.farmPlots(userId).filter((p) => p.ready).length;
+    if (ready) live.push({ id: 'crops', icon: '🌾', text: `${ready} crop${ready === 1 ? ' is' : 's are'} ready to harvest.`, link: '#/me' });
+    if (this.daily(userId).lastClaim !== dayOf(now)) live.push({ id: 'daily', icon: '📅', text: `Your daily reward is waiting: type ${this.cfg.prefix}daily in chat.` });
+    const u = this.repo.getUser(userId);
+    const st = this.stamina(userId, now);
+    if (u.stamina !== null && st.charges === st.max && u.stamina_at && now - u.stamina_at < 3_600_000) live.push({ id: 'stamina', icon: '⚡', text: 'Your stamina is full again.' });
+    const fire = this.fireLeft(userId);
+    if (fire) live.push({ id: 'fire', icon: '🔥', text: `Your fire burns for another ${Math.ceil(fire / 60_000)} min: ${this.cfg.prefix}cook while it lasts.`, info: true });
+    const raid = this.raidState();
+    if (raid) live.push({ id: 'raid', icon: raid.world ? '🌍' : '⚔️', text: `${raid.world ? 'World boss' : 'Raid'}: ${raid.icon} ${raid.name} is up! ${this.cfg.prefix}attack in chat.`, info: true });
+    const goal = this.goalState();
+    if (goal && !goal.done) live.push({ id: 'goal', icon: '🎯', text: `Channel goal: ${fmt(goal.progress)}/${fmt(goal.target)}.`, info: true });
+    const saved = this.repo.notifications(userId, 20).map((n) => ({ id: n.id, text: n.text, at: n.created_at, read: !!n.read }));
+    return { live, saved, unread: saved.filter((n) => !n.read).length + live.filter((n) => !n.info).length };
+  },
+
+  readNotifications(userId) {
+    this.repo.readNotifications(userId);
+  },
+};
+

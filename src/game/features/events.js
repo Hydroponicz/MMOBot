@@ -108,8 +108,13 @@ module.exports = {
 
     if (type === 'livestream.status.updated') {
       const live = Boolean(payload.is_live);
+      const was = this.repo.getSetting('stream');
       this.repo.setSetting('stream', { live, since: now, title: payload.title || '' });
-      if (live) this.schedule = null; // start the event timers fresh
+      if (live && !was?.live) {
+        this.schedule = null; // start the event timers fresh
+        this.resetStreamStats();
+        if (this.cfg.autoGoalTarget > 0 && !this.goalState()) this.startGoal({ target: this.cfg.autoGoalTarget, multiplier: 2, minutes: 30 });
+      }
       return null;
     }
     return null;
@@ -202,8 +207,10 @@ module.exports = {
   // ---- World boss raids ------------------------------------------------------------------
   // The whole chat hits one boss with !attack. Its HP scales with how many people are chatting.
   // Beat it in time and the reward pool is split by damage dealt; the top hitter is MVP.
+  // A normal raid, or the world boss (a huge one that lasts days, key 'world_boss'). A normal raid
+  // is fought first when both are up.
   raidState() {
-    return this.repo.getSetting('raid');
+    return this.repo.getSetting('raid') || this.repo.getSetting('world_boss');
   },
 
   publicRaid(raid = this.raidState()) {
@@ -216,9 +223,10 @@ module.exports = {
     return { active: true, ...rest, fighters: Object.keys(damageBy).length, top };
   },
 
-  startRaid({ monsterId = null, hpMultiplier = null } = {}) {
+  startRaid({ monsterId = null, hpMultiplier = null, world = false } = {}) {
     const now = this.now();
-    if (this.raidState()) return { ok: false, error: 'a raid is already running.' };
+    const key = world ? 'world_boss' : 'raid';
+    if (this.repo.getSetting(key)) return { ok: false, error: world ? 'a world boss is already up.' : 'a raid is already running.' };
     const monsters = SKILLS[COMBAT_SKILLS[0]].monsters;
     let monster = monsterId ? monsters.find((m) => m.id === monsterId) : null;
     if (monsterId && !monster) return { ok: false, error: 'unknown monster.' };
@@ -227,13 +235,18 @@ module.exports = {
       // Aim a bit above the typical chatter's combat level: a real challenge for the group.
       const levels = chatters.map((id) => this.combatLevel(id)).sort((a, b) => a - b);
       const median = levels.length ? levels[Math.floor(levels.length / 2)] : 1;
-      const target = Math.max(1, median * 1.5);
+      const target = Math.max(world ? 50 : 1, median * (world ? 2.5 : 1.5));
       monster = [...monsters].reverse().find((m) => m.level <= target) || monsters[0];
     }
-    // Each viewer gets a few hits per stamina bar, so HP scales with the crowd.
-    const mult = hpMultiplier || 2 * Math.max(3, chatters.length);
+    // Each viewer gets a few hits per stamina bar, so HP scales with the crowd. The world boss is
+    // meant to take the whole community several streams.
+    const mult = hpMultiplier || (world ? this.cfg.worldBossHpMultiplier ?? 300 : (this.cfg.raidHpPerChatter ?? 2) * Math.max(3, chatters.length));
     const hp = Math.round(monster.hp * mult);
+    const days = this.cfg.worldBossDays ?? 7;
     const raid = {
+      key,
+      world,
+      pool: world ? (this.cfg.raidRewardPoints || 0) * 10 : this.cfg.raidRewardPoints || 0,
       monster: monster.id,
       name: monster.name,
       icon: monster.icon,
@@ -241,13 +254,15 @@ module.exports = {
       hp,
       maxHp: hp,
       startedAt: now,
-      endsAt: now + this.cfg.raidMinutes * 60_000,
+      endsAt: now + (world ? days * 1440 : this.cfg.raidMinutes) * 60_000,
       damageBy: {},
       names: {},
     };
-    this.repo.setSetting('raid', raid);
+    this.repo.setSetting(key, raid);
     const p = this.cfg.prefix;
-    const text = `⚔️ RAID! A giant ${monster.icon} ${monster.name} (level ${monster.level}, ${fmt(hp)} HP) attacks the channel! Everyone type ${p}attack, you have ${this.cfg.raidMinutes} minutes!`;
+    const text = world
+      ? `🌍 WORLD BOSS! The ${monster.icon} ${monster.name} (level ${monster.level}, ${fmt(hp)} HP) has awoken! It takes the whole community: ${p}attack every stream for ${days} days. Its HP carries over. Reward pool: ${fmt(raid.pool)} pts!`
+      : `⚔️ RAID! A giant ${monster.icon} ${monster.name} (level ${monster.level}, ${fmt(hp)} HP) attacks the channel! Everyone type ${p}attack, you have ${this.cfg.raidMinutes} minutes!`;
     this.emit('raid', this.publicRaid(raid));
     this.emit('activity', { id: 0, kind: 'raid', username: '', text: `A giant ${monster.name} attacks! Type ${p}attack`, created_at: now });
     this.announce(text);
@@ -259,7 +274,7 @@ module.exports = {
     const r = this.raidState();
     if (!r) return `no raid right now.${this.cfg.raidEveryMinutes ? ' Keep chatting, a boss will show up!' : ''}`;
     const fighters = Object.keys(r.damageBy).length;
-    return `⚔️ Raid: ${r.icon} ${r.name} ${fmt(r.hp)}/${fmt(r.maxHp)} HP · ${fighters} fighting · ${minutesLeft(r.endsAt - this.now())} left. ${this.cfg.prefix}attack!`;
+    return `${r.world ? '🌍 World boss' : '⚔️ Raid'}: ${r.icon} ${r.name} ${fmt(r.hp)}/${fmt(r.maxHp)} HP · ${fighters} fighting · ${minutesLeft(r.endsAt - this.now())} left. ${this.cfg.prefix}attack!`;
   },
 
   // !attack
@@ -304,7 +319,7 @@ module.exports = {
     const next = { ...raid, hp: raid.hp - dealt };
     next.damageBy = { ...raid.damageBy, [user.id]: (raid.damageBy[user.id] || 0) + dealt };
     next.names = { ...raid.names, [user.id]: user.username };
-    this.repo.setSetting('raid', next);
+    this.repo.setSetting(raid.key || 'raid', next);
     const gained = this.grantXp(user, pick.skillId, this.xpFor(Math.max(1, monster.xp * 0.3)));
     this.emit('raid', this.publicRaid(next));
     const hpText = koText || ` | ❤️ ${fmt(Math.floor(hp))}/${fmt(vit.maxHp)} HP`;
@@ -316,17 +331,17 @@ module.exports = {
   },
 
   // Ends the raid. Won: split the reward pool by damage, MVP gets extra loot. Returns the summary.
-  finishRaid(won, finisher = null) {
+  finishRaid(won, finisher = null, which = null) {
     const now = this.now();
-    const raid = this.raidState();
+    const raid = which || this.raidState();
     if (!raid) return '';
-    this.repo.deleteSetting('raid');
+    this.repo.deleteSetting(raid.key || 'raid');
     const entries = Object.entries(raid.damageBy).sort((a, b) => b[1] - a[1]);
     const total = entries.reduce((s, [, d]) => s + d, 0);
     let text;
     if (won && total) {
       const monster = SKILLS[COMBAT_SKILLS[0]].monsters.find((m) => m.id === raid.monster);
-      const pool = this.cfg.raidRewardPoints || 0;
+      const pool = raid.pool ?? this.cfg.raidRewardPoints ?? 0;
       this.repo.transaction(() => {
         for (const [id, dmg] of entries) {
           const points = Math.floor((pool * dmg) / total) + 25;
@@ -340,7 +355,7 @@ module.exports = {
       const [mvpId, mvpDmg] = entries[0];
       const mvp = raid.names[mvpId];
       this.raidMvps = [...(this.raidMvps || []), Number(mvpId)];
-      text = `🏆 The giant ${raid.name} is DEFEATED! ${entries.length} hero${entries.length > 1 ? 'es' : ''} split ${fmt(pool)} pts by damage, plus ${ITEMS[monster.loot[0]].name} each. MVP: @${mvp} (${Math.round((mvpDmg / total) * 100)}% of the damage) 👑 wins ${itemLabel(monster.rare?.item || monster.loot[1])}!`;
+      text = `🏆 ${raid.world ? 'The WORLD BOSS' : 'The giant'} ${raid.name} is DEFEATED! ${entries.length} hero${entries.length > 1 ? 'es' : ''} split ${fmt(pool)} pts by damage, plus ${ITEMS[monster.loot[0]].name} each. MVP: @${mvp} (${Math.round((mvpDmg / total) * 100)}% of the damage) 👑 wins ${itemLabel(monster.rare?.item || monster.loot[1])}!`;
       const mvpUser = this.repo.getUser(Number(mvpId));
       this.emitActivity(mvpUser, { kind: 'raid', text: `was MVP against the giant ${raid.name}! 👑` });
       this.onRaidWon?.(entries.map(([id]) => Number(id)), Number(mvpId));
@@ -423,13 +438,17 @@ module.exports = {
   tick() {
     const now = this.now();
     const c = this.cfg;
+    this.communityTick();
     const ev = this.repo.getSetting('random_event');
     if (ev && now > ev.endsAt) {
       this.repo.deleteSetting('random_event');
       if (!ev.claimed.length) this.announce(RANDOM_EVENTS[ev.kind].escaped);
     }
-    const raid = this.raidState();
-    if (raid && now > raid.endsAt) this.finishRaid(false);
+    for (const key of ['raid', 'world_boss']) {
+      const r = this.repo.getSetting(key);
+      if (r && now > r.endsAt) this.finishRaid(false, null, r);
+    }
+    const raid = this.repo.getSetting('raid');
 
     const jitter = () => 0.75 + this.rng() * 0.5;
     this.schedule ??= {

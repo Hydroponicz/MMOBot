@@ -76,6 +76,27 @@ CREATE TABLE IF NOT EXISTS activity (
 );
 CREATE INDEX IF NOT EXISTS idx_activity_user ON activity(user_id, id DESC);
 
+-- Player market: items listed for a total price. The items are held here until sold or cancelled.
+CREATE TABLE IF NOT EXISTS market_listings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  seller_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  item TEXT NOT NULL,
+  qty INTEGER NOT NULL,
+  price INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_market_item ON market_listings(item);
+
+-- Website notifications (market sales, pets, quests...). Things like "crops ready" are worked out live.
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  read INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, id DESC);
+
 CREATE TABLE IF NOT EXISTS logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts INTEGER NOT NULL,
@@ -311,6 +332,24 @@ function createRepo(db) {
     setFarmAt: (userId, ts) => stmt.setFarmAt.run(ts, userId),
     setAppearance: (userId, race, look, raceChangedAt) =>
       db.prepare('UPDATE users SET race = ?, look = ?, race_changed_at = ? WHERE id = ?').run(race, JSON.stringify(look), raceChangedAt, userId),
+    // Market
+    marketAdd: (sellerId, item, qty, price, ts) =>
+      Number(db.prepare('INSERT INTO market_listings (seller_id, item, qty, price, created_at) VALUES (?, ?, ?, ?, ?)').run(sellerId, item, qty, price, ts).lastInsertRowid),
+    marketGet: (id) => db.prepare('SELECT * FROM market_listings WHERE id = ?').get(id) || null,
+    marketDelete: (id) => db.prepare('DELETE FROM market_listings WHERE id = ?').run(id).changes,
+    marketList: ({ sellerId = null, limit = 200 } = {}) =>
+      db
+        .prepare(
+          `SELECT m.*, u.username AS seller FROM market_listings m JOIN users u ON u.id = m.seller_id
+           WHERE (? IS NULL OR m.seller_id = ?) ORDER BY m.id DESC LIMIT ?`
+        )
+        .all(sellerId, sellerId, limit),
+    marketCount: (sellerId) => db.prepare('SELECT COUNT(*) AS n FROM market_listings WHERE seller_id = ?').get(sellerId).n,
+    // Notifications
+    addNotification: (userId, text, ts) => db.prepare('INSERT INTO notifications (user_id, text, created_at) VALUES (?, ?, ?)').run(userId, text, ts),
+    notifications: (userId, limit = 20) => db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT ?').all(userId, limit),
+    readNotifications: (userId) => db.prepare('UPDATE notifications SET read = 1 WHERE user_id = ? AND read = 0').run(userId),
+    pruneNotifications: (before) => db.prepare('DELETE FROM notifications WHERE created_at < ?').run(before),
     setStamina: (userId, stamina, at) => db.prepare('UPDATE users SET stamina = ?, stamina_at = ? WHERE id = ?').run(stamina, at, userId),
     // Simple per-player fields (whitelisted, so the column name is never user input).
     setUserField(userId, field, value) {

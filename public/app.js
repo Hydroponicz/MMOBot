@@ -108,6 +108,7 @@
   // ---- shared components -------------------------------------------------
   function feedItem(a, isNew = false) {
     return `<li class="${esc(a.kind)}${isNew ? ' new' : ''}">
+      ${a.appearance ? `<span class="feed-face">${window.MMOAvatar.svg(a.appearance, { size: 26, head: true })}</span>` : ''}
       <span class="ic">${feedIcon(a)}</span>
       <span>${a.username ? `<a href="${playerLink(a.username)}">${esc(a.username)}</a> ` : ''}${esc(a.text)}${a.xp ? ` <span class="muted">+${fmt(a.xp)} xp</span>` : ''}</span>
       <span class="t" data-ts="${a.created_at}">${ago(a.created_at)}</span>
