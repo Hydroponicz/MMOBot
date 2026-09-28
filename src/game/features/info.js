@@ -144,6 +144,6 @@ module.exports = {
     const skills = on(SKILL_IDS.flatMap((id) => (SKILLS[id].type === 'farm' ? ['plant', 'harvest'] : [SKILLS[id].command])));
     const tools = Object.keys(TOOL_TO_SKILL).join('/');
     // Kept under Kick's 500 characters: the full list is on the site's guide.
-    return `Skills: ${skills} | Gear: ${p}shop ${p}buy ${p}equip ${p}upgrade | Fight: ${on(['targets', 'hp', 'drink', 'eat'])} | Daily: ${on(['daily', 'tasks', 'title', 'give'].filter((c) => c !== 'tasks' || !off.includes('daily')))} | Info: ${on(['stats', 'inv', 'sell', 'top'])}${this.cfg.casinoEnabled === false ? '' : ` ${p}casino`} | All commands: ${this.siteUrl}/#/guide`;
+    return `Skills: ${skills} | Gear: ${p}shop ${p}buy ${p}equip ${p}upgrade | Fight: ${on(['targets', 'hp', 'stamina', 'drink', 'eat'])} | Daily: ${on(['daily', 'tasks', 'title', 'give'].filter((c) => c !== 'tasks' || !off.includes('daily')))} | Info: ${on(['stats', 'inv', 'sell', 'top'])}${this.cfg.casinoEnabled === false ? '' : ` ${p}casino`} | All commands: ${this.siteUrl}/#/guide`;
   },
 };

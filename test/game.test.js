@@ -6,7 +6,7 @@ const { xpForLevel, levelForXp, progress } = require('../src/game/xp');
 
 const baseConfig = {
   baseUrl: 'http://localhost:3000',
-  game: { prefix: '!', actionCooldown: 30, chatPoints: 5, chatCooldown: 60, replyInChat: true },
+  game: { prefix: '!', staminaMax: 1, staminaMinutes: 0.5, chatPoints: 5, chatCooldown: 60, replyInChat: true },
 };
 
 function setup({ rolls } = {}) {
@@ -318,7 +318,7 @@ test('admin settings apply live: XP multiplier, prices, disabled commands', () =
   assert.equal(say('!points'), null);
   assert.match(say('?points'), /points/);
 
-  assert.throws(() => settings.update('general', { actionCooldown: -1 }), SettingsError);
+  assert.throws(() => settings.update('general', { staminaMax: 0 }), SettingsError);
   assert.throws(() => settings.update('rods', rods.slice(1)), /needs exactly 10 rows/);
   rods[2].level = 10;
   assert.throws(() => settings.update('rods', rods), /tier 3 fishing level must be higher than tier 2/);
@@ -1020,7 +1020,7 @@ test('Sterling Alloy (silver + copper) at Smelting 20 is what the knife is smith
 function farmSetup() {
   const repo = openDb(':memory:');
   let t = 1_000_000;
-  const cfg = { ...baseConfig, game: { ...baseConfig.game, farmCooldown: 10 } };
+  const cfg = { ...baseConfig, game: { ...baseConfig.game, staminaMax: 3, staminaMinutes: 5 } };
   const engine = new GameEngine({ repo, config: cfg, rng: () => 0.5, now: () => t });
   const say = (content) => engine.handleChat({ kickUserId: '1', username: 'Alice', content }).reply;
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
@@ -1053,15 +1053,21 @@ test('farming: free starter plot, buy seeds and plots, plant, wait 20 minutes, h
   assert.match(say('!sell carrot all'), /sold 🥕 3x Carrot for 33 pts/);
 });
 
-test('farming has its own cooldown, separate from skilling', () => {
-  const { repo, say, u } = farmSetup();
+test('farming and skilling share one stamina bar', () => {
+  const { repo, say, u, wait } = farmSetup();
   repo.addPoints(u.id, 3000);
   say('!buy plot 2');
   say('!buy carrot seeds 3');
   assert.match(say('!plant carrot 1'), /planted 🥕 Carrot in 1 plot.*\(2 plots still empty\)/);
-  assert.match(say('!plant carrot'), /easy there, farmer! Try again in 10s/);
-  assert.equal(say('!plant carrot'), null, 'warns once');
-  assert.match(say('!fish'), /you caught/, 'skilling is not blocked by farming');
+  assert.match(say('!stamina'), /stamina ⚡⚡▫️ 2\/3 · full again in 5m/);
+  assert.match(say('!fish'), /you caught/);
+  assert.match(say('!plant carrot 1'), /planted 🥕 Carrot in 1 plot/);
+  assert.match(say('!plant carrot'), /out of stamina \(0\/3\), full again in 5m/);
+  assert.equal(say('!fish'), null, 'warns once');
+  assert.match(say('!farm'), /Farm: 3\/100/, 'info commands are free');
+  wait(5 * 60);
+  assert.match(say('!stamina'), /3\/3 · full!/);
+  assert.match(say('!plant carrot'), /planted 🥕 Carrot in 1 plot/);
 });
 
 test('farming level gates seeds; plot limit is 100; harvest respects backpack space', () => {
@@ -1484,10 +1490,10 @@ test('raids: chat hits a shared boss; the pool is split by damage and the MVP ge
   assert.equal(repo.getInventory(a.id).wolf_fang, 1, 'MVP loot');
   assert.equal(engine.raidState(), null);
 
-  tick(21);
+  tick(31);
   engine.startRaid({ monsterId: 'wolf', hpMultiplier: 10 });
   assert.match(say('!attack', 'Alice', '1'), /you hit the 🐺 Wolf/);
-  assert.equal(say('!attack', 'Alice', '1'), '@Alice ⏳ catch your breath, next !attack in 20s.');
+  assert.match(say('!attack', 'Alice', '1'), /@Alice you're catching your breath 😮‍💨 out of stamina \(0\/1\)/);
   say('!attack', 'Bob', '2');
   assert.match(say('!raid'), /Raid: 🐺 Wolf [\d,]+\/1,500 HP · 2 fighting/);
   tick(11 * 60);
@@ -1682,4 +1688,33 @@ test('trading: !give items and points between established players, with a daily 
   assert.match(say('!give @Alice 5', 'Alice', '1'), /can't give things to yourself/);
   settings.update('events', { tradingEnabled: false });
   assert.match(say('!give @Bob 5', 'Alice', '1'), /trading is switched off/);
+});
+
+test('stamina: 3 charges, used by any action, full again 5 minutes after the first; Wraithwalk halves it', () => {
+  const repo = openDb(':memory:');
+  let t = 1_000_000;
+  const cfg = { ...baseConfig, game: { ...baseConfig.game, staminaMax: 3, staminaMinutes: 5 } };
+  const engine = new GameEngine({ repo, config: cfg, rng: () => 0.99, now: () => t });
+  const say = (content) => engine.handleChat({ kickUserId: '1', username: 'Alice', content }).reply;
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+
+  assert.match(say('!stamina'), /⚡⚡⚡ 3\/3 · full!/);
+  assert.match(say('!fish'), /you caught/);
+  t += 60_000;
+  assert.match(say('!mine'), /you mined/);
+  assert.match(say('!chop'), /you chopped|you cut/);
+  assert.deepEqual(engine.stamina(u.id), { charges: 0, max: 3, refillAt: 1_000_000 + 300_000, startedAt: 1_000_000 });
+  assert.match(say('!fish'), /out of stamina \(0\/3\), full again in 4m/);
+  assert.equal(say('!fish'), null, 'warns once per refill');
+  assert.equal(engine.profile(u.id).stamina.charges, 0);
+
+  t = 1_000_000 + 300_000;
+  assert.match(say('!stamina'), /3\/3 · full!/);
+  assert.match(say('!fish'), /you caught/);
+  assert.match(say('!stamina'), /2\/3 · full again in 5m/);
+
+  engine.addBuff(u.id, 'haste');
+  assert.match(say('!stamina'), /full again in 2m 30s/);
+  t += 150_000;
+  assert.match(say('!stamina'), /3\/3/);
 });

@@ -230,7 +230,8 @@ module.exports = {
       const target = Math.max(1, median * 1.5);
       monster = [...monsters].reverse().find((m) => m.level <= target) || monsters[0];
     }
-    const mult = hpMultiplier || 10 * Math.max(3, chatters.length);
+    // Each viewer gets a few hits per stamina bar, so HP scales with the crowd.
+    const mult = hpMultiplier || 2 * Math.max(3, chatters.length);
     const hp = Math.round(monster.hp * mult);
     const raid = {
       monster: monster.id,
@@ -269,18 +270,11 @@ module.exports = {
     if (now > raid.endsAt) return this.finishRaid(false) && null;
     const vit = this.vitals(user.id, now);
     if (vit.ko) return this.knockedOutMessage(user.id, vit, now);
-    // Per-viewer cooldown, warned once.
-    this.raidHits ??= new Map();
-    const last = this.raidHits.get(user.id) || 0;
-    const wait = this.cfg.raidCooldown * 1000 - (now - last);
-    if (wait > 0) {
-      if (this.raidWarned?.get(user.id) === last) return null;
-      (this.raidWarned ??= new Map()).set(user.id, last);
-      return `⏳ catch your breath, next !attack in ${Math.ceil(wait / 1000)}s.`;
-    }
+    const tired = this.staminaCheck(user, now);
+    if (tired !== null) return tired || null;
     const pick = this.chooseWeapon(user.id);
     if (!pick.weapon) return ['ammo', 'mana'].includes(pick.reason) ? this.noArrowsMessage(user, pick) : `you need a weapon to join the raid! ${this.howToGetSword(user)}`;
-    this.raidHits.set(user.id, now);
+    this.spendStamina(user, now);
     const monster = SKILLS[COMBAT_SKILLS[0]].monsters.find((m) => m.id === raid.monster);
     const stats = this.fightStats(user.id, pick);
     if (pick.arrow) this.repo.removeItem(user.id, pick.arrow, 1);

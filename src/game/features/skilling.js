@@ -47,17 +47,11 @@ module.exports = {
   // ---- Skilling ----------------------------------------------------------
 
   runAction(user, skillId, args) {
-    // A bare "!smith" just lists what you can make, so it doesn't need (or use) the cooldown.
+    // A bare "!smith" just lists what you can make, so it doesn't need (or use) stamina.
     if (SKILLS[skillId].pickBest === false && !args.length) return this.process(user, skillId, args).reply;
     const now = this.now();
-    const fresh = this.repo.getUser(user.id);
-    const readyAt = fresh.last_action_at + this.actionCooldownMs(user.id, now);
-    if (now < readyAt) {
-      // Warn once per cooldown window so spamming doesn't flood chat.
-      if (this.cooldownWarned.get(user.id) === fresh.last_action_at) return null;
-      this.cooldownWarned.set(user.id, fresh.last_action_at);
-      return `you're catching your breath 😮‍💨 try again in ${Math.ceil((readyAt - now) / 1000)}s.`;
-    }
+    const tired = this.staminaCheck(user, now);
+    if (tired !== null) return tired || null;
 
     const skill = SKILLS[skillId];
     const result = this.repo.transaction(() => {
@@ -69,7 +63,10 @@ module.exports = {
           : skill.type === 'process'
             ? this.process(user, skillId, args)
             : this.gather(user, skillId, args);
-      if (r.consumed) this.repo.setActionAt(user.id, now);
+      if (r.consumed) {
+        this.repo.setActionAt(user.id, now);
+        this.spendStamina(user, now);
+      }
       return r;
     });
     return result.reply;

@@ -226,7 +226,7 @@
             <div class="level-ring-inner"><div><b>${c.level}</b><small>Character</small></div></div>
           </div>
         </div>
-        ${isMe ? `<p class="muted" style="margin:14px 0 0">${cooldownText(p)} · ${charNext}</p>` : ''}
+        ${isMe ? `<p class="muted" style="margin:14px 0 0">${staminaText(p)} · ${charNext}</p>` : ''}
       </section>
 
       <h2 style="margin:28px 0 12px">Skills</h2>
@@ -449,9 +449,14 @@
     };
   }
 
-  function cooldownText(p) {
-    const left = Math.ceil((p.cooldownEndsAt - Date.now()) / 1000);
-    return left > 0 ? `⏳ Next action ready in ${left}s` : '✅ Ready for your next action';
+  // "⚡⚡▫️ Stamina 2/3 · full in 4m 10s"
+  function staminaText(p) {
+    const s = p.stamina;
+    if (!s) return '';
+    const pips = `<span class="stamina-pips">${Array.from({ length: s.max }, (_, i) => `<i class="${i < s.charges ? 'on' : ''}"></i>`).join('')}</span>`;
+    const left = s.refillAt ? Math.max(0, Math.ceil((s.refillAt - Date.now()) / 1000)) : 0;
+    const wait = left >= 60 ? `${Math.floor(left / 60)}m ${left % 60}s` : `${left}s`;
+    return `${pips} ⚡ Stamina <b>${s.charges}/${s.max}</b>${left ? ` · full again in ${wait}` : ' · full'}`;
   }
 
   // ---- pages -------------------------------------------------------------
@@ -757,7 +762,7 @@
           <h2>Getting started</h2>
           <ol class="steps">
             <li>Type a skill command in chat, like <code>${esc(g.skills[0].command)}</code>. Your character is created automatically.</li>
-            <li>Each action gives XP and an item. You can act once every <b>${g.actionCooldown}s</b>.</li>
+            <li>Each action gives XP and an item. You have <b>${g.staminaMax}</b> stamina charges: every action (skilling, fighting, farming, raid attacks) uses one, and the bar refills to full <b>${g.staminaMinutes} minutes</b> after you use the first. Check it with <code>${g.prefix}stamina</code>.</li>
             <li>Higher levels unlock better resources. Target one directly, e.g. <code>!mine iron</code> or <code>!chop oak</code>.</li>
             <li>Mine ores, then <code>!smelt</code> them into <b>ingots</b> (one ore) and <b>alloys</b> (mixed ores, e.g. copper + tin = bronze). The ores come out of your backpack.</li>
             <li>Your backpack holds <b>${g.backpack[0].capacity} items</b> to start. When it's full, <code>!sell</code>, <code>!smelt</code> or <code>!upgrade backpack</code> (up to ${g.backpack[g.backpack.length - 1].capacity} slots).</li>
@@ -966,7 +971,7 @@
                     : '—'
               }</dd>
               <dt>Storage</dt><dd>${s.persistentStorage ? `${dot(true)}persistent` : `${dot(false)}temporary — attach a volume`}</dd>
-              <dt>Action cooldown</dt><dd>${s.settings.actionCooldown}s</dd>
+              <dt>Stamina</dt><dd>${s.settings.staminaMax} charges / ${s.settings.staminaMinutes}m</dd>
               <dt>Chat points</dt><dd>${s.settings.chatPoints} per ${s.settings.chatCooldown}s</dd>
             </dl>
           </section>

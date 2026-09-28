@@ -10,6 +10,7 @@ const env = (name, fallback) => {
   return v === undefined || v === '' ? fallback : v;
 };
 const int = (name, fallback) => Number.parseInt(env(name, String(fallback)), 10);
+const num = (name, fallback) => Number.parseFloat(env(name, String(fallback)));
 const bool = (name, fallback) => ['1', 'true', 'yes', 'on'].includes(String(env(name, fallback)).toLowerCase());
 
 // Railway injects these automatically: RAILWAY_PUBLIC_DOMAIN once you generate a domain,
@@ -66,10 +67,9 @@ const config = {
 
   game: {
     prefix: env('COMMAND_PREFIX', '!'),
-    // Seconds a user must wait between skilling actions.
-    actionCooldown: int('ACTION_COOLDOWN_SECONDS', 30),
-    // Farming (!plant / !harvest) has its own, shorter cooldown so it can run alongside other skills.
-    farmCooldown: int('FARM_COOLDOWN_SECONDS', 10),
+    // Stamina: every game action uses a charge; the bar refills to full staminaMinutes after the first use.
+    staminaMax: int('STAMINA_MAX', 3),
+    staminaMinutes: num('STAMINA_MINUTES', 5),
     hpRegenHours: int('HP_REGEN_HOURS', 24),
     manaRegenHours: int('MANA_REGEN_HOURS', 2),
     // Points for chatting: awarded at most once per chatCooldown seconds per user.

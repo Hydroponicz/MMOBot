@@ -128,6 +128,9 @@ function migrate(db) {
   if (!cols.includes('subscriber')) db.exec('ALTER TABLE users ADD COLUMN subscriber INTEGER NOT NULL DEFAULT 0');
   if (!cols.includes('season_xp')) db.exec('ALTER TABLE users ADD COLUMN season_xp INTEGER NOT NULL DEFAULT 0');
   if (!cols.includes('title')) db.exec("ALTER TABLE users ADD COLUMN title TEXT NOT NULL DEFAULT ''");
+  // Stamina charges: NULL means a full bar. stamina_at is when the bar started refilling (first charge used).
+  if (!cols.includes('stamina')) db.exec('ALTER TABLE users ADD COLUMN stamina INTEGER');
+  if (!cols.includes('stamina_at')) db.exec('ALTER TABLE users ADD COLUMN stamina_at INTEGER NOT NULL DEFAULT 0');
 }
 
 function createRepo(db) {
@@ -301,6 +304,7 @@ function createRepo(db) {
     plant: (userId, plot, crop, plantedAt, readyAt) => stmt.plant.run(userId, plot, crop, plantedAt, readyAt),
     clearPlot: (userId, plot) => stmt.clearPlot.run(userId, plot),
     setFarmAt: (userId, ts) => stmt.setFarmAt.run(ts, userId),
+    setStamina: (userId, stamina, at) => db.prepare('UPDATE users SET stamina = ?, stamina_at = ? WHERE id = ?').run(stamina, at, userId),
     // Simple per-player fields (whitelisted, so the column name is never user input).
     setUserField(userId, field, value) {
       if (!['banned', 'subscriber', 'title'].includes(field)) throw new Error(`can't set users.${field}`);
@@ -319,7 +323,7 @@ function createRepo(db) {
         'DELETE FROM equipment WHERE user_id = ?',
         'DELETE FROM worn_gear WHERE user_id = ?',
         'DELETE FROM farm_plots WHERE user_id = ?',
-        "UPDATE users SET points = 0, hp = NULL, mana = NULL, ko_until = 0, season_xp = 0, title = '' WHERE id = ?",
+        "UPDATE users SET points = 0, hp = NULL, mana = NULL, ko_until = 0, stamina = NULL, season_xp = 0, title = '' WHERE id = ?",
       ]) db.prepare(sql).run(userId);
     },
     economyTotals: () =>

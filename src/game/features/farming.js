@@ -64,17 +64,6 @@ module.exports = {
     });
   },
 
-  // Farming's own cooldown (so you can farm between other actions). Returns a reply if still waiting.
-  farmCooldown(user) {
-    const now = this.now();
-    const last = this.repo.getUser(user.id).last_farm_at || 0;
-    const readyAt = last + (this.cfg.farmCooldown ?? 10) * 1000;
-    if (now >= readyAt) return null;
-    if (this.farmWarned.get(user.id) === last) return '';
-    this.farmWarned.set(user.id, last);
-    return `🌱 easy there, farmer! Try again in ${Math.ceil((readyAt - now) / 1000)}s.`;
-  },
-
   noPlotsMessage() {
     const plot = this.shopItems().find((x) => x.item === 'farm_plot');
     return `you don't have a farm plot yet! 🟫 !buy plot (${fmt(plot?.cost ?? 0)} pts) or ${this.siteUrl}/#/shop`;
@@ -83,8 +72,6 @@ module.exports = {
   // !plant [crop] [amount]: one seed per empty plot.
   plant(user, args) {
     if (!this.plotCount(user.id)) return this.noPlotsMessage();
-    const wait = this.farmCooldown(user);
-    if (wait !== null) return wait || null;
 
     const plots = this.farmPlots(user.id);
     const empty = plots.filter((p) => !p.crop);
@@ -122,13 +109,17 @@ module.exports = {
       }
     }
 
-    const n = Math.min(empty.length, inv[crop.seed], limit);
     const now = this.now();
+    // Stamina is checked only when there's something to plant, so "what's growing?" is free.
+    const tired = this.staminaCheck(user, now);
+    if (tired !== null) return tired || null;
+    const n = Math.min(empty.length, inv[crop.seed], limit);
     const growMs = Math.round(crop.grow * 60_000 * (this.cfg.growMultiplier ?? 1));
     const result = this.repo.transaction(() => {
       this.repo.removeItem(user.id, crop.seed, n);
       for (const p of empty.slice(0, n)) this.repo.plant(user.id, p.plot, crop.item, now, now + growMs);
       this.repo.setFarmAt(user.id, now);
+      this.spendStamina(user, now);
       return this.grantXp(user, 'farming', this.xpFor(Math.max(1, Math.round(crop.xp * 0.2)) * n));
     });
     const c = ITEMS[crop.item];
@@ -144,8 +135,6 @@ module.exports = {
   // !harvest: collect every ready plot (as much as fits in the backpack).
   harvest(user) {
     if (!this.plotCount(user.id)) return this.noPlotsMessage();
-    const wait = this.farmCooldown(user);
-    if (wait !== null) return wait || null;
 
     const plots = this.farmPlots(user.id);
     const ready = plots.filter((p) => p.ready);
@@ -155,6 +144,9 @@ module.exports = {
       const c = ITEMS[growing[0].crop];
       return `nothing is ready yet. Next: ${c.icon} ${c.name} in ${minutesLeft(growing[0].readyAt - this.now())}.`;
     }
+
+    const tired = this.staminaCheck(user);
+    if (tired !== null) return tired || null;
 
     const bag = this.backpack(user.id);
     let room = bag.capacity - bag.used;
@@ -174,7 +166,10 @@ module.exports = {
         xp += crop.xp;
         harvestedPlots++;
       }
-      if (harvestedPlots) this.repo.setFarmAt(user.id, this.now());
+      if (harvestedPlots) {
+        this.repo.setFarmAt(user.id, this.now());
+        this.spendStamina(user);
+      }
     });
     if (!harvestedPlots) {
       const free = bag.capacity - bag.used;

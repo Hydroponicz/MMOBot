@@ -123,10 +123,51 @@ module.exports = {
     return this.hasBuff(userId, 'luck') ? 2 : 1;
   },
 
-  // Wraithwalk halves the action cooldown.
-  actionCooldownMs(userId, now = this.now()) {
-    const ms = this.cfg.actionCooldown * 1000;
+  // ---- Stamina ------------------------------------------------------------------
+  // Every game action (skilling, fighting, farming, raid attacks) uses one charge. Using a charge
+  // from a full bar starts the refill timer; when it runs out the bar is full again. Wraithwalk
+  // halves the refill time.
+  staminaRefillMs(userId, now = this.now()) {
+    const ms = (this.cfg.staminaMinutes ?? 5) * 60_000;
     return this.activeBuffs(userId, now).haste ? ms / 2 : ms;
+  },
+
+  // { charges, max, refillAt } (refillAt null = full).
+  stamina(userId, now = this.now()) {
+    const max = Math.max(1, this.cfg.staminaMax ?? 3);
+    const u = this.repo.getUser(userId);
+    if (!u || u.stamina === null || u.stamina === undefined) return { charges: max, max, refillAt: null, startedAt: null };
+    const refillAt = u.stamina_at + this.staminaRefillMs(userId, now);
+    if (now >= refillAt) return { charges: max, max, refillAt: null, startedAt: null };
+    return { charges: clamp(u.stamina, 0, max), max, refillAt, startedAt: u.stamina_at };
+  },
+
+  // Returns null when the user has a charge, or the "out of stamina" reply ('' = already warned).
+  staminaCheck(user, now = this.now()) {
+    const s = this.stamina(user.id, now);
+    if (s.charges > 0) return null;
+    // Warn once per refill window so spamming doesn't flood chat.
+    if (this.cooldownWarned.get(user.id) === s.startedAt) return '';
+    this.cooldownWarned.set(user.id, s.startedAt);
+    return `you're catching your breath 😮‍💨 out of stamina (0/${s.max}), full again in ${this.waitText(s.refillAt - now)}.`;
+  },
+
+  spendStamina(user, now = this.now()) {
+    const s = this.stamina(user.id, now);
+    this.repo.setStamina(user.id, Math.max(0, s.charges - 1), s.startedAt ?? now);
+  },
+
+  // "45s" / "3m 12s"
+  waitText(ms) {
+    const sec = Math.max(1, Math.ceil(ms / 1000));
+    return sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m${sec % 60 ? ` ${sec % 60}s` : ''}`;
+  },
+
+  // !stamina
+  staminaInfo(user) {
+    const s = this.stamina(user.id);
+    const bar = '⚡'.repeat(s.charges) + '▫️'.repeat(s.max - s.charges);
+    return `stamina ${bar} ${s.charges}/${s.max}${s.refillAt ? ` · full again in ${this.waitText(s.refillAt - this.now())}` : ' · full!'}`;
   },
 
   // "🦴 Bone-Deep Focus 24m · 💀 Deathless 58m"

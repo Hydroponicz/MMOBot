@@ -58,8 +58,8 @@ const COMMANDS = [
 const FIELDS = {
   general: {
     prefix: { type: 'string', label: 'Command prefix', help: 'What commands start with, e.g. ! for !fish.', maxLength: 3 },
-    actionCooldown: { type: 'int', label: 'Action cooldown (seconds)', help: 'Time between skilling actions per viewer.', min: 0, max: 3600 },
-    farmCooldown: { type: 'int', label: 'Farming cooldown (seconds)', help: 'Time between !plant / !harvest per viewer (separate from the action cooldown).', min: 0, max: 3600 },
+    staminaMax: { type: 'int', label: 'Stamina charges', help: 'How many actions a viewer can take before resting. Every game action (skilling, fighting, farming, raid !attack) uses one charge.', min: 1, max: 100 },
+    staminaMinutes: { type: 'number', label: 'Stamina refill (minutes)', help: 'The bar fills back up to full this long after the first charge is used.', min: 0.05, max: 1440 },
     hpRegenHours: { type: 'int', label: 'HP regen (hours)', help: 'Hours to go from 0 to full HP. Knocked-out players can fight again after this, or right away with a health potion.', min: 1, max: 168 },
     manaRegenHours: { type: 'int', label: 'Mana regen (hours)', help: 'Hours to go from 0 to full mana.', min: 1, max: 168 },
     chatPoints: { type: 'int', label: 'Points for chatting', help: 'Points for talking in chat (any message).', min: 0, max: 100000 },
@@ -93,7 +93,6 @@ const FIELDS = {
     raidEveryMinutes: { type: 'int', label: 'Raid boss every (minutes)', help: 'A world boss appears this often (0 = only when you start one on the Events page).', min: 0, max: 1440 },
     raidMinutes: { type: 'int', label: 'Raid length (minutes)', help: 'How long chat has to beat the boss before it escapes.', min: 1, max: 60 },
     raidRewardPoints: { type: 'int', label: 'Raid reward pool (points)', help: 'Split between everyone who hit the boss, by damage dealt.', min: 0, max: 1e9 },
-    raidCooldown: { type: 'int', label: 'Raid attack cooldown (seconds)', help: 'Time between !attack per viewer.', min: 0, max: 600 },
     duelsEnabled: { type: 'bool', label: 'Duels', help: '!duel @name [bet]: player vs player fights for points.' },
     tradingEnabled: { type: 'bool', label: 'Trading', help: '!give @name <item> or !give @name 500: players give each other items and points.' },
     tradeMinHours: { type: 'int', label: 'Trading: hours since first chat', help: 'Both players must have been around this long (stops brand-new alt accounts).', min: 0, max: 8760 },
@@ -204,8 +203,8 @@ class Settings extends EventEmitter {
     this.defaults = {
       general: {
         prefix: config.game.prefix,
-        actionCooldown: config.game.actionCooldown,
-        farmCooldown: config.game.farmCooldown ?? 10,
+        staminaMax: config.game.staminaMax ?? 3,
+        staminaMinutes: config.game.staminaMinutes ?? 5,
         hpRegenHours: config.game.hpRegenHours ?? 24,
         manaRegenHours: config.game.manaRegenHours ?? 2,
         chatPoints: config.game.chatPoints,
@@ -235,7 +234,6 @@ class Settings extends EventEmitter {
         raidEveryMinutes: config.game.raidEveryMinutes ?? 0,
         raidMinutes: config.game.raidMinutes ?? 10,
         raidRewardPoints: config.game.raidRewardPoints ?? 5000,
-        raidCooldown: config.game.raidCooldown ?? 20,
         duelsEnabled: config.game.duelsEnabled ?? true,
         tradingEnabled: config.game.tradingEnabled ?? true,
         tradeMinHours: config.game.tradeMinHours ?? 24,

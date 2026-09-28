@@ -1054,7 +1054,7 @@ SKILLS.cooking.recipes.sort((a, b) => a.level - b.level);
 const BUFFS = {
   focus: { id: 'focus', name: 'Bone-Deep Focus', icon: '🦴', minutes: 30, text: '+20% XP in every skill' },
   vampiric: { id: 'vampiric', name: 'Vampiric', icon: '🧛', minutes: 30, text: 'heal 15% of your max HP after every fight you win' },
-  haste: { id: 'haste', name: 'Wraithwalk', icon: '👻', minutes: 10, text: 'half the cooldown between actions' },
+  haste: { id: 'haste', name: 'Wraithwalk', icon: '👻', minutes: 10, text: 'stamina refills twice as fast' },
   fury: { id: 'fury', name: 'Banshee Fury', icon: '😱', minutes: 30, text: '+25% attack in fights' },
   luck: { id: 'luck', name: 'Grave Luck', icon: '🍀', minutes: 30, text: 'double chance of rare finds and rare loot' },
   deathless: { id: 'deathless', name: 'Deathless', icon: '💀', minutes: 60, text: 'the next knockout leaves you on 1 HP instead (once)' },

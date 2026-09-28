@@ -17,7 +17,7 @@ function makeConfig(overrides = {}) {
       oauthBase: 'https://id.kick.com',
       apiBase: 'https://api.kick.com',
     },
-    game: { prefix: '!', actionCooldown: 30, chatPoints: 5, chatCooldown: 60, replyInChat: false },
+    game: { prefix: '!', staminaMax: 1, staminaMinutes: 0.5, chatPoints: 5, chatCooldown: 60, replyInChat: false },
     adminUsers: [],
     devMode: true,
     persistentStorage: true,
@@ -180,17 +180,17 @@ test('admin API: settings, logs and players need an admin; logs record chat comm
     fetch(url + path, { ...opts, headers: { cookie, 'Content-Type': 'application/json' }, body: opts.body && JSON.stringify(opts.body) });
 
   const s = await (await api('/api/admin/settings')).json();
-  assert.equal(s.values.general.actionCooldown, 30);
+  assert.equal(s.values.general.staminaMax, 1);
   assert.equal(s.values.rods.length, 10);
   assert.equal(s.values.backpack[9].capacity, 100);
 
-  const bad = await api('/api/admin/settings/general', { method: 'PUT', body: { value: { actionCooldown: 'soon' } } });
+  const bad = await api('/api/admin/settings/general', { method: 'PUT', body: { value: { staminaMax: 'soon' } } });
   assert.equal(bad.status, 400);
   assert.match((await bad.json()).error, /must be a number/);
-  const ok = await api('/api/admin/settings/general', { method: 'PUT', body: { value: { actionCooldown: 5, adminUsers: 'ModOne, @ModTwo' } } });
+  const ok = await api('/api/admin/settings/general', { method: 'PUT', body: { value: { staminaMax: 5, adminUsers: 'ModOne, @ModTwo' } } });
   assert.equal(ok.status, 200);
   assert.deepEqual(ctx.settings.all.general.adminUsers, ['modone', 'modtwo']);
-  assert.equal(ctx.engine.cfg.actionCooldown, 5);
+  assert.equal(ctx.engine.cfg.staminaMax, 5);
 
   ctx.bot.handleMessage({ kickUserId: '5', username: 'Viewer', content: '!fish' });
   const logs = await (await api('/api/admin/logs?source=chat')).json();

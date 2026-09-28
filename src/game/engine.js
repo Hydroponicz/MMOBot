@@ -52,8 +52,7 @@ class GameEngine extends EventEmitter {
     this.siteUrl = config.baseUrl;
     this.rng = rng;
     this.now = now;
-    this.cooldownWarned = new Map(); // userId -> last_action_at we already warned about
-    this.farmWarned = new Map(); // same, for the farming cooldown
+    this.cooldownWarned = new Map(); // userId -> stamina refill we already warned about
     this.lastBet = new Map(); // userId -> time of last casino bet (casino cooldown)
     this.betWarned = new Map();
     this.fightWarned = new Map(); // userId -> { monster, at }: "type it again to fight anyway"
@@ -340,7 +339,7 @@ class GameEngine extends EventEmitter {
           worn: GEAR_SLOTS.map((slot) => ({ slot, item: st.worn[slot] ? { id: st.worn[slot], ...ITEMS[st.worn[slot]] } : null })),
         };
       })(),
-      cooldownEndsAt: user.last_action_at + this.actionCooldownMs(userId),
+      stamina: this.stamina(userId),
     };
   }
 
@@ -348,7 +347,8 @@ class GameEngine extends EventEmitter {
   guide() {
     return {
       prefix: this.cfg.prefix,
-      actionCooldown: this.cfg.actionCooldown,
+      staminaMax: this.cfg.staminaMax,
+      staminaMinutes: this.cfg.staminaMinutes,
       chatPoints: this.cfg.chatPoints,
       chatCooldown: this.cfg.chatCooldown,
       xpMultiplier: this.cfg.xpMultiplier,
