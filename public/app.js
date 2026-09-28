@@ -1740,6 +1740,7 @@
     ['economy', '💰 Economy'],
     ['events', '🎉 Events'],
     ['tools', '🧰 Tools'],
+    ['audit', '🧾 Audit'],
     ['logs', '📜 Logs'],
   ];
 
@@ -2377,8 +2378,28 @@
 
   // ---- Admin: tools (backup / restore) -------------------------------------
   adminPages.tools = async (query, header) => {
+    const bk = await api('/admin/backups');
+    const size = (n) => (n > 1_048_576 ? `${(n / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
     $app.innerHTML = `
       ${header}
+      <section class="panel" style="margin-bottom:16px">
+        <div class="panel-head"><h2>🗂️ Automatic backups</h2>${bk.enabled ? '<button class="btn btn-primary btn-sm" id="bk-now">Back up now</button>' : ''}</div>
+        ${
+          bk.enabled
+            ? `<p class="muted" style="margin-top:0">A backup is made every day and the newest ${bk.keep} are kept on the server (<code>${esc(bk.dir)}</code>). Restoring one replaces all game data and restarts the server.</p>
+              ${
+                bk.backups.length
+                  ? `<div class="table-wrap"><table><thead><tr><th>Backup</th><th>Made</th><th class="num">Size</th><th></th></tr></thead><tbody>${bk.backups
+                      .map(
+                        (b) => `<tr><td><code>${esc(b.name)}</code></td><td>${new Date(b.at).toLocaleString()}</td><td class="num">${size(b.size)}</td>
+                          <td><div class="form-row"><a class="btn btn-sm" href="/api/admin/backups/${encodeURIComponent(b.name)}" download>Download</a><button class="btn btn-sm btn-danger" data-restore="${esc(b.name)}">Restore</button></div></td></tr>`
+                      )
+                      .join('')}</tbody></table></div>`
+                  : '<p class="muted">No backups yet. The first one is made a minute after the server starts.</p>'
+              }`
+            : '<p class="muted">Automatic backups need a database file (they are off for in-memory test databases).</p>'
+        }
+      </section>
       <div class="grid grid-2">
         <section class="panel">
           <h2>💾 Back up</h2>
@@ -2391,6 +2412,29 @@
           <div class="form-row"><input type="file" id="restore-file" accept=".db" aria-label="Backup file"><button class="btn" id="restore-go" style="color:var(--danger)">Restore</button></div>
         </section>
       </div>`;
+    $app.querySelector('#bk-now')?.addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try {
+        await api('/admin/backups', { method: 'POST', body: {} });
+        toast('Backup saved');
+        route();
+      } catch (err) {
+        toast(`Failed: ${err.message}`);
+        e.target.disabled = false;
+      }
+    });
+    $app.querySelectorAll('[data-restore]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        if (prompt(`Restore ${b.dataset.restore}? ALL game data goes back to that moment. Type RESTORE to confirm.`) !== 'RESTORE') return;
+        try {
+          await api(`/admin/backups/${encodeURIComponent(b.dataset.restore)}/restore`, { method: 'POST', body: {} });
+          toast('Restoring… the site will be back in a few seconds');
+          setTimeout(() => location.reload(), 6000);
+        } catch (err) {
+          toast(`Failed: ${err.message}`);
+        }
+      })
+    );
     $app.querySelector('#restore-go').onclick = async () => {
       const file = $app.querySelector('#restore-file').files[0];
       if (!file) return toast('Choose a backup file first');
@@ -2405,6 +2449,36 @@
         toast(`Failed: ${err.message}`);
       }
     };
+  };
+
+  // ---- Admin: audit log (who changed what, with undo) --------------------------------------
+  adminPages.audit = async (query, header) => {
+    const d = await api('/admin/audit');
+    $app.innerHTML = `
+      ${header}
+      <p class="muted">Every change made from the admin pages. Points, items, bans, player resets and settings changes can be undone.</p>
+      <section class="panel">${
+        d.entries.length
+          ? `<div class="table-wrap"><table><thead><tr><th>When</th><th>Admin</th><th>What</th><th></th></tr></thead><tbody>${d.entries
+              .map(
+                (e) => `<tr class="${e.undoneAt ? 'muted' : ''}"><td>${new Date(e.at).toLocaleString()}</td><td>${esc(e.admin)}</td><td>${esc(e.summary)}${e.undoneAt ? ` <span class="badge">undone by ${esc(e.undoneBy)}</span>` : ''}</td>
+                  <td>${e.canUndo ? `<button class="btn btn-sm" data-undo="${e.id}" data-what="${esc(e.summary)}">Undo</button>` : ''}</td></tr>`
+              )
+              .join('')}</tbody></table></div>`
+          : '<div class="empty"><span class="ic">🧾</span>No admin changes yet.</div>'
+      }</section>`;
+    $app.querySelectorAll('[data-undo]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        if (!confirm(`Undo: ${b.dataset.what}?`)) return;
+        try {
+          const r = await api(`/admin/audit/${b.dataset.undo}/undo`, { method: 'POST', body: {} });
+          toast(`Undone${r.note || ''}`);
+          route();
+        } catch (err) {
+          toast(err.message);
+        }
+      })
+    );
   };
 
   // ---- Admin: logs -------------------------------------------------------

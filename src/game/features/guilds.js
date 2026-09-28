@@ -118,11 +118,16 @@ module.exports = {
     if (!g) return { ok: false, error: "you're not in a guild." };
     amount = Math.floor(Number(amount));
     if (!(amount > 0)) return { ok: false, error: 'how many points?' };
+    const blocked = this.marketBlocked(user.id);
+    if (blocked) return { ok: false, error: blocked.replace('use the market', 'deposit') };
+    const capped = this.giftAllowanceError(user.id, amount);
+    if (capped) return { ok: false, error: capped };
     if (this.repo.getUser(user.id).points < amount) return { ok: false, error: `you only have ${fmt(this.repo.getUser(user.id).points)} pts.` };
     this.repo.transaction(() => {
       this.repo.addPoints(user.id, -amount);
       this.repo.guildSet(g.id, 'bank', g.bank + amount);
     });
+    this.spendGiftAllowance(user.id, amount);
     return { ok: true, message: `Deposited ${fmt(amount)} pts. [${g.tag}] bank: ${fmt(g.bank + amount)} pts.` };
   },
 

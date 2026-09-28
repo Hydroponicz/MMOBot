@@ -12,9 +12,11 @@ const { authRouter, sessionMiddleware } = require('./web/auth');
 const { apiRouter } = require('./web/api');
 const { Settings } = require('./settings');
 const { createLogger } = require('./logger');
+const { createBackups } = require('./backups');
 
 function createApp({ config, repo, logger: baseLogger = console, settings = new Settings({ config, repo }) }) {
   const logger = { ...baseLogger, info: (baseLogger.info || baseLogger.log).bind(baseLogger) };
+  const backups = createBackups({ repo, config, logger });
   const engine = new GameEngine({ repo, config, settings });
   const kick = new KickApi({ config, repo, logger });
   const bot = new ChatBot({ engine, kick, logger });
@@ -33,11 +35,11 @@ function createApp({ config, repo, logger: baseLogger = console, settings = new 
   app.use('/webhooks', webhookRouter({ bot, kick, repo, config, logger }));
   app.use(sessionMiddleware({ sessions, repo }));
   app.use('/auth', authRouter({ kick, repo, sessions, config, settings, logger }));
-  app.use('/api', apiRouter({ engine, repo, kick, bot, config, settings, logger }));
+  app.use('/api', apiRouter({ engine, repo, kick, bot, config, settings, logger, backups }));
   app.use(express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'] }));
   app.get('/healthz', (req, res) => res.json({ ok: true }));
 
-  return { app, engine, kick, bot, settings };
+  return { app, engine, kick, bot, settings, backups };
 }
 
 // Use SESSION_SECRET if set; otherwise generate one once and keep it in the database,
@@ -65,7 +67,8 @@ if (require.main === module) {
   const repo = openDb(config.dbPath);
   const logger = createLogger({ repo });
   config.sessionSecret = resolveSessionSecret(config, repo);
-  const { app, kick, engine } = createApp({ config, repo, logger });
+  const { app, kick, engine, backups } = createApp({ config, repo, logger });
+  backups.start();
   process.on('unhandledRejection', (err) => logger.error('[server] unhandled promise rejection:', err));
 
   const server = app.listen(config.port, () => {

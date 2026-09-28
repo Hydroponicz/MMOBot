@@ -2146,3 +2146,24 @@ test('economy alerts flag points piling up', () => {
   const { alerts } = engine.economyAlerts();
   assert.match(alerts[0].title, /Points are piling up/);
 });
+
+test('regression: selling your last spare copy on the market keeps the one you wear', () => {
+  const { repo, engine, say, u } = extrasSetup({ tradeMinHours: 0, tradeMinActions: 0 });
+  repo.addItem(u.id, 'bronze_sword', 2);
+  say('!equip bronze sword');
+  assert.equal(engine.marketSell(u, { item: 'bronze_sword', qty: 1, price: 10 }).ok, true);
+  assert.equal(repo.getWorn(u.id).weapon, 'bronze_sword');
+});
+
+test('regression: bounties, guild deposits and overpriced market buys share the daily give limit', () => {
+  const { repo, engine, say, u } = extrasSetup({ tradeMinHours: 0, tradeMinActions: 0, tradeDailyPoints: 1000 });
+  repo.addPoints(u.id, 100_000);
+  assert.match(say('!bounty copper ore 800'), /bounty posted/);
+  assert.match(say('!guild create Alt Farm'), /founded/);
+  assert.equal(engine.guildDeposit(u, 500).ok, false, 'over the daily limit');
+  assert.equal(engine.guildDeposit(u, 200).ok, true);
+  const bob = repo.upsertUser({ kickUserId: '2', username: 'Bob' });
+  repo.addItem(bob.id, 'copper_ore', 1);
+  const l = engine.marketSell(bob, { item: 'copper_ore', qty: 1, price: 400 });
+  assert.match(engine.marketBuy(u, l.id).error, /daily limit/);
+});

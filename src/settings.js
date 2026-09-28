@@ -361,6 +361,17 @@ class Settings extends EventEmitter {
     return out;
   }
 
+  // Puts a section back to a saved value (undefined/null = defaults). Used to undo admin changes.
+  restoreSection(section, value) {
+    const o = this.repo.getSetting('config_overrides') || {};
+    if (value === undefined || value === null) delete o[section];
+    else o[section] = value;
+    this.repo.setSetting('config_overrides', o);
+    this.reload();
+    this.emit('change', section);
+    return this.all;
+  }
+
   reset(section) {
     const o = this.repo.getSetting('config_overrides') || {};
     delete o[section];

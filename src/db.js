@@ -107,6 +107,18 @@ CREATE TABLE IF NOT EXISTS guild_members (
 );
 CREATE INDEX IF NOT EXISTS idx_guild_members ON guild_members(guild_id);
 
+-- Admin actions, with what's needed to undo them.
+CREATE TABLE IF NOT EXISTS admin_audit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin TEXT NOT NULL,
+  action TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  undo TEXT,
+  created_at INTEGER NOT NULL,
+  undone_at INTEGER,
+  undone_by TEXT
+);
+
 -- Website notifications (market sales, pets, quests...). Things like "crops ready" are worked out live.
 CREATE TABLE IF NOT EXISTS notifications (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -420,6 +432,41 @@ function createRepo(db) {
     seasonRank: (xp) => db.prepare('SELECT COUNT(*) + 1 AS r FROM users WHERE season_xp > ? AND banned = 0').get(xp).r,
     seasonLeaders: (limit = 10) =>
       db.prepare('SELECT id, username, avatar_url, season_xp FROM users WHERE season_xp > 0 AND banned = 0 ORDER BY season_xp DESC LIMIT ?').all(limit),
+    // A copy of everything resetPlayer wipes (plus the given settings keys), so a reset can be undone.
+    snapshotPlayer(userId, settingKeys = []) {
+      const all = (sql) => db.prepare(sql).all(userId);
+      return {
+        user: db.prepare('SELECT points, hp, hp_at, mana, mana_at, ko_until, stamina, stamina_at, season_xp, title FROM users WHERE id = ?').get(userId),
+        skills: all('SELECT skill, xp FROM skills WHERE user_id = ?'),
+        inventory: all('SELECT item, qty FROM inventory WHERE user_id = ?'),
+        equipment: all('SELECT slot, tier FROM equipment WHERE user_id = ?'),
+        worn: all('SELECT slot, item FROM worn_gear WHERE user_id = ?'),
+        plots: all('SELECT plot, crop, planted_at, ready_at FROM farm_plots WHERE user_id = ?'),
+        settings: Object.fromEntries(settingKeys.map((k) => [k, stmt.getSetting.get(k)?.value ?? null])),
+      };
+    },
+    restorePlayer(userId, snap) {
+      for (const t of ['inventory', 'equipment', 'worn_gear', 'farm_plots']) db.prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(userId);
+      for (const r of snap.skills) db.prepare('UPDATE skills SET xp = ? WHERE user_id = ? AND skill = ?').run(r.xp, userId, r.skill);
+      for (const r of snap.inventory) db.prepare('INSERT INTO inventory (user_id, item, qty) VALUES (?, ?, ?)').run(userId, r.item, r.qty);
+      for (const r of snap.equipment) db.prepare('INSERT INTO equipment (user_id, slot, tier) VALUES (?, ?, ?)').run(userId, r.slot, r.tier);
+      for (const r of snap.worn) db.prepare('INSERT INTO worn_gear (user_id, slot, item) VALUES (?, ?, ?)').run(userId, r.slot, r.item);
+      for (const r of snap.plots) db.prepare('INSERT INTO farm_plots (user_id, plot, crop, planted_at, ready_at) VALUES (?, ?, ?, ?, ?)').run(userId, r.plot, r.crop, r.planted_at, r.ready_at);
+      const u = snap.user;
+      db.prepare('UPDATE users SET points = ?, hp = ?, hp_at = ?, mana = ?, mana_at = ?, ko_until = ?, stamina = ?, stamina_at = ?, season_xp = ?, title = ? WHERE id = ?').run(
+        u.points, u.hp, u.hp_at, u.mana, u.mana_at, u.ko_until, u.stamina, u.stamina_at, u.season_xp, u.title, userId
+      );
+      for (const [k, v] of Object.entries(snap.settings || {})) {
+        if (v === null) db.prepare('DELETE FROM settings WHERE key = ?').run(k);
+        else db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(k, v);
+      }
+    },
+    // Admin audit log
+    addAudit: ({ admin, action, summary, undo = null }, ts) =>
+      Number(db.prepare('INSERT INTO admin_audit (admin, action, summary, undo, created_at) VALUES (?, ?, ?, ?, ?)').run(admin, action, summary, undo ? JSON.stringify(undo) : null, ts).lastInsertRowid),
+    audits: (limit = 100) => db.prepare('SELECT * FROM admin_audit ORDER BY id DESC LIMIT ?').all(limit),
+    getAudit: (id) => db.prepare('SELECT * FROM admin_audit WHERE id = ?').get(id) || null,
+    markUndone: (id, by, ts) => db.prepare('UPDATE admin_audit SET undone_at = ?, undone_by = ? WHERE id = ?').run(ts, by, id),
     // Everything a player owns and has done, for admin resets and the economy page.
     resetPlayer(userId) {
       for (const sql of [

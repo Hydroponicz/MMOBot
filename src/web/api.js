@@ -10,12 +10,47 @@ const { makeIsAdmin } = require('./auth');
 const { SettingsError } = require('../settings');
 const casino = require('../game/casino');
 
-function apiRouter({ engine, repo, kick, bot, config, settings, logger = console }) {
+function apiRouter({ engine, repo, kick, bot, config, settings, logger = console, backups = null }) {
   const router = express.Router();
   const isAdmin = makeIsAdmin(config, settings);
   router.use(express.json({ limit: '16kb' }));
 
-  const requireAdmin = (req, res, next) => (isAdmin(req.user) ? next() : res.status(403).json({ error: 'admins only' }));
+  // ---- Admin audit log ------------------------------------------------------------------
+  // Every change an admin makes is recorded. Handlers that can be undone record their own entry (with
+  // an undo payload); anything else is recorded by requireAdmin once it succeeds.
+  const audit = (req, action, summary, undo = null) => {
+    req.audited = true;
+    return repo.addAudit({ admin: req.user.username, action, summary, undo }, Date.now());
+  };
+  const ACTION_NAMES = {
+    '/admin/raid': 'started a raid',
+    '/admin/raid/end': 'ended the raid',
+    '/admin/worldboss/end': 'ended the world boss',
+    '/admin/boost': 'changed the channel boost',
+    '/admin/season/end': 'ended the season',
+    '/admin/random-event': 'started a random event',
+    '/admin/goal': 'started a channel goal',
+    '/admin/goal/end': 'ended the channel goal',
+    '/admin/backups': 'made a backup',
+    '/admin/restore': 'uploaded a backup to restore',
+    '/admin/overlay-test': 'sent an overlay test',
+    '/admin/say': 'sent a chat message as the bot',
+    '/admin/resubscribe': 'resubscribed to chat',
+    '/admin/bot-link': 'made a bot connect link',
+  };
+  const requireAdmin = (req, res, next) => {
+    if (!isAdmin(req.user)) return res.status(403).json({ error: 'admins only' });
+    if (req.method !== 'GET') {
+      res.on('finish', () => {
+        if (req.audited || res.statusCode >= 400) return;
+        const path = req.path;
+        const name = ACTION_NAMES[path] || (/^\/admin\/backups\/.+\/restore$/.test(path) ? `restored backup ${decodeURIComponent(path.split('/')[3])}` : `${req.method} ${path}`);
+        const detail = req.body && !Buffer.isBuffer(req.body) && Object.keys(req.body).length ? ` ${JSON.stringify(req.body).slice(0, 200)}` : '';
+        repo.addAudit({ admin: req.user.username, action: path, summary: `${name}${name.startsWith(req.method) ? detail : ''}` }, Date.now());
+      });
+    }
+    next();
+  };
 
   router.get('/me', (req, res) => {
     res.json({
@@ -42,7 +77,12 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
 
   // ---- Shop & your own gear (logged-in players) ------------------------------
 
-  const requireLogin = (req, res, next) => (req.user ? next() : res.status(401).json({ error: 'log in with Kick first' }));
+  // Banned players can look around but not play (chat already ignores them).
+  const requireLogin = (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'log in with Kick first' });
+    if (repo.getUser(req.user.id)?.banned) return res.status(403).json({ error: "you've been removed from the game by an admin." });
+    next();
+  };
 
   router.get('/shop', (req, res) => {
     const crops = Object.fromEntries(SKILLS.farming.resources.map((c) => [c.seed, c]));
@@ -340,7 +380,9 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
 
   router.put('/admin/settings/:section', requireAdmin, (req, res) => {
     try {
+      const before = (repo.getSetting('config_overrides') || {})[req.params.section] ?? null;
       settings.update(req.params.section, req.body?.value);
+      audit(req, 'settings', `changed ${req.params.section} settings`, { type: 'settings', section: req.params.section, before });
       logger.info(`[admin] ${req.user.username} changed ${req.params.section} settings: ${JSON.stringify(req.body?.value).slice(0, 1000)}`);
       res.json(settings.describe());
     } catch (err) {
@@ -350,7 +392,9 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   });
 
   router.delete('/admin/settings/:section', requireAdmin, (req, res) => {
+    const before = (repo.getSetting('config_overrides') || {})[req.params.section] ?? null;
     settings.reset(req.params.section);
+    audit(req, 'settings', `reset ${req.params.section} settings to defaults`, { type: 'settings', section: req.params.section, before });
     logger.info(`[admin] ${req.user.username} reset ${req.params.section} settings to defaults`);
     res.json(settings.describe());
   });
@@ -376,6 +420,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     const applied = Math.max(delta, -user.points); // never below zero
     repo.addPoints(user.id, applied);
     const reason = String(req.body?.reason || '').slice(0, 200);
+    audit(req, 'points', `${applied >= 0 ? 'gave' : 'took'} ${Math.abs(applied)} pts ${applied >= 0 ? 'to' : 'from'} ${user.username}${reason ? ` (${reason})` : ''}`, { type: 'points', userId: user.id, delta: applied });
     logger.info(`[admin] ${req.user.username} ${applied >= 0 ? 'gave' : 'took'} ${Math.abs(applied)} points ${applied >= 0 ? 'to' : 'from'} ${user.username}${reason ? ` (${reason})` : ''}`);
     res.json({ player: repo.getUser(user.id) });
   });
@@ -392,6 +437,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     const applied = Math.max(qty, -have);
     if (applied > 0) repo.addItem(user.id, item, applied);
     else if (applied < 0) repo.removeItem(user.id, item, -applied);
+    if (applied) audit(req, 'items', `${applied >= 0 ? 'gave' : 'took'} ${Math.abs(applied)}x ${ITEMS[item].name} ${applied >= 0 ? 'to' : 'from'} ${user.username}`, { type: 'items', userId: user.id, item, qty: applied });
     logger.info(`[admin] ${req.user.username} ${applied >= 0 ? 'gave' : 'took'} ${Math.abs(applied)}x ${ITEMS[item].name} ${applied >= 0 ? 'to' : 'from'} ${user.username}`);
     res.json({ ok: true, item: ITEMS[item].name, applied, now: repo.getInventory(user.id)[item] || 0 });
   });
@@ -402,6 +448,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     if (!user) return res.status(404).json({ error: 'player not found' });
     const banned = req.body?.banned ? 1 : 0;
     repo.setUserField(user.id, 'banned', banned);
+    audit(req, 'ban', `${banned ? 'banned' : 'unbanned'} ${user.username}`, { type: 'ban', userId: user.id, banned: user.banned });
     logger.info(`[admin] ${req.user.username} ${banned ? 'banned' : 'unbanned'} ${user.username} from the game`);
     res.json({ ok: true, banned });
   });
@@ -410,10 +457,53 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   router.post('/admin/players/:id/reset', requireAdmin, (req, res) => {
     const user = repo.getUser(Number(req.params.id));
     if (!user) return res.status(404).json({ error: 'player not found' });
+    const keys = ['bj', 'crash', 'mines', 'buffs', 'fire', 'daily', 'ach', 'museum', 'quest', 'streak'].map((k) => `${k}:${user.id}`);
+    const snapshot = repo.snapshotPlayer(user.id, keys);
     repo.transaction(() => repo.resetPlayer(user.id));
-    for (const key of ['bj', 'crash', 'mines', 'buffs', 'fire', 'daily', 'ach', 'museum']) repo.deleteSetting(`${key}:${user.id}`);
+    for (const key of keys) repo.deleteSetting(key);
+    audit(req, 'reset', `reset ${user.username}'s progress`, { type: 'reset', userId: user.id, snapshot });
     logger.warn(`[admin] ${req.user.username} reset ${user.username}'s progress`);
     res.json({ ok: true });
+  });
+
+  // ---- Admin: audit log and undo -------------------------------------------------------------
+  router.get('/admin/audit', requireAdmin, (req, res) => {
+    res.json({
+      entries: repo.audits(200).map((a) => ({ id: a.id, admin: a.admin, action: a.action, summary: a.summary, at: a.created_at, canUndo: Boolean(a.undo) && !a.undone_at, undoneAt: a.undone_at, undoneBy: a.undone_by })),
+    });
+  });
+
+  router.post('/admin/audit/:id/undo', requireAdmin, (req, res) => {
+    const a = repo.getAudit(Number(req.params.id));
+    if (!a || !a.undo) return res.status(404).json({ error: "that change can't be undone" });
+    if (a.undone_at) return res.status(400).json({ error: 'already undone' });
+    const u = JSON.parse(a.undo);
+    let note = '';
+    repo.transaction(() => {
+      if (u.type === 'points') {
+        const user = repo.getUser(u.userId);
+        const back = Math.max(-u.delta, -user.points);
+        repo.addPoints(u.userId, back);
+        if (back !== -u.delta) note = ` (only ${Math.abs(back)} could be taken back; they had spent the rest)`;
+      } else if (u.type === 'items') {
+        if (u.qty > 0) {
+          const have = repo.getInventory(u.userId)[u.item] || 0;
+          const take = Math.min(have, u.qty);
+          if (take) repo.removeItem(u.userId, u.item, take);
+          if (take < u.qty) note = ` (only ${take} were left to take back)`;
+        } else repo.addItem(u.userId, u.item, -u.qty);
+      } else if (u.type === 'ban') {
+        repo.setUserField(u.userId, 'banned', u.banned ? 1 : 0);
+      } else if (u.type === 'reset') {
+        repo.restorePlayer(u.userId, u.snapshot);
+      } else if (u.type === 'settings') {
+        settings.restoreSection(u.section, u.before);
+      }
+      repo.markUndone(a.id, req.user.username, Date.now());
+    });
+    audit(req, 'undo', `undid #${a.id}: ${a.summary}${note}`);
+    logger.warn(`[admin] ${req.user.username} undid #${a.id}: ${a.summary}${note}`);
+    res.json({ ok: true, note });
   });
 
   // ---- Admin: events (raids, boosts, random events, stream status) ---------------------
@@ -489,6 +579,28 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     logger.warn(`[admin] ${req.user.username} uploaded a backup (${Math.round(buf.length / 1024)} KB); restarting to restore it`);
     res.json({ ok: true, restarting: true });
     // Exit with an error code so Railway (restart on failure) starts it again with the backup.
+    if (!config.noRestartOnRestore) setTimeout(() => process.exit(1), 800);
+  });
+
+  // Automatic backups kept on the server.
+  router.get('/admin/backups', requireAdmin, (req, res) => {
+    res.json({ enabled: Boolean(backups?.dir), dir: backups?.dir || null, keep: backups?.keep || 0, backups: backups ? backups.list() : [] });
+  });
+  router.post('/admin/backups', requireAdmin, (req, res) => {
+    if (!backups?.dir) return res.status(400).json({ error: 'backups need a database file' });
+    engine.flushEconomy?.();
+    const b = backups.run(`manual (${req.user.username})`);
+    res.json({ ok: true, backup: b, backups: backups.list() });
+  });
+  router.get('/admin/backups/:name', requireAdmin, (req, res) => {
+    const f = backups?.file(req.params.name);
+    if (!f) return res.status(404).json({ error: 'no such backup' });
+    res.download(f, req.params.name);
+  });
+  router.post('/admin/backups/:name/restore', requireAdmin, (req, res) => {
+    if (!backups?.stageRestore(req.params.name)) return res.status(404).json({ error: 'no such backup' });
+    logger.warn(`[admin] ${req.user.username} is restoring backup ${req.params.name}; restarting`);
+    res.json({ ok: true, restarting: true });
     if (!config.noRestartOnRestore) setTimeout(() => process.exit(1), 800);
   });
 

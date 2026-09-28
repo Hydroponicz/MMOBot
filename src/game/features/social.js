@@ -160,11 +160,16 @@ module.exports = {
     const id = findItem(words.slice(0, -1).join(' '), Object.keys(ITEMS).filter((i) => this.bountyable(i)));
     if (!id || !(amount > 0)) return `usage: ${p}bounty <item> <points>, e.g. ${p}bounty goblin crown 5000. The first player to get one from an action wins the points.`;
     if (mine) return `you already have a bounty up (${ITEMS[mine.item].name}). ${p}bounty cancel first.`;
+    const blocked = this.marketBlocked(user.id);
+    if (blocked) return blocked.replace('use the market', 'post bounties');
+    const capped = this.giftAllowanceError(user.id, amount);
+    if (capped) return capped;
     if (list.length >= 10) return 'the bounty board is full (10). Try again later.';
     if (amount < 100 || amount > 1_000_000) return 'bounties are 100 to 1,000,000 pts.';
     if (this.repo.getUser(user.id).points < amount) return `you only have ${fmt(this.repo.getUser(user.id).points)} pts.`;
     const b = { id: this.now(), posterId: user.id, poster: user.username, item: id, reward: Math.floor(amount), createdAt: this.now(), expiresAt: this.now() + 7 * DAY };
     this.repo.addPoints(user.id, -b.reward);
+    this.spendGiftAllowance(user.id, b.reward);
     this.repo.setSetting('bounties', [...list, b]);
     this.announce(`🎯 BOUNTY: @${user.username} pays ${fmt(b.reward)} pts to the first player to get ${itemLabel(id)}! (7 days)`);
     return `bounty posted: ${fmt(b.reward)} pts for ${itemLabel(id)}. The points are held until someone claims it (or refunded after 7 days).`;

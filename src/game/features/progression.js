@@ -299,7 +299,7 @@ module.exports = {
     const target = this.repo.getUserByName(String(args[0]).replace(/^@/, ''));
     if (!target || target.banned) return `no adventurer named ${String(args[0]).replace(/^@/, '')}.`;
     if (target.id === user.id) return "you can't give things to yourself.";
-    const now = Date.now();
+    const now = this.now();
     const newbie = (u) => (c.tradeMinHours && now - u.created_at < c.tradeMinHours * 3_600_000) || u.actions_count < (c.tradeMinActions || 0);
     const me = this.repo.getUser(user.id);
     if (newbie(me)) return `you can trade once you've played a while (${c.tradeMinActions} actions and ${c.tradeMinHours}h since you first chatted).`;

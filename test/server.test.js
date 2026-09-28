@@ -408,3 +408,90 @@ test('market and notifications API', async (t) => {
   await asAlice('/me/notifications/read', {});
   assert.equal((await (await asAlice('/me/notifications')).json()).saved[0].read, true);
 });
+
+test('regression: banned players cannot use website actions', async (t) => {
+  const { createSessions } = require('../src/web/session');
+  const config = makeConfig();
+  const s = await start(config);
+  t.after(s.close);
+  const u = s.repo.upsertUser({ kickUserId: '9', username: 'Cheater' });
+  s.repo.addPoints(u.id, 5000);
+  s.repo.setUserField(u.id, 'banned', 1);
+  let cookie;
+  createSessions({ secret: config.sessionSecret, secure: false }).write({ cookie: (n, v) => (cookie = `${n}=${v}`) }, 'mmo_session', { uid: u.id }, 60_000);
+  const post = (path, body) => fetch(`${s.url}/api${path}`, { method: 'POST', headers: { cookie, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  assert.equal((await post('/shop/buy', { item: 'smithing_hammer' })).status, 403);
+  assert.equal((await post('/casino/slots', { bet: 100 })).status, 403);
+  assert.equal(s.repo.getUser(u.id).points, 5000);
+});
+
+test('automatic backups: made on demand, listed, pruned to the newest few, restorable', async (t) => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { createBackups } = require('../src/backups');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mmobot-bk-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const dbPath = path.join(dir, 'game.db');
+  const repo = openDb(dbPath);
+  repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  let now = Date.UTC(2026, 0, 1);
+  const b = createBackups({ repo, config: { dbPath, backupKeep: 2 }, logger: { info() {} }, now: () => now });
+  for (let i = 0; i < 3; i++) {
+    b.run();
+    now += 86_400_000;
+    // (file times come from the disk; give each a distinct mtime)
+    const [newest] = fs.readdirSync(b.dir).sort().reverse();
+    fs.utimesSync(path.join(b.dir, newest), new Date(now), new Date(now));
+  }
+  const list = b.list();
+  assert.equal(list.length, 2, 'keeps the newest 2');
+  assert.equal(b.file('../game.db'), null, 'no path tricks');
+  assert.ok(b.stageRestore(list[0].name));
+  assert.ok(fs.existsSync(`${dbPath}.restore`));
+});
+
+test('admin audit log records changes and can undo points, items, bans, resets and settings', async (t) => {
+  const { createSessions } = require('../src/web/session');
+  const config = makeConfig();
+  const s = await start(config);
+  t.after(s.close);
+  const owner = s.repo.upsertUser({ kickUserId: '99', username: 'streamer' });
+  let cookie;
+  createSessions({ secret: config.sessionSecret, secure: false }).write({ cookie: (n, v) => (cookie = `${n}=${v}`) }, 'mmo_session', { uid: owner.id }, 60_000);
+  const api = (path, body, method = body ? 'POST' : 'GET') =>
+    fetch(`${s.url}/api${path}`, { method, headers: { cookie, 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) }).then((r) => r.json());
+  const p = s.repo.upsertUser({ kickUserId: '5', username: 'Viewer' });
+  s.repo.addXp(p.id, 'mining', 5000);
+  s.repo.addItem(p.id, 'iron_ore', 3);
+
+  await api(`/admin/players/${p.id}/points`, { delta: 700, reason: 'giveaway' });
+  await api(`/admin/players/${p.id}/items`, { item: 'coal', qty: 4 });
+  await api(`/admin/players/${p.id}/ban`, { banned: true });
+  await api(`/admin/players/${p.id}/reset`, {});
+  await api('/admin/settings/general', { value: { staminaMax: 9 } }, 'PUT');
+  await api('/admin/goal', { target: 50 });
+  const { entries } = await api('/admin/audit');
+  assert.deepEqual(entries.map((e) => e.summary.split(' ')[0]).slice(0, 6), ['started', 'changed', 'reset', 'banned', 'gave', 'gave']);
+  assert.equal(entries[0].canUndo, false, 'goals are logged but not undoable');
+  assert.equal(s.repo.getUser(p.id).points, 0, 'reset wiped the points');
+  assert.equal(s.engine.cfg.staminaMax, 9);
+
+  const undo = (summaryStart) => api(`/admin/audit/${entries.find((e) => e.summary.startsWith(summaryStart)).id}/undo`, {});
+  await undo('changed general');
+  assert.equal(s.engine.cfg.staminaMax, 1, 'settings back');
+  await undo('reset');
+  assert.equal(s.repo.getUser(p.id).points, 700, 'reset undone: points back');
+  assert.equal(s.repo.getInventory(p.id).iron_ore, 3);
+  assert.equal(s.repo.getSkills(p.id).mining, 5000);
+  await undo('banned');
+  assert.equal(s.repo.getUser(p.id).banned, 0);
+  await undo('gave 4x');
+  assert.equal(s.repo.getInventory(p.id).coal, undefined);
+  await undo('gave 700');
+  assert.equal(s.repo.getUser(p.id).points, 0);
+  const again = await fetch(`${s.url}/api/admin/audit/${entries[5].id}/undo`, { method: 'POST', headers: { cookie } });
+  assert.equal(again.status, 400, 'only once');
+  const after = await api('/admin/audit');
+  assert.match(after.entries[0].summary, /^undid #/);
+});

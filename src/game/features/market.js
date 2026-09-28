@@ -26,6 +26,22 @@ module.exports = {
     return newbie ? `you can use the market once you've played a while (${c.tradeMinActions} actions and ${c.tradeMinHours}h since you first chatted).` : null;
   },
 
+  // ---- Daily cap on points passed to other players --------------------------------------------
+  // !give, bounties, guild deposits and overpriced market buys share one daily allowance, so points
+  // can't be funnelled from alt accounts to a main account.
+  giftAllowanceError(userId, amount) {
+    const cap = this.cfg.tradeDailyPoints;
+    if (!cap || amount <= 0) return null;
+    const sent = this.repo.getSetting(`gifted:${userId}:${dayOf(this.now())}`) || 0;
+    return sent + amount > cap ? `that's over your daily limit for points passed to other players: ${fmt(Math.max(0, cap - sent))} more today (limit ${fmt(cap)}).` : null;
+  },
+
+  spendGiftAllowance(userId, amount) {
+    if (amount <= 0) return;
+    const key = `gifted:${userId}:${dayOf(this.now())}`;
+    this.repo.setSetting(key, (this.repo.getSetting(key) || 0) + amount);
+  },
+
   marketListings(sellerId = null) {
     return this.repo.marketList({ sellerId }).map((l) => ({
       id: l.id,
@@ -57,10 +73,7 @@ module.exports = {
     const max = this.marketMaxUnitPrice(id) * qty;
     if (price > max) return { ok: false, error: `that's too expensive: at most ${fmt(max)} pts for ${qty} ${ITEMS[id].name}.` };
     if (this.repo.marketCount(user.id) >= MAX_LISTINGS) return { ok: false, error: `you can have ${MAX_LISTINGS} listings at once. Cancel one first.` };
-    // Unequip it if that was the last one being worn.
-    const worn = this.repo.getWorn(user.id);
-    const slot = Object.keys(worn).find((s) => worn[s] === id);
-    if (slot && have - qty < 1) this.repo.takeOff(user.id, slot);
+    // (Worn gear isn't in the backpack, so it can't be listed by accident.)
     const listingId = this.repo.transaction(() => {
       this.repo.removeItem(user.id, id, qty);
       return this.repo.marketAdd(user.id, id, qty, price, this.now());
@@ -84,6 +97,10 @@ module.exports = {
       const bag = this.backpack(user.id);
       if (bag.used + l.qty > bag.capacity) return { ok: false, error: `no room in your backpack (${bag.used}/${bag.capacity}).` };
     }
+    // Paying far over the shop value counts as passing points to the seller.
+    const excess = Math.max(0, l.price - 2 * this.sellValue(l.item) * l.qty);
+    const capped = this.giftAllowanceError(user.id, excess);
+    if (capped) return { ok: false, error: `this listing costs much more than the item is worth, and ${capped}` };
     const fee = Math.floor(l.price * (this.cfg.marketFee ?? 0.05));
     const ok = this.repo.transaction(() => {
       if (!this.repo.marketDelete(l.id)) return false;
@@ -93,6 +110,7 @@ module.exports = {
       return true;
     });
     if (!ok) return { ok: false, error: 'that listing is gone.' };
+    this.spendGiftAllowance(user.id, excess);
     this.track('traded', l.price);
     this.track('fees', fee);
     this.notify(l.seller_id, `🏪 ${user.username} bought your ${l.qty}x ${it.icon} ${it.name} for ${fmt(l.price)} pts (you got ${fmt(l.price - fee)} after the ${fmt(fee)} pts fee).`);

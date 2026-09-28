@@ -52,6 +52,9 @@ const config = {
   // Optional: when empty a random secret is generated once and stored in the database.
   sessionSecret: env('SESSION_SECRET', ''),
   dbPath: env('DB_PATH', path.join(volumePath || path.join(__dirname, '..', 'data'), 'mmobot.db')),
+  // Daily backups go next to the database unless BACKUP_DIR is set; the newest BACKUP_KEEP are kept.
+  backupDir: env('BACKUP_DIR', ''),
+  backupKeep: int('BACKUP_KEEP', 7),
   onRailway,
   persistentStorage: Boolean(env('DB_PATH', '') || volumePath || !onRailway),
 
