@@ -233,6 +233,7 @@
 
       ${equipmentPanel(p.combat, isMe)}
       ${farmPanel(p.farm, isMe)}
+      ${museumPanel(p.museum)}
 
       <div class="grid grid-2" style="margin-top:16px">
         <section class="panel">
@@ -311,6 +312,7 @@
           <div class="char-badges">
             <span class="badge">⚔️ Attack +${fmt(c.attack)}</span>
             <span class="badge">🛡️ Defence +${fmt(c.defence)}</span>
+            ${c.archeryBonus ? `<span class="badge">🏹 Archery +${fmt(c.archeryBonus)}</span>` : ''}
             <span class="badge">🎖️ Combat level ${fmt(c.level)}</span>
           </div>
         </div>
@@ -336,6 +338,22 @@
         ${monsterChips(c.monsters, c.ratedWith)}
         <p class="muted" style="margin-bottom:0;font-size:.85rem">Buy a sword or bow in the <a href="#/shop">shop</a>, or <code>!smith</code> / <code>!fletch</code> your own, then <code>!fight</code> (or <code>!shoot</code> with a bow, a quiver and arrows). <code>!targets</code> shows your best fights. Your best weapon is equipped automatically when you fight. Fights cost HP; monsters above your level hit much harder.</p>
       </section>`;
+  }
+
+  function museumPanel(m) {
+    if (!m || !m.length) return '';
+    return `<section class="panel" style="margin-top:16px">
+      <div class="panel-head"><h2>🏛️ Museum</h2><span class="muted">${m.filter((c) => c.done).length}/${m.length} collections</span></div>
+      <div class="museum">${m
+        .map(
+          (c) => `<div class="museum-set${c.done ? ' done' : ''}">
+            <div class="museum-name">${c.icon} ${esc(c.name)} ${c.done ? '✅' : `<span class="muted">${fmt(c.reward)} pts</span>`}</div>
+            <div class="museum-items">${c.items.map((i) => `<span class="${i.have ? 'have' : ''}" title="${esc(i.name)}${i.have ? ' (donated)' : ''}">${i.icon}</span>`).join('')}</div>
+          </div>`
+        )
+        .join('')}</div>
+      <p class="muted" style="margin-bottom:0;font-size:.85rem"><code>!donate &lt;item&gt;</code> gives digging finds to the museum: 3x their value each, and a big reward plus a title for each finished collection.</p>
+    </section>`;
   }
 
   function farmPanel(f, isMe) {
@@ -521,7 +539,7 @@
       <p class="muted">Fights cost HP. At 0 you're knocked out until you're back at full HP (24h), or until you drink a health potion. <code>!drink</code> in chat drinks the best one for you. Or brew your own from farmed crops with <code>!brew</code>.</p>
       <div class="shop-grid">${potions.map(card).join('')}</div>
 
-      <h2 style="margin:28px 0 6px">🎯 Arrows</h2>
+      <h2 style="margin:28px 0 6px">🎯 Arrows &amp; runes</h2>
       <p class="muted">For <code>!shoot</code> with a bow. Each fight uses one arrow; better arrows hit harder. They go in your 🧺 Quiver (holds 500, doesn't use backpack slots), so buy a quiver first. Higher tiers must be fletched: <code>!fletch arrows</code>.</p>
       <div class="shop-grid">${arrows.map(card).join('')}</div>
 
@@ -644,7 +662,7 @@
           .join('')}</tbody></table></div></details>`;
       }
       if (s.type === 'combat' && s.id !== g.skills.find((x) => x.type === 'combat').id) {
-        return `<p class="muted">Same monsters as ${esc(g.skills.find((x) => x.type === 'combat').name)} (above). Fight them with a bow using <code>${esc(s.command)}</code>; each fight uses one arrow from your quiver.</p>`;
+        return `<p class="muted">Same monsters as ${esc(g.skills.find((x) => x.type === 'combat').name)} (above). Fight them ${s.id === 'magic' ? 'with a staff' : 'with a bow'} using <code>${esc(s.command)}</code>; each fight uses ${s.id === 'magic' ? 'a Magic Rune and 1 mana' : 'one arrow from your quiver'}.</p>`;
       }
       if (s.type === 'combat') {
         return `
@@ -720,6 +738,9 @@
             <li><b>Archery &amp; Fletching</b>: <code>!fletch arrows</code> from 1 Oak Logs + 1 🪶 Feathers (from chickens) + 1 Iron Ingot, 10 at a time. Arrows go in a 🧺 Quiver (shop 250 pts, or <code>!fletch quiver</code> from 2 Rabbit Hides), which holds 500. Get a bow (shop 500 pts, or <code>!fletch oak shortbow</code> from 2 Oak Logs), then <code>!shoot</code> monsters for Archery XP: each fight uses one arrow, and better arrows hit harder. <code>!fight</code> uses whichever combat skill you're best at.</li>
             <li><b>Firemaking</b>: buy a 🪨 Flint and Steel in the <a href="#/shop">shop</a> (${fmt((g.shop.find((x) => x.item === 'flint_and_steel') || {}).cost || 0)} pts, good for 250 fires), then <code>!lightfire</code> burns the best log in your backpack (or <code>!lightfire oak</code>). Better logs give more XP, and every fire leaves 🌫️ Ashes. Sometimes the fire won't catch; nothing is used up, just try again.</li>
             <li><b>Cooking</b>: while your fire burns (5 minutes, longer with better logs), <code>!cook</code> the best raw food in your backpack, or name it: <code>!cook trout</code>, <code>!cook carrot</code>, <code>!cook rabbit</code>. Fish, vegetables, Raw Chicken from fights and the meat you get from <code>!skin</code> all cook; each unlocks at the level it takes to get it. Food burns sometimes (less as you level). Cooked food sells for more, and <code>!eat</code> heals HP.</li>
+            <li><b>Crafting</b>: <code>!craft</code> hides from <code>!skin</code> into leather armor (a coif, chaps and body per hide type). Leather has a bit less defence than metal but adds to your attack when you <code>!shoot</code>. Also bigger quivers (Large 1,000, Huge 2,000 arrows) and Magic Runes (<code>!craft runes</code>: 1 Ashes + 1 Tin Ore makes 10).</li>
+            <li><b>Magic</b>: with a staff (shop, or <code>!fletch oak staff</code>), <code>!cast</code> spells at monsters for Magic XP. Each cast uses a Magic Rune and 1 mana; you learn stronger spells as you level (Wind Strike, Water Bolt at 20, Earth Blast at 40, Fire Wave at 60...). <code>!heal</code> also trains Magic.</li>
+            <li><b>Museum</b>: <code>!donate</code> your digging finds. Each pays 3x its value, and finishing a collection (coins, relics, fossils, royal treasures...) pays a big reward and a title. <code>!museum</code> shows your progress.</li>
             <li><b>Stream events</b>: when a ⚔️ <b>raid boss</b> appears, everyone types <code>!attack</code> to fight it together (<code>!raid</code> shows its HP). Beat it in time and the reward pool is split by damage; the top hitter is MVP. A 👺 treasure goblin (<code>!catch</code>) or 📦 supply drop (<code>!grab</code>) sometimes pops up: be quick! Following or subscribing earns points, and gifted subs start ⚡ double XP for everyone (<code>!boost</code>). Challenge a friend with <code>!duel @name 500</code>: they <code>!accept</code>, and the winner takes the bet (duels don't hurt your real HP).</li>
             <li><b>Undead potions</b>: <code>!brew</code> Ashes with something dead into potions with timed effects, then <code>!drink</code> them. <code>!buffs</code> shows what's active.<ul>${(g.buffs || [])
               .map((b) => `<li>${b.icon} <b>${esc(b.potion)}</b>: ${esc(b.text)} (${b.minutes} min)</li>`)
@@ -756,6 +777,9 @@
             <dt><code>!catch</code> / <code>!grab</code></dt><dd>Claim a random event</dd>
             <dt><code>!duel @name [bet]</code></dt><dd>Duel another player (<code>!accept</code> / <code>!decline</code>)</dd>
             <dt><code>!boost</code></dt><dd>Is a channel XP boost running?</dd>
+            <dt><code>!craft &lt;item&gt;</code></dt><dd>Leather armor, quivers and runes</dd>
+            <dt><code>!cast [monster]</code></dt><dd>Fight with magic (staff + runes)</dd>
+            <dt><code>!donate &lt;item&gt;</code></dt><dd>Give a digging find to the museum (<code>!museum</code>)</dd>
             <dt><code>!buffs</code></dt><dd>Your active potion effects</dd>
             <dt><code>!heal</code></dt><dd>Spend half your mana to restore 25% HP</dd>
             <dt><code>!equip &lt;item&gt;</code></dt><dd>Wear gear (<code>!unequip</code>, <code>!equipped</code>)</dd>

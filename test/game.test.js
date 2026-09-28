@@ -128,7 +128,7 @@ test('!stats, !inv, !top, !points and !commands respond', () => {
   assert.match(say('!top'), /1\. Alice/);
   assert.match(say('!top fishing'), /Fishing: 1\. Alice Lv2/);
   assert.match(say('!points'), /points/);
-  assert.match(say('!commands'), /!fish !mine !chop !dig !skin !plant !harvest !lightfire !cook !smelt !smith !fletch !brew !fight !shoot/);
+  assert.match(say('!commands'), /!fish !mine !chop !dig !skin !plant !harvest !lightfire !cook !smelt !smith !fletch !craft !brew !fight !shoot !cast/);
   assert.equal(say('!unknowncommand'), null);
 });
 
@@ -136,7 +136,7 @@ test('profile exposes everything the website needs', () => {
   const { repo, engine, say } = setup();
   say('!fish');
   const p = engine.profile(repo.getUserByName('alice').id);
-  assert.equal(p.skills.length, 14);
+  assert.equal(p.skills.length, 16);
   assert.equal(p.skills[0].id, 'fishing');
   assert.equal(p.skills[0].level, 2);
   assert.equal(p.skills[0].rank, 1);
@@ -408,7 +408,7 @@ test('rod prices saved before the tool rework still apply', () => {
 test('the shop sells a smithing hammer (500) and a sword (1,000) via !buy', () => {
   const { repo, say } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
-  assert.match(say('!shop'), /🔨 Smithing Hammer 500, 🗡️ Bronze Sword 1,000, 🔪 Skinning Knife 500, 🟫 Farm Plot 750, 🏹 Oak Shortbow 500, 🧺 Quiver 250, 🪨 Flint and Steel 50 pts, potions from 150 \(!buy minor health potion\), arrows from 6 each \(!buy arrows 50\), plus seeds/);
+  assert.match(say('!shop'), /🔨 Smithing Hammer 500, 🗡️ Bronze Sword 1,000, 🔪 Skinning Knife 500, 🟫 Farm Plot 750, 🏹 Oak Shortbow 500, 🧺 Quiver 250, 🪄 Oak Staff 500, 🪨 Flint and Steel 50 pts, potions from 150 \(!buy minor health potion\), arrows from 6 each \(!buy arrows 50\), plus seeds/);
   assert.match(say('!buy hammer'), /Smithing Hammer costs 500 pts, you have 5/);
   repo.addPoints(u.id, 2000);
   assert.match(say('!buy hammer'), /bought 🔨 Smithing Hammer for 500 pts! Now try !smith bronze sword/);
@@ -815,13 +815,13 @@ test('!drink picks the right potion, !heal spends mana, potions can be bought an
   const { repo, engine, say, tick } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
   repo.setVitals(u.id, { hp: 20, mana: 20, koUntil: 0 }, 1_000_000);
-  assert.match(say('!heal'), /✨ you cast Heal \(\+15 HP\)\. ❤️ 35\/60 HP · 🔷 9\/22 mana/);
-  assert.match(say('!heal'), /needs 11 mana \(you have 9\)\. Enough in 1h 5m/);
+  assert.match(say('!heal'), /✨ you cast Heal \(\+15 HP\)\. ❤️ 35\/70 HP · 🔷 9\/24 mana \+12 XP.*Magic level 2/);
+  assert.match(say('!heal'), /needs 12 mana \(you have 9\)\. Enough in 15m/);
   repo.addItem(u.id, 'minor_health_potion', 2);
   repo.addItem(u.id, 'health_potion', 1);
   repo.addItem(u.id, 'minor_mana_potion', 1);
-  assert.match(say('!drink'), /drank a Health Potion! ❤️ 60\/60 HP/, 'the smallest potion that tops you up');
-  assert.match(say('!drink'), /drank a Minor Mana Potion! ❤️ 60\/60 HP · 🔷 17\/22 mana/);
+  assert.match(say('!drink'), /drank a Health Potion! ❤️ 70\/70 HP/, 'the smallest potion that tops you up');
+  assert.match(say('!drink'), /drank a Minor Mana Potion! ❤️ 70\/70 HP · 🔷 18\/24 mana/);
   assert.match(say('!drink'), /already at full health/);
   assert.match(say('!drink minor health'), /no need/);
   assert.match(say('!drink elixir'), /don't have a Elixir of Life\. !buy elixir of life or !brew it/);
@@ -838,7 +838,7 @@ test('!drink picks the right potion, !heal spends mana, potions can be bought an
   tick();
   assert.match(say('!brew health potion'), /need ⚗️ Alchemy level 25/);
   assert.match(say('!brew'), /nothing to brew! a Minor Health Potion \(potion\) needs 2 Carrot\. You're missing 2 Carrot — try !plant carrot/);
-  assert.match(engine.equippedInfo(u), /❤️ 60\/60 HP · 🔷 17\/22 mana/);
+  assert.match(engine.equippedInfo(u), /❤️ 70\/70 HP · 🔷 18\/24 mana/);
 });
 
 test('new skills never lower anyone\'s character level', () => {
@@ -1512,4 +1512,77 @@ test('duels: challenge, accept, winner takes the bet; nobody gets hurt for real'
   assert.match(say('!accept', 'Bob', '2'), /no duel waiting/);
   say('!duel @Bob', 'Alice', '1');
   assert.match(say('!decline', 'Bob', '2'), /declined the duel with @Alice/);
+});
+
+// ---- Crafting, Magic, museum ------------------------------------------------------------
+
+test('crafting: leather armor from hides (with an archery bonus), bigger quivers, runes', () => {
+  const { repo, engine, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!craft'), /nothing to craft yet/);
+  repo.addItem(u.id, 'rabbit_hide', 6);
+  assert.match(say('!craft rabbit body'), /🧵 you crafted 🧥 Rabbit Body! \+27 XP/);
+  tick();
+  say('!craft rabbit chaps');
+  tick();
+  say('!craft rabbit coif');
+  for (const piece of ['body', 'chaps', 'coif']) say(`!equip rabbit ${piece}`);
+  const st = engine.combatStats(u.id);
+  assert.equal(st.defence, 6);
+  assert.equal(st.archeryBonus, 3, 'each piece adds to archery');
+  repo.addItem(u.id, 'oak_shortbow', 1);
+  repo.addItem(u.id, 'quiver', 1);
+  repo.addItem(u.id, 'iron_arrows', 5);
+  const pick = engine.chooseWeapon(u.id, 'archery');
+  assert.equal(engine.fightStats(u.id, pick).attack, 4 + 1 + 3, 'bow + arrows + leather');
+
+  // Bigger quivers hold more.
+  assert.equal(engine.quiver(u.id).capacity, 500);
+  repo.addItem(u.id, 'large_quiver', 1);
+  assert.equal(engine.quiver(u.id).capacity, 1000);
+  tick();
+  repo.addItem(u.id, 'ashes', 1);
+  repo.addItem(u.id, 'tin_ore', 1);
+  assert.match(say('!craft runes'), /you crafted 🔹 10x Magic Rune!/);
+});
+
+test('magic: !cast needs a staff, runes and mana; the best spell is used', () => {
+  const { repo, engine, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!cast'), /🔮 you need a staff! 🛒 !buy staff \(500 pts, you have 5\) or !fletch oak staff/);
+  repo.addItem(u.id, 'oak_staff', 1);
+  assert.match(say('!cast'), /🔮 you have no Magic Runes! !buy runes 50 \(8 pts each\) or !craft runes/);
+  repo.addItem(u.id, 'magic_rune', 3);
+  assert.match(say('!cast chicken'), /🌬️ your Wind Strike defeated a 🐔 Chicken \(equipped your Oak Staff\).*Magic level 2!.* 🔹 2 Magic Runes left!/);
+  assert.equal(repo.getInventory(u.id).magic_rune, 2);
+  assert.equal(repo.getSkills(u.id).magic, 10);
+  assert.ok(engine.vitals(u.id).mana < engine.vitals(u.id).maxMana, 'a spell costs mana');
+  repo.setVitals(u.id, { hp: null, mana: 0, koUntil: 0 }, 1_000_000 + 31_000);
+  tick();
+  assert.match(say('!cast'), /out of mana for spells/);
+  assert.match(say('!targets magic'), /out of mana/);
+  // Higher Magic, stronger spell.
+  repo.addXp(u.id, 'magic', xpForLevel(60));
+  repo.setVitals(u.id, { hp: null, mana: null, koUntil: 0 }, 1_000_000 + 62_000);
+  assert.equal(engine.chooseWeapon(u.id, 'magic').spell.name, 'Fire Wave');
+  repo.addPoints(u.id, 1000);
+  assert.match(say('!buy runes 20'), /bought 🔹 20x Magic Rune for 160 pts! Now !cast with a staff\./, 'runes need no quiver');
+});
+
+test('museum: donate digging finds, finish collections for big rewards', () => {
+  const { repo, engine, say } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!museum'), /🏛️ Museum: 🪙 Coin Collection 0\/2 · 🏺 Ancient Relics 0\/4/);
+  assert.match(say('!donate'), /nothing new to donate/);
+  repo.addItem(u.id, 'rusty_coin', 2);
+  repo.addItem(u.id, 'ancient_coin', 1);
+  assert.match(say('!donate'), /you can donate: Rusty Coin, Ancient Coin/);
+  assert.match(say('!donate rusty coin'), /donated 🪙 Rusty Coin to the 🪙 Coin Collection \(1\/2\) for \d+ pts!$/);
+  assert.match(say('!donate rusty coin'), /already has your Rusty Coin/);
+  const before = repo.getUser(u.id).points;
+  assert.match(say('!donate ancient coin'), /\(2\/2\).*🎉 Collection complete: \+1,500 pts and the title "the Numismatist"/);
+  assert.ok(repo.getUser(u.id).points - before > 1500);
+  assert.equal(repo.getInventory(u.id).rusty_coin, 1);
+  assert.match(say('!donate shrimp'), /doesn't collect that/);
+  assert.equal(engine.museumProgress(u.id)[0].done, true);
 });

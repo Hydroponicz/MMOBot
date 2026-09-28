@@ -71,7 +71,7 @@ const config = {
     // Farming (!plant / !harvest) has its own, shorter cooldown so it can run alongside other skills.
     farmCooldown: int('FARM_COOLDOWN_SECONDS', 10),
     hpRegenHours: int('HP_REGEN_HOURS', 24),
-    manaRegenHours: int('MANA_REGEN_HOURS', 12),
+    manaRegenHours: int('MANA_REGEN_HOURS', 2),
     // Points for chatting: awarded at most once per chatCooldown seconds per user.
     chatPoints: int('CHAT_POINTS', 5),
     chatCooldown: int('CHAT_POINTS_COOLDOWN_SECONDS', 60),

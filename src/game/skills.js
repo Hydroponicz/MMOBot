@@ -587,6 +587,19 @@ const SKILLS = {
     failMessages: ['the string snapped'],
     recipes: [], // filled in below from BOW_LIST / ARROW_LIST
   },
+  crafting: {
+    name: 'Crafting',
+    icon: '🧵',
+    command: 'craft',
+    verb: 'crafted',
+    type: 'process',
+    maxLevel: 500,
+    // Leather armor (from skinned hides; helps archers), bigger quivers and magic runes.
+    pickBest: false,
+    example: 'rabbit coif, deerskin body, large quiver or runes',
+    failMessages: ['the stitching came apart'],
+    recipes: [], // filled in below
+  },
   alchemy: {
     name: 'Alchemy',
     icon: '⚗️',
@@ -621,6 +634,21 @@ const SKILLS = {
     // !shoot fights with your best bow and uses one arrow from your quiver per fight. Same monsters as Swords.
     weaponType: 'bow',
     ammo: true,
+    ammoHolder: 'quiver',
+    monsters: [], // shared with swords, below
+  },
+  magic: {
+    name: 'Magic',
+    icon: '🔮',
+    command: 'cast',
+    verb: 'blasted',
+    type: 'combat',
+    maxLevel: 500,
+    // !cast fights with your best staff and the strongest spell you know. Each cast uses one Magic
+    // Rune (runes don't take backpack slots) and 1 mana. Same monsters as Swords.
+    weaponType: 'staff',
+    ammo: true,
+    manaCost: 1,
     monsters: [], // shared with swords, below
   },
 };
@@ -690,6 +718,7 @@ SKILLS.swords.monsters = MONSTER_LIST.map(([id, name, icon, level, xp, loot, rar
 });
 
 SKILLS.archery.monsters = SKILLS.swords.monsters;
+SKILLS.magic.monsters = SKILLS.swords.monsters;
 
 // ---- Fletching: bows, arrows and the quiver ------------------------------------------------
 // Bows follow the same attack ladder as swords (level = Archery level to wield). Arrows add damage
@@ -733,6 +762,81 @@ for (const [id, name, logs, bar, fletchLevel, use, attack] of ARROW_LIST) {
   SKILLS.fletching.recipes.push({ item: id, level: fletchLevel, kind: 'ammo', group: 'arrows', yield: ARROWS_PER_FLETCH, xp: Math.round((logXp(logs) + barXp(bar)) * 0.6), inputs: { [logs]: 1, feathers: 1, [bar]: 1 } });
 }
 SKILLS.fletching.recipes.push({ item: 'quiver', level: 1, kind: 'tool', xp: 20, inputs: { rabbit_hide: 2 } });
+// Staffs for Magic: same woods and attack ladder as bows.
+for (const [bowId, bowName, logs, fletchLevel, wield, attack] of BOW_LIST) {
+  const id = bowId.replace(/_(short)?bow$/, '_staff');
+  const name = bowName.replace(/ (Short)?[Bb]ow$/, ' Staff');
+  ITEMS[id] = { name, icon: '🪄', value: Math.round(ITEMS[logs].value * 2 * 1.5 + attack * 5), keep: true, gear: true, slot: 'weapon', level: wield, weaponType: 'staff', attack };
+  SKILLS.fletching.recipes.push({ item: id, level: fletchLevel, kind: 'weapon', group: 'staff', xp: Math.round(logXp(logs) * 2 * 0.8), inputs: { [logs]: 2 } });
+}
+SKILLS.fletching.recipes.sort((a, b) => a.level - b.level);
+
+// ---- Magic --------------------------------------------------------------------------------
+// Spells you know by Magic level; the best one is used. attack is added to your staff's.
+const SPELLS = [
+  // name, icon, Magic level, bonus attack
+  ['Wind Strike', '🌬️', 1, 1],
+  ['Water Bolt', '💧', 20, 3],
+  ['Earth Blast', '🪨', 40, 6],
+  ['Fire Wave', '🔥', 60, 10],
+  ['Storm Surge', '⛈️', 80, 15],
+  ['Shadow Bolt', '🌑', 100, 20],
+  ['Arcane Nova', '✨', 150, 28],
+  ['Void Lance', '🕳️', 250, 40],
+  ['Celestial Ray', '🌟', 350, 55],
+  ['Starfall', '🌠', 450, 75],
+].map(([name, icon, level, attack]) => ({ name, icon, level, attack }));
+// Magic Runes: one per cast. Bought, or crafted from Ashes and Tin Ore.
+ITEMS.magic_rune = { name: 'Magic Rune', icon: '🔹', value: 3, keep: true, ammo: 'staff', level: 1, attack: 0 };
+
+// ---- Crafting -----------------------------------------------------------------------------
+// Leather armor from skinned hides: a bit less defence than metal of the same level, plus an
+// archery bonus (added to your attack when you !shoot). A full set gives the listed bonus.
+const LEATHER = [
+  // hide, name prefix, Crafting level, Combat level to wear, base defence, full-set archery bonus
+  ['rabbit_hide', 'Rabbit', 1, 1, 1, 1],
+  ['deer_hide', 'Deerskin', 25, 20, 3, 3],
+  ['bear_pelt', 'Bearhide', 45, 40, 5, 6],
+  ['tiger_pelt', 'Tigerhide', 75, 60, 8, 10],
+  ['crocodile_skin', 'Crocodile', 90, 80, 11, 15],
+  ['snow_leopard_pelt', 'Snow Leopard', 130, 100, 15, 20],
+  ['wyvern_hide', 'Wyvern', 200, 150, 21, 28],
+  ['basilisk_skin', 'Basilisk', 250, 250, 31, 40],
+  ['griffin_pelt', 'Griffin', 350, 350, 42, 55],
+  ['kraken_skin', 'Kraken', 450, 450, 56, 75],
+];
+const LEATHER_PIECES = [
+  // piece, name, icon, slot, hides, defence multiplier
+  ['coif', 'Coif', '🧢', 'head', 1, 1],
+  ['chaps', 'Chaps', '👖', 'legs', 2, 2],
+  ['body', 'Body', '🧥', 'body', 3, 3],
+];
+for (const [hide, prefix, craftLevel, wear, def, archery] of LEATHER) {
+  const hideXp = SKILLS.skinning.resources.find((r) => r.item === hide).xp;
+  for (const [piece, pieceName, icon, slot, hides, mult] of LEATHER_PIECES) {
+    const id = `${hide.replace(/_(hide|pelt|skin)$/, '')}_${piece}`;
+    if (ITEMS[id]) throw new Error(`leather id ${id} clashes`);
+    ITEMS[id] = {
+      name: `${prefix} ${pieceName}`,
+      icon,
+      value: Math.round(ITEMS[hide].value * hides * 1.4),
+      keep: true,
+      gear: true,
+      slot,
+      level: wear,
+      defence: Math.round(def * mult),
+      archeryBonus: Math.max(1, Math.round((archery * hides) / 6)),
+    };
+    SKILLS.crafting.recipes.push({ item: id, level: craftLevel, kind: 'armor', xp: Math.round(hideXp * hides * 0.9), inputs: { [hide]: hides } });
+  }
+}
+// Bigger quivers.
+ITEMS.large_quiver = { name: 'Large Quiver', icon: '🧺', value: 400, keep: true, quiverCapacity: 1000 };
+ITEMS.huge_quiver = { name: 'Huge Quiver', icon: '🧺', value: 2000, keep: true, quiverCapacity: 2000 };
+SKILLS.crafting.recipes.push({ item: 'large_quiver', level: 30, kind: 'tool', xp: 120, inputs: { deer_hide: 3 } });
+SKILLS.crafting.recipes.push({ item: 'huge_quiver', level: 100, kind: 'tool', xp: 600, inputs: { polar_bear_pelt: 3 } });
+SKILLS.crafting.recipes.push({ item: 'magic_rune', level: 1, kind: 'ammo', group: 'rune', yield: 10, xp: 12, inputs: { ashes: 1, tin_ore: 1 } });
+SKILLS.crafting.recipes.sort((a, b) => a.level - b.level);
 SKILLS.fletching.recipes.sort((a, b) => a.level - b.level);
 
 // ---- Farming ---------------------------------------------------------------------
@@ -972,6 +1076,19 @@ for (const [id, name, icon, level, inputs, buff, xp] of UNDEAD_POTIONS) {
 }
 SKILLS.alchemy.recipes.sort((a, b) => a.level - b.level);
 
+// ---- Museum ---------------------------------------------------------------------------------
+// !donate digging finds (and rare treasures). Each donation pays 3x the item's value; finishing a
+// collection pays its reward and unlocks a title.
+const MUSEUM = [
+  { id: 'coins', name: 'Coin Collection', icon: '🪙', items: ['rusty_coin', 'ancient_coin'], reward: 1500, title: 'the Numismatist' },
+  { id: 'relics', name: 'Ancient Relics', icon: '🏺', items: ['pottery_shard', 'arrowhead', 'crystal_skull', 'dragon_relic'], reward: 8000, title: 'the Archaeologist' },
+  { id: 'fossils', name: 'Fossil Hall', icon: '🦴', items: ['old_bone', 'fossil', 'mammoth_tusk', 'titan_fossil'], reward: 20000, title: 'the Paleontologist' },
+  { id: 'pirate', name: "Pirate's Haul", icon: '🏴‍☠️', items: ['treasure_map', 'pirate_chest'], reward: 25000, title: 'the Buccaneer' },
+  { id: 'royal', name: 'Royal Treasures', icon: '👑', items: ['golden_idol', 'pharaoh_mask', 'ancient_scroll', 'crown_of_kings'], reward: 40000, title: 'the Royal Curator' },
+  { id: 'wonders', name: 'Wonders of the World', icon: '🌍', items: ['meteorite', 'atlantean_relic', 'philosophers_stone', 'heart_of_the_world'], reward: 150000, title: 'Keeper of Wonders' },
+];
+for (const c of MUSEUM) for (const i of c.items) if (!ITEMS[i]) throw new Error(`museum item ${i} missing`);
+
 // Shop (website + "!buy"). Prices can be changed on the admin page.
 const SHOP = [
   { item: 'smithing_hammer', cost: 500, description: 'Lets you !smith weapons and armor from alloys. Keep it in your backpack.' },
@@ -1005,6 +1122,8 @@ const SHOP = [
     category: 'arrows',
     description: `Adds +${attack} attack to every shot. They go in your quiver, not your backpack.`,
   })),
+  { item: 'oak_staff', cost: 500, description: 'A ready-made staff for Magic: !cast spells at monsters (uses Magic Runes and a little mana). Or !fletch oak staff from 2 Oak Logs.' },
+  { item: 'magic_rune', cost: 8, category: 'arrows', description: 'One per !cast. Runes don\'t take backpack slots. Or !craft runes (1 Ashes + 1 Tin Ore makes 10).' },
   // Always add new shop items at the end (see above).
   { item: 'flint_and_steel', cost: 50, description: 'Lights fires with !lightfire (burns one log from your backpack for Firemaking XP and Ashes). Good for 250 fires, then it wears out.' },
 ];
@@ -1080,5 +1199,7 @@ module.exports = {
   maxHpFor,
   maxManaFor,
   BUFFS,
+  SPELLS,
+  MUSEUM,
   findItem,
 };

@@ -202,7 +202,7 @@ class Settings extends EventEmitter {
         actionCooldown: config.game.actionCooldown,
         farmCooldown: config.game.farmCooldown ?? 10,
         hpRegenHours: config.game.hpRegenHours ?? 24,
-        manaRegenHours: config.game.manaRegenHours ?? 12,
+        manaRegenHours: config.game.manaRegenHours ?? 2,
         chatPoints: config.game.chatPoints,
         chatCooldown: config.game.chatCooldown,
         replyInChat: config.game.replyInChat,

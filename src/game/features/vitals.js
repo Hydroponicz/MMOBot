@@ -2,6 +2,8 @@
 /* eslint-disable no-unused-vars */
 const {
   ITEMS,
+  SPELLS,
+  MUSEUM,
   SKILLS,
   SKILL_IDS,
   BACKPACK_TIERS,
@@ -202,6 +204,7 @@ module.exports = {
     }
     const hp = Math.min(vit.maxHp, vit.hp + vit.maxHp * 0.25);
     this.repo.setVitals(user.id, { hp, mana: vit.mana - cost, koUntil: 0 }, now);
-    return `✨ you cast Heal (+${fmt(Math.round(hp - vit.hp))} HP). ${this.vitalsLine(this.vitals(user.id, now))}`;
+    const gained = this.grantXp(user, 'magic', this.xpFor(10 + Math.round(vit.maxMana / 10)));
+    return `✨ you cast Heal (+${fmt(Math.round(hp - vit.hp))} HP). ${this.vitalsLine(this.vitals(user.id, now))} ${gained.text}`;
   },
 };

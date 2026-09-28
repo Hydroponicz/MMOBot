@@ -2,6 +2,8 @@ const { EventEmitter } = require('node:events');
 /* eslint-disable no-unused-vars */
 const {
   ITEMS,
+  SPELLS,
+  MUSEUM,
   SKILLS,
   SKILL_IDS,
   BACKPACK_TIERS,
@@ -279,6 +281,15 @@ class GameEngine extends EventEmitter {
       inventory,
       inventoryValue: inventory.reduce((s, i) => s + i.value * i.qty, 0),
       backpack: this.backpack(userId),
+      museum: this.museumProgress(userId).map((c) => ({
+        id: c.id,
+        name: c.name,
+        icon: c.icon,
+        reward: c.reward,
+        title: c.title,
+        done: c.done,
+        items: c.items.map((i) => ({ id: i, name: ITEMS[i].name, icon: ITEMS[i].icon, have: c.have.includes(i) })),
+      })),
       farm: {
         max: MAX_PLOTS,
         plotCost: this.shopItems().find((x) => x.item === 'farm_plot')?.cost,
@@ -293,6 +304,7 @@ class GameEngine extends EventEmitter {
         return {
           attack: st.attack,
           defence: st.defence,
+          archeryBonus: st.archeryBonus,
           level: st.level,
           hp: Math.floor(vit.hp),
           maxHp: vit.maxHp,
@@ -393,7 +405,7 @@ class GameEngine extends EventEmitter {
 // Fixed settings built from config, for tests and scripts that don't need live editing.
 function staticSettings(config) {
   return {
-    game: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, hpRegenHours: 24, manaRegenHours: 12, disabledCommands: [], ...config.game },
+    game: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, hpRegenHours: 24, manaRegenHours: 2, disabledCommands: [], ...config.game },
     all: {},
   };
 }
@@ -404,7 +416,7 @@ function isChatCommand(word) {
 }
 
 // Feature modules add their methods to the engine.
-for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events']) {
+for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events', 'museum']) {
   Object.assign(GameEngine.prototype, require(`./features/${mod}`));
 }
 

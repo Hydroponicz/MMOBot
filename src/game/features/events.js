@@ -279,11 +279,12 @@ module.exports = {
       return `⏳ catch your breath, next !attack in ${Math.ceil(wait / 1000)}s.`;
     }
     const pick = this.chooseWeapon(user.id);
-    if (!pick.weapon) return pick.reason === 'ammo' ? this.noArrowsMessage(user) : `you need a weapon to join the raid! ${this.howToGetSword(user)}`;
+    if (!pick.weapon) return ['ammo', 'mana'].includes(pick.reason) ? this.noArrowsMessage(user, pick) : `you need a weapon to join the raid! ${this.howToGetSword(user)}`;
     this.raidHits.set(user.id, now);
     const monster = SKILLS[COMBAT_SKILLS[0]].monsters.find((m) => m.id === raid.monster);
     const stats = this.fightStats(user.id, pick);
     if (pick.arrow) this.repo.removeItem(user.id, pick.arrow, 1);
+    if (SKILLS[pick.skillId].manaCost) vit.mana = Math.max(0, vit.mana - SKILLS[pick.skillId].manaCost);
     // Three swings at the boss, then it swings back once.
     const offence = pick.level + stats.attack;
     let dealt = 0;

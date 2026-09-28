@@ -17,9 +17,11 @@ const {
   maxHpFor,
   maxManaFor,
   BUFFS,
+  SPELLS,
+  MUSEUM,
   findItem,
 } = require('../skills');
-const weaponWords = { archery: /^(bows?|archery|shoot|arrows?|ranged)$/, swords: /^(swords?|fight|melee)$/ };
+const weaponWords = { archery: /^(bows?|archery|shoot|arrows?|ranged)$/, swords: /^(swords?|fight|melee)$/, magic: /^(magic|staff|staves|cast|spells?|mage)$/ };
 const { levelForXp, progress, characterProgress } = require('../xp');
 const casino = require('../casino');
 const emotes = require('../emotes');
@@ -65,6 +67,7 @@ const INFO_COMMANDS = {
   raid: ['raidInfo', 'raid'], boss: ['raidInfo', 'raid'], attack: ['raidAttack', 'raid'],
   duel: ['duel', 'duel'], accept: ['duelAccept', 'duel'], decline: ['duelDecline', 'duel'],
   boost: ['boostInfo', 'boost'],
+  museum: ['museumInfo', 'museum'], donate: ['donate', 'museum'],
   // Health and mana. Potions and !heal have no cooldown.
   hp: ['vitalsInfo', 'hp'], health: ['vitalsInfo', 'hp'], mana: ['vitalsInfo', 'hp'], vitals: ['vitalsInfo', 'hp'],
   drink: ['drink', 'drink'], quaff: ['drink', 'drink'], potion: ['drink', 'drink'],
@@ -126,6 +129,8 @@ for (const r of SKILLS.skinning.resources) if (r.meat) GATHER_HINT[r.meat] = `!s
 const unlockName = (r) => (r.item ? ITEMS[r.item].name : r.name);
 
 module.exports = {
+  SPELLS,
+  MUSEUM,
   ITEMS,
   SKILLS,
   SKILL_IDS,

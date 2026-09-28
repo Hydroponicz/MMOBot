@@ -28,6 +28,8 @@
   --archery: #2dd4bf;
   --firemaking: #f97316;
   --cooking: #fbbf24;
+  --crafting: #d6a35c;
+  --magic: #818cf8;
 }
 
 * { box-sizing: border-box; }
@@ -511,3 +513,11 @@ td.down, b.down { color: var(--danger); }
 .banner-row { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .raid-bar { height: 10px; margin-top: 8px; border-radius: 99px; background: var(--bg-2); overflow: hidden; }
 .raid-bar span { display: block; height: 100%; background: linear-gradient(90deg, #dc2626, #f87171); transition: width 0.4s; }
+
+/* Museum */
+.museum { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 10px; }
+.museum-set { padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); }
+.museum-set.done { border-color: var(--gold); }
+.museum-name { font-weight: 700; font-size: 0.9rem; margin-bottom: 6px; }
+.museum-items span { font-size: 1.5rem; margin-right: 4px; opacity: 0.25; filter: grayscale(1); }
+.museum-items span.have { opacity: 1; filter: none; }

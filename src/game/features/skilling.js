@@ -2,6 +2,8 @@
 /* eslint-disable no-unused-vars */
 const {
   ITEMS,
+  SPELLS,
+  MUSEUM,
   SKILLS,
   SKILL_IDS,
   BACKPACK_TIERS,
@@ -232,7 +234,7 @@ module.exports = {
     }
 
     // Arrows go in your quiver: you need one, with room.
-    if (ITEMS[recipe.item].ammo) {
+    if (ITEMS[recipe.item].ammo === 'bow') {
       const q = this.quiver(user.id);
       if (!q.capacity) return { consumed: false, reply: `you need a 🧺 Quiver to hold arrows! !buy quiver (${fmt(this.shopItems().find((x) => x.item === 'quiver')?.cost ?? 250)} pts) or !fletch quiver (2 Rabbit Hide).` };
       if (q.arrows + (recipe.yield || 1) > q.capacity) return { consumed: false, reply: `🧺 your quiver is full (${fmt(q.arrows)}/${fmt(q.capacity)} arrows). !shoot some first.` };

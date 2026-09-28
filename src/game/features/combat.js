@@ -2,6 +2,8 @@
 /* eslint-disable no-unused-vars */
 const {
   ITEMS,
+  SPELLS,
+  MUSEUM,
   SKILLS,
   SKILL_IDS,
   BACKPACK_TIERS,
@@ -52,8 +54,11 @@ module.exports = {
   combatStats(userId) {
     const worn = this.repo.getWorn(userId);
     const weapon = worn.weapon && ITEMS[worn.weapon] ? worn.weapon : null;
-    const defence = GEAR_SLOTS.filter((sl) => sl !== 'weapon').reduce((sum, sl) => sum + (ITEMS[worn[sl]]?.defence || 0), 0);
-    return { worn, weapon, attack: weapon ? ITEMS[weapon].attack : 0, defence, level: this.combatLevel(userId) };
+    const armor = GEAR_SLOTS.filter((sl) => sl !== 'weapon').map((sl) => ITEMS[worn[sl]]);
+    const defence = armor.reduce((sum, it) => sum + (it?.defence || 0), 0);
+    // Leather armor helps archers.
+    const archeryBonus = armor.reduce((sum, it) => sum + (it?.archeryBonus || 0), 0);
+    return { worn, weapon, attack: weapon ? ITEMS[weapon].attack : 0, defence, archeryBonus, level: this.combatLevel(userId) };
   },
 
   // Look at every weapon the player owns (worn or in the backpack), take the combat skill they're
@@ -72,45 +77,57 @@ module.exports = {
       if (skillId) (bySkill[skillId] ||= []).push(id);
     }
     const skills = Object.keys(bySkill).sort((a, b) => skillLevel(b, xp[b]) - skillLevel(a, xp[a]));
-    let noAmmo = false;
+    let noAmmo = null;
     for (const skillId of skills) {
+      const skill = SKILLS[skillId];
       const level = skillLevel(skillId, xp[skillId]);
       const usable = bySkill[skillId].filter((id) => ITEMS[id].level <= level).sort((a, b) => ITEMS[b].attack - ITEMS[a].attack);
       if (!usable.length) continue;
-      // Bows need a quiver with arrows you can use; the best ones go first.
+      // Bows need a quiver with arrows you can use, staffs need runes (and mana); the best go first.
       let arrow = null;
-      if (SKILLS[skillId].ammo) {
-        const type = SKILLS[skillId].weaponType;
-        arrow = inv.quiver
+      if (skill.ammo) {
+        const type = skill.weaponType;
+        const holder = !skill.ammoHolder || this.quiver(userId).capacity > 0;
+        arrow = holder
           ? Object.keys(inv).filter((id) => ITEMS[id]?.ammo === type && inv[id] > 0 && ITEMS[id].level <= level).sort((a, b) => ITEMS[b].attack - ITEMS[a].attack)[0]
           : null;
         if (!arrow) {
-          noAmmo = true;
+          noAmmo ??= { weapon: null, reason: 'ammo', skillId };
           continue;
         }
       }
-      return { weapon: usable[0], skillId, level, arrow, wasWorn: usable[0] === worn.weapon };
+      if (skill.manaCost && this.vitals(userId).mana < skill.manaCost) {
+        noAmmo ??= { weapon: null, reason: 'mana', skillId };
+        continue;
+      }
+      const spell = skillId === 'magic' ? [...SPELLS].reverse().find((sp) => sp.level <= level) : null;
+      return { weapon: usable[0], skillId, level, arrow, spell, wasWorn: usable[0] === worn.weapon };
     }
-    if (noAmmo) return { weapon: null, reason: 'ammo' };
+    if (noAmmo) return noAmmo;
     const easiest = owned.sort((a, b) => ITEMS[a].level - ITEMS[b].level)[0];
     return { weapon: null, reason: 'level', item: easiest };
   },
 
   // Attack and defence for a fight with this weapon pick (bow attack includes the arrows).
   fightStats(userId, pick) {
-    const attack = ITEMS[pick.weapon].attack + (pick.arrow ? ITEMS[pick.arrow].attack : 0);
+    const st = this.combatStats(userId);
+    // Arrows, spells, and leather armor's archery bonus add to the weapon's attack.
+    const attack =
+      ITEMS[pick.weapon].attack + (pick.arrow ? ITEMS[pick.arrow].attack : 0) + (pick.spell ? pick.spell.attack : 0) + (pick.skillId === 'archery' ? st.archeryBonus : 0);
     return {
       // Banshee Fury: +25% attack.
       attack: this.hasBuff(userId, 'fury') ? Math.round(attack * 1.25) : attack,
-      defence: this.combatStats(userId).defence,
+      defence: st.defence,
     };
   },
 
   // Your quiver: how many arrows it holds and has.
   quiver(userId) {
     const inv = this.repo.getInventory(userId);
-    const arrows = Object.entries(inv).reduce((sum, [id, q]) => sum + (ITEMS[id]?.ammo ? q : 0), 0);
-    return { capacity: inv.quiver ? ITEMS.quiver.quiverCapacity : 0, arrows };
+    const arrows = Object.entries(inv).reduce((sum, [id, q]) => sum + (ITEMS[id]?.ammo === 'bow' ? q : 0), 0);
+    // Your biggest quiver counts.
+    const capacity = Math.max(0, ...Object.keys(inv).map((id) => (inv[id] > 0 && ITEMS[id]?.quiverCapacity) || 0));
+    return { capacity, arrows };
   },
 
   // !quiver / !arrows
@@ -118,14 +135,27 @@ module.exports = {
     const inv = this.repo.getInventory(user.id);
     const q = this.quiver(user.id);
     if (!q.capacity) return `you don't have a 🧺 Quiver. !buy quiver or !fletch quiver (2 Rabbit Hide). It holds ${fmt(ITEMS.quiver.quiverCapacity)} arrows.`;
-    const list = Object.keys(inv).filter((id) => ITEMS[id]?.ammo && inv[id] > 0).map((id) => itemLabel(id, inv[id]));
+    const list = Object.keys(inv).filter((id) => ITEMS[id]?.ammo === 'bow' && inv[id] > 0).map((id) => itemLabel(id, inv[id]));
     return `🧺 Quiver ${fmt(q.arrows)}/${fmt(q.capacity)} arrows${list.length ? `: ${list.join(', ')}` : '. Empty! !fletch arrows (1 Oak Logs + 1 Feathers + 1 Iron Ingot makes 10)'}.`;
   },
 
-  noArrowsMessage(user) {
-    const inv = this.repo.getInventory(user.id);
-    if (!inv.quiver) return `🏹 you need a 🧺 Quiver for arrows! !buy quiver (${fmt(this.shopItems().find((x) => x.item === 'quiver')?.cost ?? 250)} pts) or !fletch quiver (2 Rabbit Hide), then !fletch arrows.`;
+  noArrowsMessage(user, pick = null) {
+    const p = this.cfg.prefix;
+    if (pick?.reason === 'mana') return `🔮 you're out of mana for spells! It refills over time, or ${p}drink a mana potion.`;
+    if (pick?.skillId === 'magic') {
+      const rune = this.shopItems().find((x) => x.item === 'magic_rune');
+      return `🔮 you have no Magic Runes! ${p}buy runes 50${rune ? ` (${fmt(rune.cost)} pts each)` : ''} or ${p}craft runes (1 Ashes + 1 Tin Ore makes 10).`;
+    }
+    if (!this.quiver(user.id).capacity) return `🏹 you need a 🧺 Quiver for arrows! !buy quiver (${fmt(this.shopItems().find((x) => x.item === 'quiver')?.cost ?? 250)} pts) or !fletch quiver (2 Rabbit Hide), then !fletch arrows.`;
     return `🏹 your quiver is empty! !buy arrows 50 or !fletch arrows (1 Oak Logs + 1 🪶 Feathers from chickens + 1 Iron Ingot makes 10).`;
+  },
+
+  // What the bot says when someone tries to !cast without a staff.
+  howToGetStaff(user) {
+    const points = this.repo.getUser(user.id).points;
+    const staff = this.shopItems().find((x) => x.item === 'oak_staff');
+    const buy = staff ? `🛒 !buy staff (${fmt(staff.cost)} pts, you have ${fmt(points)}) or ` : '';
+    return `🔮 you need a staff! ${buy}!fletch oak staff (2 Oak Logs). Plus Magic Runes: !buy runes 50.`;
   },
 
   // What the bot says when someone tries to !shoot without a bow.
@@ -142,8 +172,9 @@ module.exports = {
     if (vit.ko) return { consumed: false, reply: this.knockedOutMessage(user.id, vit, now) };
     const pick = this.chooseWeapon(user.id, only);
     if (!pick.weapon) {
-      if (pick.reason === 'ammo') return { consumed: false, reply: this.noArrowsMessage(user) };
+      if (pick.reason === 'ammo' || pick.reason === 'mana') return { consumed: false, reply: this.noArrowsMessage(user, pick) };
       if (only === 'archery' && pick.reason === 'none') return { consumed: false, reply: this.howToGetBow(user) };
+      if (only === 'magic' && pick.reason === 'none') return { consumed: false, reply: this.howToGetStaff(user) };
       if (pick.reason === 'level') {
         const it = ITEMS[pick.item];
         const sk = SKILLS[WEAPON_SKILL[it.weaponType]];
@@ -196,8 +227,10 @@ module.exports = {
     if (pick.arrow) {
       this.repo.removeItem(user.id, pick.arrow, 1);
       const left = this.repo.getInventory(user.id)[pick.arrow] || 0;
-      ammoNote = left <= 10 ? ` 🎯 ${left ? `${left} ${ITEMS[pick.arrow].name} left` : `that was your last ${ITEMS[pick.arrow].name.replace(/s$/, '')}`}!` : '';
+      ammoNote = left <= 10 ? ` ${ITEMS[pick.arrow].icon} ${left ? `${left} ${ITEMS[pick.arrow].name}${left > 1 && !/s$/.test(ITEMS[pick.arrow].name) ? 's' : ''} left` : `that was your last ${ITEMS[pick.arrow].name.replace(/s$/, '')}`}!` : '';
     }
+    // Spells also cost mana.
+    if (SKILLS[pick.skillId].manaCost) vit.mana = Math.max(0, vit.mana - SKILLS[pick.skillId].manaCost);
     const f = this.simulateFight(pick.level, stats, monster, vit.hp);
     let hpLeft = Math.max(0, vit.hp - f.taken);
     const tag = `${monster.icon} ${monster.name}${monster.level > pick.level ? ` (level ${monster.level})` : ''}`;
@@ -269,7 +302,7 @@ module.exports = {
     }
     return {
       consumed: true,
-      reply: `${weapon.icon} you defeated a ${tag}${swapped} and looted ${rare ? 'a RARE ' : ''}${itemLabel(loot)}! ${gained.text} | ${hpText()}${f.taken >= 0.5 ? ` (-${fmt(Math.round(f.taken))})` : ''}${drained}${low}${easy}${ammoNote}${this.fullBagNote(user.id)}`,
+      reply: `${pick.spell ? `${pick.spell.icon} your ${pick.spell.name}` : weapon.icon} ${pick.spell ? 'defeated' : 'you defeated'} a ${tag}${swapped} and looted ${rare ? 'a RARE ' : ''}${itemLabel(loot)}! ${gained.text} | ${hpText()}${f.taken >= 0.5 ? ` (-${fmt(Math.round(f.taken))})` : ''}${drained}${low}${easy}${ammoNote}${this.fullBagNote(user.id)}`,
     };
   },
 
@@ -339,7 +372,7 @@ module.exports = {
   monstersInfo(user) {
     const vit = this.vitals(user.id);
     const pick = this.chooseWeapon(user.id);
-    if (!pick.weapon) return pick.reason === 'ammo' ? this.noArrowsMessage(user) : this.howToGetSword(user);
+    if (!pick.weapon) return ['ammo', 'mana'].includes(pick.reason) ? this.noArrowsMessage(user, pick) : this.howToGetSword(user);
     return this.monsterList(user, pick, vit);
   },
 
@@ -352,8 +385,8 @@ module.exports = {
     if (vit.ko) return this.knockedOutMessage(user.id, vit, now);
     const pick = this.chooseWeapon(user.id, only);
     if (!pick.weapon) {
-      if (pick.reason === 'ammo') return this.noArrowsMessage(user);
-      return only === 'archery' ? this.howToGetBow(user) : this.howToGetSword(user);
+      if (['ammo', 'mana'].includes(pick.reason)) return this.noArrowsMessage(user, pick);
+      return only === 'archery' ? this.howToGetBow(user) : only === 'magic' ? this.howToGetStaff(user) : this.howToGetSword(user);
     }
     const skill = SKILLS[pick.skillId];
     const stats = this.fightStats(user.id, pick);
@@ -375,7 +408,7 @@ module.exports = {
   scout(user, args) {
     const vit = this.vitals(user.id);
     const pick = this.chooseWeapon(user.id);
-    if (!pick.weapon) return pick.reason === 'ammo' ? this.noArrowsMessage(user) : this.howToGetSword(user);
+    if (!pick.weapon) return ['ammo', 'mana'].includes(pick.reason) ? this.noArrowsMessage(user, pick) : this.howToGetSword(user);
     const skill = SKILLS[pick.skillId];
     if (!args.length) return this.monsterList(user, pick, vit);
     const m = this.findMonster(skill, args);

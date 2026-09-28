@@ -2,6 +2,8 @@
 /* eslint-disable no-unused-vars */
 const {
   ITEMS,
+  SPELLS,
+  MUSEUM,
   SKILLS,
   SKILL_IDS,
   BACKPACK_TIERS,
@@ -74,7 +76,9 @@ module.exports = {
       (items.find((x) => x.item === q.replace(/\s+/g, '_') || name(x) === q) ||
         items.find((x) => name(x) === `${q} seeds`) ||
         items.find((x) => name(x).startsWith(q)) ||
-        items.find((x) => name(x).includes(q)));
+        items.find((x) => name(x).includes(q)) ||
+        // "runes" -> Magic Rune
+        (q.endsWith('s') && items.find((x) => name(x).split(' ').pop() === q.slice(0, -1))));
     if (!found) return `usage: !buy <item> [amount]. ${this.shopList()}`;
     // Arrows come 10 at a time unless you say how many.
     qty ??= found.ammo ? 10 : 1;
@@ -86,7 +90,7 @@ module.exports = {
       if (inv[found.item]) return `you already have a ${found.icon} ${found.name}.`;
       qty = 1;
     }
-    if (found.ammo) {
+    if (found.ammo === 'bow') {
       // Arrows go in the quiver, not the backpack.
       const q = this.quiver(user.id);
       if (!q.capacity) return `you need a 🧺 Quiver to carry arrows! !buy quiver (${fmt(this.shopItems().find((x) => x.item === 'quiver')?.cost ?? 250)} pts) or !fletch quiver.`;
@@ -95,7 +99,8 @@ module.exports = {
       const crop = CROPS.find((c) => c.item === found.seedFor);
       const lvl = skillLevel('farming', this.repo.getSkills(user.id).farming);
       if (lvl < crop.level) return `you need 🌱 Farming level ${crop.level} to grow ${ITEMS[crop.item].name} (you are ${lvl}).`;
-    } else {
+    } else if (!found.ammo) {
+      // (Runes, like arrows, don't take backpack slots.)
       const bag = this.backpack(user.id);
       if (bag.used + qty > bag.capacity) return `🎒 no room in your backpack (${bag.used}/${bag.capacity}). !sell something first.`;
     }
@@ -116,8 +121,10 @@ module.exports = {
             ? ' Now try !fight.'
             : found.item === 'quiver'
               ? ' Now !fletch arrows or !buy arrows.'
-            : found.ammo
-              ? ` 🧺 Quiver: ${fmt(this.quiver(user.id).arrows)}/${fmt(ITEMS.quiver.quiverCapacity)}. !shoot away!`
+            : found.ammo === 'bow'
+              ? ` 🧺 Quiver: ${fmt(this.quiver(user.id).arrows)}/${fmt(this.quiver(user.id).capacity)}. !shoot away!`
+            : found.ammo === 'staff'
+              ? ' Now !cast with a staff.'
             : found.item === 'flint_and_steel'
               ? ` Good for ${ITEMS.flint_and_steel.uses} fires: !lightfire.`
             : found.item === 'skinning_knife'
