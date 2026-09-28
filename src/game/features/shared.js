@@ -60,6 +60,7 @@ const INFO_COMMANDS = {
   hit: ['chatHit', 'blackjack'], stand: ['chatStand', 'blackjack'], double: ['chatDouble', 'blackjack'], split: ['chatSplit', 'blackjack'],
   crash: ['chatCrash', 'crash'], rocket: ['chatCrash', 'crash'],
   mines: ['chatMines', 'mines'], minesweeper: ['chatMines', 'mines'],
+  relics: ['relicsInfo', 'relics'], relic: ['relicsInfo', 'relics'], cases: ['relicsInfo', 'relics'],
   cards: ['cardsInfo', 'cards'], packs: ['cardsInfo', 'cards'], card: ['cardsInfo', 'cards'],
   pick: ['chatPick', 'mines'], reveal: ['chatPick', 'mines'], cashout: ['chatCashout', 'mines'],
   casino: ['casinoHelp', 'casino'], gamble: ['casinoHelp', 'casino'],

@@ -36,6 +36,7 @@ const COMMANDS = [
   'crash',
   'mines',
   'cards',
+  'relics',
   'raid',
   'boost',
   'season',
@@ -103,6 +104,9 @@ const FIELDS = {
     casinoCooldown: { type: 'int', label: 'Casino cooldown (seconds)', help: 'Time between bets per viewer.', min: 0, max: 3600 },
     cardsEnabled: { type: 'bool', label: 'Trading cards open', help: 'Card packs, grading, the card market and card trades on the website.' },
     cardPackPriceMultiplier: { type: 'number', label: 'Card pack price multiplier', help: 'Scales every pack price (1 = normal: Scout 200, Booster 1,000, Elite 3,500, Mythic Vault 11,000).', min: 0.1, max: 100 },
+    relicsEnabled: { type: 'bool', label: 'Relic cases open', help: 'Relic case opening, trade-up contracts, the relic market and relic trades on the website.' },
+    relicCasePriceMultiplier: { type: 'number', label: 'Relic case price multiplier', help: 'Scales every case price (1 = normal, about 900-1,000 pts a case).', min: 0.1, max: 100 },
+    relicBuyback: { type: 'number', label: 'Relic buyback rate (0-1)', help: 'Share of a relic’s value the bank pays when a player sells it back. Cases return about 88% of their price in relic value.', min: 0, max: 1 },
     cardBuyback: { type: 'number', label: 'Card buyback rate (0-1)', help: 'Share of a card’s value the bank pays when a player sells it back. 0.6 = 60%. Packs return about 88% of their price in card value, so this is the points sink.', min: 0, max: 1 },
   },
   events: {
@@ -262,6 +266,9 @@ class Settings extends EventEmitter {
         cardsEnabled: config.game.cardsEnabled ?? true,
         cardPackPriceMultiplier: config.game.cardPackPriceMultiplier ?? 1,
         cardBuyback: config.game.cardBuyback ?? 0.6,
+        relicsEnabled: config.game.relicsEnabled ?? true,
+        relicCasePriceMultiplier: config.game.relicCasePriceMultiplier ?? 1,
+        relicBuyback: config.game.relicBuyback ?? 0.6,
       },
       events: {
         followPoints: config.game.followPoints ?? 100,

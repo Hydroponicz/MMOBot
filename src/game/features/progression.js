@@ -210,6 +210,8 @@ module.exports = {
     }
     this.goalProgress(entry);
     this.noteStreamActivity(user, entry);
+    // A showcased SoulTrak™ relic counts monsters defeated.
+    if (entry.monster) this.relicKill(user);
   },
 
   // !achievements

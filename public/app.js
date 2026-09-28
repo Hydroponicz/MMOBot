@@ -39,7 +39,7 @@
   };
   const skillIcon = (id) => state.site?.skills.find((s) => s.id === id)?.icon || '✨';
   const feedIcon = (a) =>
-    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒', jackpot: '🎰', death: '💀', achievement: '🏆', task: '📋', trade: '🤝', follow: '💚', sub: '⭐', gift: '🎁', raid: '⚔️', duel: '⚔️', event: '📣', pull: '🃏' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
+    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒', jackpot: '🎰', death: '💀', achievement: '🏆', task: '📋', trade: '🤝', follow: '💚', sub: '⭐', gift: '🎁', raid: '⚔️', duel: '⚔️', event: '📣', pull: '🃏', unbox: '🧰' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
 
   // ---- live activity (SSE) ----------------------------------------------
   const listeners = new Set();
@@ -906,6 +906,7 @@
   };
 
   pages.casino = async () => window.MMOCasino($app, { api, toast, esc, fmt, state, route });
+  pages.relics = async (_, query) => window.MMORelics($app, { api, toast, esc, fmt, state, route, ago, playerLink }, query);
   pages.cards = async (_, query) => window.MMOCards($app, { api, toast, esc, fmt, state, route, ago, playerLink }, query);
 
   pages.leaderboards = async (_, query) => {
@@ -1590,6 +1591,17 @@
         ]),
       },
       {
+        id: 'relics', tab: 'rewards', icon: '🧰', title: 'Relic cases', summary: 'Unbox legendary weapons, trade up, SoulTrak™',
+        body: list([
+          `On the <a href="#/relics">Relic Cases</a> page, spend points to open cases. A reel spins and lands on a relic: a blade, axe, staff, bow, scythe or shield with its own skin. Rarities: Adept (79.9%), Heroic (16%), Mythic (3.2%), Exalted (0.64%) and ★ Legendary Relics (0.26%).`,
+          'Every relic has a <b>float</b> from 0 to 1 that sets its exterior (Forge Fresh, Minimal Wear, Field-Tested, Well-Worn, Battle-Scarred). Lower is worth more.',
+          'The <b>pattern seed</b> changes how it looks: fades roll 80-100%, Gem relics come in phases (Ruby, Sapphire, Black Pearl and Emerald are the rarest), and 1 in 100 marbles, crystals and rune patterns is a rare pattern.',
+          `1 in 10 relics is <b>SoulTrak™</b>: showcase it and it counts every monster you defeat with ${c('fight')}.`,
+          '<b>Trade-up contracts</b> turn 10 relics of one rarity into 1 of the next (5 Exalted become a ★ relic). The new float is the average of your inputs.',
+          `Sell relics back to the bank, list them on the relic market, or trade them with other players. ${c('relics')} in chat shows your inventory.`,
+        ]),
+      },
+      {
         id: 'cards', tab: 'rewards', icon: '🃏', title: 'Creature cards', summary: 'Open packs, grade your pulls, trade with players',
         body: list([
           `On the <a href="#/cards">Cards</a> page, spend points on packs of fantasy creature cards: Scout packs (3 cards), Boosters (5), Elite packs and the Mythic Vault. Three sets, six rarities from Common to Mythic, and any card can come out Holo (3× value) or Gold Foil (10×).`,
@@ -1729,6 +1741,7 @@
         ['give @name <item|points>', 'Give to another player'],
         ['market', 'Player market link'],
         ['cards', 'Your trading cards (packs, grading and trades on the website)'],
+        ['relics', 'Your relics and showcased SoulTrak™ (cases on the website)'],
         ['bounty <item> <points>', 'Post a bounty (bounty cancel)'],
         ['bounties', 'Open bounties'],
         ['guild', 'Your guild (guild create / join / leave / deposit / top)'],

@@ -170,6 +170,43 @@ CREATE TABLE IF NOT EXISTS card_trades (
 CREATE INDEX IF NOT EXISTS idx_card_trades_to ON card_trades(to_id, status);
 CREATE INDEX IF NOT EXISTS idx_card_trades_from ON card_trades(from_id, status);
 
+-- Relic cases: every unboxed relic is its own row (float, pattern seed, SoulTrak kills). status: owned,
+-- listed (on the relic market for price), bank (sold back), used (spent in a trade-up contract).
+CREATE TABLE IF NOT EXISTS relics (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  skin TEXT NOT NULL,
+  float REAL NOT NULL,
+  seed INTEGER NOT NULL,
+  soul INTEGER NOT NULL DEFAULT 0,
+  kills INTEGER NOT NULL DEFAULT 0,
+  origin TEXT NOT NULL DEFAULT 'case',
+  status TEXT NOT NULL DEFAULT 'owned',
+  price INTEGER,
+  listed_at INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_relics_owner ON relics(owner_id, status);
+CREATE INDEX IF NOT EXISTS idx_relics_status ON relics(status, listed_at);
+CREATE INDEX IF NOT EXISTS idx_relics_skin ON relics(skin);
+
+-- Relic trade offers between two players: relics (and points) each way.
+CREATE TABLE IF NOT EXISTS relic_trades (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  to_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  give TEXT NOT NULL,
+  want TEXT NOT NULL,
+  points_give INTEGER NOT NULL DEFAULT 0,
+  points_want INTEGER NOT NULL DEFAULT 0,
+  message TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'open',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_relic_trades_to ON relic_trades(to_id, status);
+CREATE INDEX IF NOT EXISTS idx_relic_trades_from ON relic_trades(from_id, status);
+
 CREATE TABLE IF NOT EXISTS logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts INTEGER NOT NULL,
@@ -499,6 +536,44 @@ function createRepo(db) {
     cardTradesOpenFrom: (userId) => db.prepare("SELECT COUNT(*) AS n FROM card_trades WHERE from_id = ? AND status = 'open'").get(userId).n,
     cardTradesExpire: (before, ts) => db.prepare("UPDATE card_trades SET status = 'expired', updated_at = ? WHERE status = 'open' AND created_at < ?").run(ts, before).changes,
 
+    // Relic cases
+    relicInsert: (ownerId, { skin, float, seed, soul }, origin, ts) =>
+      Number(db.prepare('INSERT INTO relics (owner_id, skin, float, seed, soul, origin, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(ownerId, skin, float, seed, soul ? 1 : 0, origin, ts).lastInsertRowid),
+    relicGet: (id) => db.prepare('SELECT * FROM relics WHERE id = ?').get(id) || null,
+    relicsOf: (ownerId) => db.prepare("SELECT * FROM relics WHERE owner_id = ? AND status IN ('owned', 'listed') ORDER BY id DESC").all(ownerId),
+    relicUpdate(id, fields) {
+      const allowed = ['owner_id', 'status', 'price', 'listed_at', 'kills'];
+      const keys = Object.keys(fields).filter((k) => allowed.includes(k));
+      if (!keys.length) return 0;
+      return db.prepare(`UPDATE relics SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => fields[k]), id).changes;
+    },
+    relicAddKill: (id) => db.prepare('UPDATE relics SET kills = kills + 1 WHERE id = ?').run(id).changes,
+    relicListings: (limit = 300) =>
+      db.prepare("SELECT r.*, u.username AS owner FROM relics r JOIN users u ON u.id = r.owner_id WHERE r.status = 'listed' ORDER BY r.listed_at DESC LIMIT ?").all(limit),
+    relicListingCount: (ownerId) => db.prepare("SELECT COUNT(*) AS n FROM relics WHERE owner_id = ? AND status = 'listed'").get(ownerId).n,
+    relicRecent: (limit = 400) => db.prepare("SELECT r.*, u.username AS owner FROM relics r JOIN users u ON u.id = r.owner_id WHERE r.origin IN ('case', 'tradeup') ORDER BY r.id DESC LIMIT ?").all(limit),
+    relicUnboxed: (skin) => db.prepare('SELECT COUNT(*) AS n FROM relics WHERE skin = ?').get(skin).n,
+    relicsActive: () =>
+      db.prepare("SELECT r.owner_id, r.skin, r.float, r.seed, r.soul, u.username FROM relics r JOIN users u ON u.id = r.owner_id WHERE r.status IN ('owned', 'listed') AND u.banned = 0").all(),
+    relicTradeAdd: ({ fromId, toId, give, want, pointsGive, pointsWant, message }, ts) =>
+      Number(
+        db
+          .prepare('INSERT INTO relic_trades (from_id, to_id, give, want, points_give, points_want, message, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(fromId, toId, JSON.stringify(give), JSON.stringify(want), pointsGive, pointsWant, message, ts, ts).lastInsertRowid
+      ),
+    relicTradeGet: (id) => db.prepare('SELECT * FROM relic_trades WHERE id = ?').get(id) || null,
+    relicTradeSet: (id, status, ts) => db.prepare("UPDATE relic_trades SET status = ?, updated_at = ? WHERE id = ? AND status = 'open'").run(status, ts, id).changes,
+    relicTradesFor: (userId, limit = 40) =>
+      db
+        .prepare(
+          `SELECT t.*, f.username AS from_name, o.username AS to_name FROM relic_trades t
+           JOIN users f ON f.id = t.from_id JOIN users o ON o.id = t.to_id
+           WHERE t.from_id = ? OR t.to_id = ? ORDER BY t.status = 'open' DESC, t.id DESC LIMIT ?`
+        )
+        .all(userId, userId, limit),
+    relicTradesOpenFrom: (userId) => db.prepare("SELECT COUNT(*) AS n FROM relic_trades WHERE from_id = ? AND status = 'open'").get(userId).n,
+    relicTradesExpire: (before, ts) => db.prepare("UPDATE relic_trades SET status = 'expired', updated_at = ? WHERE status = 'open' AND created_at < ?").run(ts, before).changes,
+
     // Notifications
     addNotification: (userId, text, ts) => db.prepare('INSERT INTO notifications (user_id, text, created_at) VALUES (?, ?, ?)').run(userId, text, ts),
     notifications: (userId, limit = 20) => db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT ?').all(userId, limit),
@@ -527,6 +602,7 @@ function createRepo(db) {
         worn: all('SELECT slot, item FROM worn_gear WHERE user_id = ?'),
         plots: all('SELECT plot, crop, planted_at, ready_at FROM farm_plots WHERE user_id = ?'),
         cards: all("SELECT * FROM cards WHERE owner_id = ? AND status IN ('owned', 'listed')"),
+        relics: all("SELECT * FROM relics WHERE owner_id = ? AND status IN ('owned', 'listed')"),
         settings: Object.fromEntries(settingKeys.map((k) => [k, stmt.getSetting.get(k)?.value ?? null])),
       };
     },
@@ -537,6 +613,9 @@ function createRepo(db) {
       for (const r of snap.equipment) db.prepare('INSERT INTO equipment (user_id, slot, tier) VALUES (?, ?, ?)').run(userId, r.slot, r.tier);
       for (const r of snap.worn) db.prepare('INSERT INTO worn_gear (user_id, slot, item) VALUES (?, ?, ?)').run(userId, r.slot, r.item);
       for (const r of snap.plots) db.prepare('INSERT INTO farm_plots (user_id, plot, crop, planted_at, ready_at) VALUES (?, ?, ?, ?, ?)').run(userId, r.plot, r.crop, r.planted_at, r.ready_at);
+      for (const r of snap.relics || []) {
+        db.prepare("UPDATE relics SET owner_id = ?, status = ?, price = ?, listed_at = ? WHERE id = ? AND (owner_id = ? OR status = 'bank')").run(userId, r.status, r.price, r.listed_at, r.id, userId);
+      }
       // Cards taken by a reset come back (unless someone else owns them by now).
       for (const r of snap.cards || []) {
         db.prepare("UPDATE cards SET owner_id = ?, status = ?, price = ?, listed_at = ? WHERE id = ? AND (owner_id = ? OR status = 'bank')").run(userId, r.status, r.price, r.listed_at, r.id, userId);
@@ -566,6 +645,8 @@ function createRepo(db) {
         'DELETE FROM farm_plots WHERE user_id = ?',
         "UPDATE cards SET status = 'bank', price = NULL WHERE owner_id = ? AND status IN ('owned', 'listed')",
         "UPDATE card_trades SET status = 'cancelled' WHERE status = 'open' AND (from_id = ?1 OR to_id = ?1)",
+        "UPDATE relics SET status = 'bank', price = NULL WHERE owner_id = ? AND status IN ('owned', 'listed')",
+        "UPDATE relic_trades SET status = 'cancelled' WHERE status = 'open' AND (from_id = ?1 OR to_id = ?1)",
         "UPDATE users SET points = 0, hp = NULL, mana = NULL, ko_until = 0, stamina = NULL, season_xp = 0, title = '' WHERE id = ?",
       ]) db.prepare(sql).run(userId);
     },

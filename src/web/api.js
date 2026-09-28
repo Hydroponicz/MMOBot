@@ -187,6 +187,40 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   router.post('/cards/trades/:id/decline', requireLogin, marketAct((req) => engine.cardTradeClose(req.user, req.params.id, 'declined')));
   router.post('/cards/trades/:id/cancel', requireLogin, marketAct((req) => engine.cardTradeClose(req.user, req.params.id, 'cancelled')));
 
+  // ---- Relic cases ---------------------------------------------------------------------------
+  router.get('/relics', (req, res) => {
+    const me = req.user ? repo.getUser(req.user.id) : null;
+    res.json({
+      open: engine.cfg.relicsEnabled !== false,
+      catalog: engine.relicCatalog(),
+      points: me ? me.points : null,
+      blocked: me ? engine.marketBlocked(me.id) : null,
+      marketStatus: me ? engine.marketStatus(me.id) : null,
+      inventory: me ? engine.relicInventory(me.id) : null,
+      drops: engine.relicDrops(),
+      top: engine.relicTop(10),
+    });
+  });
+  router.get('/relics/market', (req, res) => res.json({ listings: engine.relicListings(), fee: engine.cfg.marketFee ?? 0.05 }));
+  router.get('/relics/unboxed/:skin', (req, res) => res.json({ skin: req.params.skin, unboxed: engine.relicUnboxedCount(req.params.skin) }));
+  router.get('/relics/player/:name', (req, res) => {
+    const p = engine.relicPlayer(req.params.name);
+    return p ? res.json(p) : res.status(404).json({ error: 'no such player' });
+  });
+  router.get('/relics/trades', requireLogin, (req, res) => res.json({ trades: engine.relicTrades(req.user.id) }));
+  router.post('/relics/open', requireLogin, marketAct((req) => engine.relicOpen(req.user, req.body?.case, req.body?.count ?? 1)));
+  router.post('/relics/sell', requireLogin, marketAct((req) => engine.relicSellBack(req.user, req.body?.ids)));
+  router.post('/relics/showcase', requireLogin, marketAct((req) => engine.relicSetShowcase(req.user, req.body?.id ?? null)));
+  router.post('/relics/tradeup/preview', requireLogin, marketAct((req) => engine.relicTradeUpPreview(req.user, req.body?.ids)));
+  router.post('/relics/tradeup', requireLogin, marketAct((req) => engine.relicTradeUp(req.user, req.body?.ids)));
+  router.post('/relics/:id/list', requireLogin, marketAct((req) => engine.relicList(req.user, req.params.id, req.body?.price)));
+  router.post('/relics/:id/unlist', requireLogin, marketAct((req) => engine.relicUnlist(req.user, req.params.id)));
+  router.post('/relics/:id/buy', requireLogin, marketAct((req) => engine.relicBuy(req.user, req.params.id)));
+  router.post('/relics/trades', requireLogin, marketAct((req) => engine.relicTradeOffer(req.user, req.body || {})));
+  router.post('/relics/trades/:id/accept', requireLogin, marketAct((req) => engine.relicTradeAccept(req.user, req.params.id)));
+  router.post('/relics/trades/:id/decline', requireLogin, marketAct((req) => engine.relicTradeClose(req.user, req.params.id, 'declined')));
+  router.post('/relics/trades/:id/cancel', requireLogin, marketAct((req) => engine.relicTradeClose(req.user, req.params.id, 'cancelled')));
+
   // ---- Guilds -------------------------------------------------------------------------------
   router.get('/guilds', (req, res) => {
     const mine = req.user ? repo.guildOf(req.user.id) : null;
