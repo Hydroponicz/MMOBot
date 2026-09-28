@@ -116,21 +116,71 @@ function handTotal(cards) {
 const isBlackjack = (cards) => cards.length === 2 && handTotal(cards) === 21;
 const cardText = (c) => `${c.rank}${c.suit}`;
 
-// Plays the dealer out and settles. Returns the finished game with status and multiplier
-// (total returned per point bet: win 2, blackjack 2.5, push 1, loss 0).
+// Pairs can be split: same rank, up to 4 hands.
+const canSplitCards = (cards) => cards.length === 2 && cards[0].rank === cards[1].rank;
+const MAX_HANDS = 4;
+
+// Plays the dealer out and settles every hand. A game is { hands: [{ cards, stake, doubled }], dealer }.
+// Each hand gets status and multiplier (total returned per point bet: win 2, blackjack 2.5, push 1,
+// loss 0). A two-card 21 only counts as blackjack on an unsplit hand.
 function settleBlackjack(game, rng) {
-  const g = { ...game, dealer: [...game.dealer], player: [...game.player] };
-  const p = handTotal(g.player);
-  if (p > 21) return { ...g, status: 'bust', multiplier: 0 };
-  if (isBlackjack(g.player) && !g.doubled) {
-    return isBlackjack(g.dealer) ? { ...g, status: 'push', multiplier: 1 } : { ...g, status: 'blackjack', multiplier: 2.5 };
+  const dealer = [...game.dealer];
+  const split = game.hands.length > 1;
+  const natural = (h) => !split && !h.doubled && isBlackjack(h.cards);
+  const live = game.hands.filter((h) => handTotal(h.cards) <= 21 && !natural(h));
+  if (live.length) while (handTotal(dealer) < 17) dealer.push(drawCard(rng));
+  const d = handTotal(dealer);
+  const dealerBj = isBlackjack(game.dealer);
+  const hands = game.hands.map((h) => {
+    const p = handTotal(h.cards);
+    let status;
+    let multiplier;
+    if (p > 21) [status, multiplier] = ['bust', 0];
+    else if (natural(h)) [status, multiplier] = dealerBj ? ['push', 1] : ['blackjack', 2.5];
+    else if (dealerBj) [status, multiplier] = ['lose', 0];
+    else if (d > 21 || p > d) [status, multiplier] = ['win', 2];
+    else if (p === d) [status, multiplier] = ['push', 1];
+    else [status, multiplier] = ['lose', 0];
+    return { ...h, status, multiplier, payout: Math.floor(h.stake * multiplier + 1e-6) };
+  });
+  return { ...game, dealer, hands };
+}
+
+// ---- Crash ----------------------------------------------------------------------------------
+// The multiplier climbs from 1.00x (2x after ~10s, 10x after ~33s) until it crashes. Cash out
+// before the crash to win bet x multiplier. P(crash >= x) = 0.99 / x, so every target returns 99%.
+const CRASH_GROWTH = 0.00007; // per ms
+const CRASH_MAX = 1000;
+function crashPoint(rng) {
+  const x = 0.99 / (1 - rng());
+  return Math.min(CRASH_MAX, Math.max(1, Math.floor(x * 100) / 100));
+}
+const crashAt = (ms) => Math.max(1, Math.floor(Math.exp(CRASH_GROWTH * Math.max(0, ms)) * 100) / 100);
+const crashTime = (multiplier) => Math.log(multiplier) / CRASH_GROWTH; // ms to reach it
+// "2", "2x", "2.5X" -> 2.5
+function parseTarget(arg) {
+  const m = String(arg || '').toLowerCase().match(/^(\d+(?:\.\d+)?)x?$/);
+  if (!m) return null;
+  const t = Math.floor(Number(m[1]) * 100) / 100;
+  return t >= 1.01 && t <= CRASH_MAX ? t : null;
+}
+
+// ---- Mines ----------------------------------------------------------------------------------
+// A 5x5 board with 1-24 mines. Every safe tile raises the multiplier; hit a mine and you lose.
+// Fair odds with a 1% edge: 0.99 x (chance of surviving that many picks)^-1.
+const MINES_TILES = 25;
+function minesMultiplier(mines, picks) {
+  let m = 0.99;
+  for (let i = 0; i < picks; i++) m *= (MINES_TILES - i) / (MINES_TILES - mines - i);
+  return Math.floor(m * 100) / 100;
+}
+function placeMines(rng, count) {
+  const tiles = Array.from({ length: MINES_TILES }, (_, i) => i);
+  for (let i = tiles.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [tiles[i], tiles[j]] = [tiles[j], tiles[i]];
   }
-  while (handTotal(g.dealer) < 17) g.dealer.push(drawCard(rng));
-  const d = handTotal(g.dealer);
-  if (isBlackjack(g.dealer)) return { ...g, status: 'lose', multiplier: 0 };
-  if (d > 21 || p > d) return { ...g, status: 'win', multiplier: 2 };
-  if (p === d) return { ...g, status: 'push', multiplier: 1 };
-  return { ...g, status: 'lose', multiplier: 0 };
+  return tiles.slice(0, count).sort((a, b) => a - b);
 }
 
 // ---- Bets -----------------------------------------------------------------------------------
@@ -163,5 +213,16 @@ module.exports = {
   isBlackjack,
   cardText,
   settleBlackjack,
+  canSplitCards,
+  MAX_HANDS,
+  crashPoint,
+  crashAt,
+  CRASH_GROWTH,
+  crashTime,
+  parseTarget,
+  CRASH_MAX,
+  MINES_TILES,
+  minesMultiplier,
+  placeMines,
   parseBet,
 };

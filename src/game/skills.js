@@ -885,6 +885,13 @@ const SHOP = [
   // Added after the seeds and potions so saved price edits (stored by row) stay on the right items.
   { item: 'oak_shortbow', cost: 500, description: 'A ready-made bow for Archery: !shoot monsters (needs a quiver and arrows). Or !fletch your own from 2 Oak Logs.' },
   { item: 'quiver', cost: 250, description: 'Holds up to 500 arrows (they don\'t take backpack slots). Needed to !fletch arrows and !shoot. Or !fletch one from 2 Rabbit Hides.' },
+  // Arrows, priced per arrow. The better ones have to be fletched.
+  ...ARROW_LIST.slice(0, 5).map(([item, , , , , , attack]) => ({
+    item,
+    cost: ITEMS[item].value * 2,
+    category: 'arrows',
+    description: `Adds +${attack} attack to every shot. They go in your quiver, not your backpack.`,
+  })),
 ];
 
 // Backpack: how many items (total, across all stacks) a player can carry. Upgrade with

@@ -408,7 +408,7 @@ test('rod prices saved before the tool rework still apply', () => {
 test('the shop sells a smithing hammer (500) and a sword (1,000) via !buy', () => {
   const { repo, say } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
-  assert.match(say('!shop'), /🔨 Smithing Hammer 500, 🗡️ Bronze Sword 1,000, 🔪 Skinning Knife 500, 🟫 Farm Plot 750, 🏹 Oak Shortbow 500, 🧺 Quiver 250 pts, potions from 150 \(!buy minor health potion\), plus seeds/);
+  assert.match(say('!shop'), /🔨 Smithing Hammer 500, 🗡️ Bronze Sword 1,000, 🔪 Skinning Knife 500, 🟫 Farm Plot 750, 🏹 Oak Shortbow 500, 🧺 Quiver 250 pts, potions from 150 \(!buy minor health potion\), arrows from 6 each \(!buy arrows 50\), plus seeds/);
   assert.match(say('!buy hammer'), /Smithing Hammer costs 500 pts, you have 5/);
   repo.addPoints(u.id, 2000);
   assert.match(say('!buy hammer'), /bought 🔨 Smithing Hammer for 500 pts! Now try !smith bronze sword/);
@@ -628,7 +628,14 @@ test('fletching: arrows (oak + feather + iron ingot), bows and a quiver; archery
   // Out of arrows: !shoot says so, and !fight falls back to a sword.
   repo.removeItem(u.id, 'iron_arrows', 9);
   tick();
-  assert.match(say('!shoot'), /your quiver is empty! !fletch arrows/);
+  assert.match(say('!shoot'), /your quiver is empty! !buy arrows 50 or !fletch arrows/);
+  // Buying arrows: 10 by default, into the quiver.
+  assert.match(say('!buy arrows'), /bought 🎯 10x Iron Arrows for 60 pts! 🧺 Quiver: 10\/500/);
+  assert.match(say('!buy steel arrows 25'), /bought 🎯 25x Steel Arrows for 400 pts!/);
+  assert.match(say('!buy arrows 500'), /quiver only has room for 465 more arrows/);
+  assert.match(say('!inv'), /\(2\/10\)/, 'bought arrows skip the backpack too');
+  repo.removeItem(u.id, 'iron_arrows', 10);
+  repo.removeItem(u.id, 'steel_arrows', 25);
   repo.addItem(u.id, 'bronze_sword', 1);
   assert.match(say('!fight chicken'), /🗡️ you defeated a 🐔 Chicken \(equipped your Bronze Sword\)/);
   assert.match(say('!targets bow'), /your quiver is empty/);
@@ -968,10 +975,106 @@ test('!bj: deal, hit, stand, double; hand survives between commands', () => {
   assert.match(say('!bj 100'), /🃏 You: 10♠ 6♠ \(16\) \| Dealer: 9♠ 🂠 \(9\) — !hit, !stand or !double/);
   assert.equal(repo.getUser(u.id).points, 900, 'stake taken up front');
   assert.match(say('!bj 100'), /You: 10♠ 6♠/, 'shows the hand in play instead of dealing again');
-  assert.match(say('!hit'), /You: 10♠ 6♠ 4♠ \(20\).*— !hit, !stand$/);
+  assert.match(say('!hit'), /You: 10♠ 6♠ 4♠ \(20\).*— !hit or !stand$/);
   assert.match(say('!stand'), /Dealer: 9♠ 7♠ K♠ \(26\) — you WIN 200 pts\. Balance: 1,100/);
   assert.match(say('!stand'), /no hand in play/);
   assert.equal(engine.blackjackState(u).status, 'none');
+});
+
+test('blackjack: split a pair into two hands, each settled against the dealer', () => {
+  const r = (rank) => (['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'].indexOf(rank) + 0.5) / 13;
+  const s = 0.1; // spades
+  // Player 8 8, dealer 10 7. Split: hand 1 gets 3 (11), hand 2 gets 10 (18).
+  // Hand 1: double -> 10 (21). Hand 2: stand. Dealer stands on 17: hand 1 wins 2x on 200, hand 2 wins 2x on 100.
+  const { repo, engine, say } = setup({ rolls: [r('8'), s, r('8'), s, r('10'), s, r('7'), s, r('3'), s, r('10'), s, r('10'), s] });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addPoints(u.id, 995); // 1,000
+  assert.match(say('!bj 100'), /You: 8♠ 8♠ \(16\) \| Dealer: 10♠ 🂠 \(10\) — !hit, !stand, !double or !split/);
+  assert.match(say('!split'), /🃏 👉Hand 1: 8♠ 3♠ \(11\) \| Hand 2: 8♠ 10♠ \(18\) \| Dealer: 10♠ 🂠 \(10\) — hand 1: !hit, !stand or !double/);
+  assert.equal(repo.getUser(u.id).points, 800, 'a second stake for the split');
+  assert.match(say('!double'), /👉Hand 2: 8♠ 10♠ \(18\)/);
+  assert.equal(engine.blackjackState(u).hands[0].stake, 200);
+  assert.match(say('!stand'), /Hand 1: 8♠ 3♠ 10♠ \(21\) ✅ \| Hand 2: 8♠ 10♠ \(18\) ✅ \| Dealer: 10♠ 7♠ \(17\) — WON 600 pts total\. Balance: 1,300/);
+  assert.match(say('!split'), /no hand in play/);
+});
+
+test('blackjack: only pairs split, and old saved hands still load', () => {
+  const r = (rank) => (['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'].indexOf(rank) + 0.5) / 13;
+  const { repo, engine, say } = setup({ rolls: [r('8'), 0.1, r('9'), 0.1, r('10'), 0.1, r('7'), 0.1] });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addPoints(u.id, 995);
+  say('!bj 100');
+  assert.match(say('!split'), /you can only split a pair/);
+  // A hand saved by the previous version (single hand shape).
+  const bob = repo.upsertUser({ kickUserId: '2', username: 'Bob' });
+  repo.setSetting(`bj:${bob.id}`, { stake: 50, player: [{ rank: '9', suit: '♠' }, { rank: '7', suit: '♥' }], dealer: [{ rank: '10', suit: '♣' }, { rank: '8', suit: '♦' }], doubled: false });
+  assert.equal(engine.blackjackState(bob).playerTotal, 16);
+  assert.match(engine.handleChat({ kickUserId: '2', username: 'Bob', content: '!stand' }).reply, /dealer wins, lost 50/);
+});
+
+test('crash: chat cashes out at a target; the site runs a live round', () => {
+  // crash point = 0.99 / (1 - roll): roll 0.505 -> 2.0x, roll 0 -> 1.00x (instant crash)
+  const { repo, engine, say, tick } = setup({ rolls: [0.505, 0.0, 0.8] });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addPoints(u.id, 995);
+  assert.match(say('!crash 100 2x'), /🚀 cashed out at 2x before it crashed at 2x: WON 200 pts \(2x\)! 💰 Balance: 1,100/);
+  tick(6);
+  assert.match(say('!crash 1.5x 100'), /🚀 crashed at 1x before 1.5x: lost 100\. Balance: 1,000/);
+  tick(6);
+  assert.match(say('!crash 100 0.5x'), /cash out at 1.01x/);
+
+  // Live: roll 0.8 -> crash at 4.95x. Cash out after 10s (~2x).
+  const start = engine.crashStart(u, '100', '');
+  assert.equal(start.status, 'running');
+  assert.equal(repo.getUser(u.id).points, 900);
+  tick(10);
+  const out = engine.crashCashout(u);
+  assert.equal(out.status, 'cashed');
+  assert.equal(out.multiplier, 2.01);
+  assert.equal(out.payout, 201);
+  assert.equal(out.crash, 4.95);
+  assert.equal(engine.crashState(u).status, 'none');
+});
+
+test('crash: the live round settles itself at the crash or the auto target', () => {
+  const { repo, engine, tick } = setup({ rolls: [0.8, 0.8] });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addPoints(u.id, 995);
+  engine.crashStart(u, '100', '');
+  tick(60); // 4.95x crash comes at ~22.8s
+  const lost = engine.crashState(u);
+  assert.equal(lost.status, 'crashed');
+  assert.equal(lost.payout, 0);
+  assert.equal(repo.getUser(u.id).points, 895);
+  tick(6);
+  engine.crashStart(u, '100', '3x');
+  tick(120);
+  const won = engine.crashState(u);
+  assert.equal(won.status, 'cashed');
+  assert.equal(won.multiplier, 3);
+  assert.equal(repo.getUser(u.id).points, 1095);
+});
+
+test('mines: reveal gems for a rising multiplier, cash out, or hit a mine', () => {
+  const { repo, engine, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addPoints(u.id, 995);
+  const casino = require('../src/game/casino');
+  assert.match(say('!mines 100 3'), /💣 Mines \(3 on 25 tiles, bet 100\):\. !pick 1-25 for 1.12x\./);
+  const { mines } = repo.getSetting(`mines:${u.id}`);
+  const safe = [...Array(25).keys()].filter((t) => !mines.includes(t));
+  assert.match(say(`!pick ${safe[0] + 1}`), new RegExp(`💎 ${safe[0] + 1}\\. !pick 1-25 for 1.28x\\. Cash out: 112 pts \\(1.12x\\)`));
+  assert.match(say(`!pick ${safe[0] + 1}`), /already revealed/);
+  assert.match(say('!cashout'), /💎 cashed out at 1.12x: WON 112 pts!/);
+  assert.equal(repo.getUser(u.id).points, 1012);
+  tick(6);
+  say('!mines 100 24');
+  const board = repo.getSetting(`mines:${u.id}`);
+  const mine = board.mines[0];
+  assert.match(say(`!pick ${mine + 1}`), new RegExp(`💥 BOOM! Tile ${mine + 1} was a mine\\. Lost 100`));
+  assert.equal(repo.getUser(u.id).points, 912);
+  assert.equal(casino.minesMultiplier(24, 1), 24.75);
+  assert.match(say('!cashout'), /no board in play/);
 });
 
 test('blackjack pays 3:2 and doubling doubles the stake', () => {

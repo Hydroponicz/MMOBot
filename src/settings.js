@@ -30,6 +30,8 @@ const COMMANDS = [
   'roulette',
   'plinko',
   'blackjack',
+  'crash',
+  'mines',
   ...TOOL_SKILLS.map((id) => SKILLS[id].tool.id),
   'stats',
   'inv',

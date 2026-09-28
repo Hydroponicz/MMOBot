@@ -138,6 +138,8 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       plinko: { rows: casino.PLINKO_ROWS, risks: casino.PLINKO_RISKS },
       balance: req.user ? repo.getUser(req.user.id).points : null,
       blackjack: req.user ? engine.blackjackState(req.user) : null,
+      crash: { growth: casino.CRASH_GROWTH, max: casino.CRASH_MAX, state: req.user ? engine.crashState(req.user) : null },
+      mines: { tiles: casino.MINES_TILES, table: Array.from({ length: 24 }, (_, i) => casino.minesMultiplier(i + 1, 1)), state: req.user ? engine.minesState(req.user) : null },
     });
   });
   const play = (fn) => [
@@ -154,6 +156,14 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   router.post('/casino/plinko', ...play((req) => engine.playPlinko(req.user, betOf(req), String(req.body?.risk || 'medium'))));
   router.post('/casino/blackjack', ...play((req) => engine.blackjackStart(req.user, betOf(req))));
   router.post('/casino/blackjack/:action', ...play((req) => engine.blackjackAction(req.user, req.params.action)));
+  // Crash: start a live round (optional auto cash-out), poll it, cash out.
+  router.post('/casino/crash', ...play((req) => engine.crashStart(req.user, betOf(req), req.body?.target ?? '')));
+  router.get('/casino/crash', ...play((req) => engine.crashState(req.user)));
+  router.post('/casino/crash/cashout', ...play((req) => engine.crashCashout(req.user)));
+  // Mines: start a board, reveal tiles (0-24), cash out.
+  router.post('/casino/mines', ...play((req) => engine.minesStart(req.user, betOf(req), req.body?.mines ?? 3)));
+  router.post('/casino/mines/reveal', ...play((req) => engine.minesReveal(req.user, req.body?.tile)));
+  router.post('/casino/mines/cashout', ...play((req) => engine.minesCashout(req.user)));
 
   // ---- Admin -------------------------------------------------------------
 

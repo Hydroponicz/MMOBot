@@ -453,11 +453,11 @@
             ${i.attack ? `<p class="shop-stat">⚔️ +${i.attack} attack · needs ${esc(i.wieldSkill || 'Swords')} ${i.level}</p>` : ''}
             ${i.item === 'farm_plot' && loggedIn ? `<p class="shop-stat">You own ${plots}/100 plots</p>` : ''}
             <div class="shop-buy">
-              <span class="shop-price">${fmt(i.cost)} pts</span>
-              ${(i.item === 'farm_plot' || i.category === 'potions') && loggedIn ? `<input type="number" class="qty" id="qty-${esc(i.item)}" value="1" min="1" max="100" aria-label="How many">` : ''}
+              <span class="shop-price">${fmt(i.cost)} pts${i.category === 'arrows' ? ' <small>each</small>' : ''}</span>
+              ${(i.item === 'farm_plot' || i.category === 'potions' || i.category === 'arrows') && loggedIn ? `<input type="number" class="qty" id="qty-${esc(i.item)}" value="${i.category === 'arrows' ? 50 : 1}" min="1" max="${i.category === 'arrows' ? 500 : 100}" aria-label="How many">` : ''}
               ${buyBtn(i, i.item === 'farm_plot' && plots >= 100)}
             </div>
-            <p class="muted" style="font-size:.8rem;margin:8px 0 0">In chat: <code>!buy ${esc(i.item === 'farm_plot' ? 'plot' : i.category === 'potions' ? i.name.toLowerCase() : i.name.split(' ').pop().toLowerCase())}</code></p>
+            <p class="muted" style="font-size:.8rem;margin:8px 0 0">In chat: <code>!buy ${esc(i.item === 'farm_plot' ? 'plot' : i.category === 'potions' ? i.name.toLowerCase() : i.category === 'arrows' ? `${i.name.toLowerCase()} 50` : i.name.split(' ').pop().toLowerCase())}</code></p>
           </section>`;
     const allSeeds = items.filter((i) => i.category === 'seeds');
     // Show what you can plant now plus the next few unlocks; "Show all" reveals the rest.
@@ -466,6 +466,7 @@
     const seeds = shopShowAllSeeds ? allSeeds : [...allSeeds.filter((i) => i.level <= cap), ...locked.slice(0, 5)];
     const top = items.filter((i) => !i.category || i.category === 'farming');
     const potions = items.filter((i) => i.category === 'potions');
+    const arrows = items.filter((i) => i.category === 'arrows');
     $app.innerHTML = `
       <div class="panel-head" style="margin-bottom:6px"><h1 style="margin:0">🛒 Shop</h1>${
         loggedIn
@@ -480,6 +481,10 @@
       <h2 style="margin:28px 0 6px">🧪 Potions</h2>
       <p class="muted">Fights cost HP. At 0 you're knocked out until you're back at full HP (24h), or until you drink a health potion. <code>!drink</code> in chat drinks the best one for you. Or brew your own from farmed crops with <code>!brew</code>.</p>
       <div class="shop-grid">${potions.map(card).join('')}</div>
+
+      <h2 style="margin:28px 0 6px">🎯 Arrows</h2>
+      <p class="muted">For <code>!shoot</code> with a bow. Each fight uses one arrow; better arrows hit harder. They go in your 🧺 Quiver (holds 500, doesn't use backpack slots), so buy a quiver first. Higher tiers must be fletched: <code>!fletch arrows</code>.</p>
+      <div class="shop-grid">${arrows.map(card).join('')}</div>
 
       <h2 style="margin:28px 0 6px">🌱 Seeds</h2>
       <p class="muted">One seed per plot: <code>!plant carrot</code>, then <code>!harvest</code> when it's grown (1 crop per plot). Seeds don't take backpack space.${loggedIn ? ` Your Farming level: <b>${farmingLevel}</b>.` : ''}</p>
@@ -692,6 +697,7 @@
             <dt><code>!hp</code></dt><dd>Show your health and mana</dd>
             <dt><code>!drink [potion]</code></dt><dd>Drink a potion (revives you if knocked out)</dd>
             <dt><code>!targets [bow]</code></dt><dd>The best monsters for you to fight right now</dd>
+            <dt><code>!buy arrows 50</code></dt><dd>Buy arrows for your quiver</dd>
             <dt><code>!shoot [monster]</code></dt><dd>Fight with a bow (uses 1 arrow)</dd>
             <dt><code>!fletch &lt;item&gt;</code></dt><dd>Make arrows, bows or a quiver (<code>!quiver</code> shows your arrows)</dd>
             <dt><code>!monsters</code></dt><dd>Which monsters suit you (⚪ too easy to ☠️ deadly)</dd>

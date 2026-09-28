@@ -450,3 +450,42 @@ tr.locked td { opacity: 0.55; }
 .mchip.r-deadly { border-color: #7f1d1d; background: rgba(127, 29, 29, 0.25); }
 .kind-ammo { background: rgba(234, 179, 8, 0.15); color: var(--fletching); }
 .kind-weapon { background: rgba(248, 113, 113, 0.15); color: var(--swords); }
+
+/* Blackjack split hands */
+.bj-hands { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.bj-hand { padding: 8px; border-radius: 12px; border: 2px solid transparent; }
+.bj-hand.active { border-color: var(--accent); background: rgba(83, 252, 24, 0.08); }
+.bj-hand .cards .card { width: 48px; height: 70px; }
+.bj-res { margin-left: 4px; font-weight: 800; }
+.bj-hand.bust, .bj-hand.lose { opacity: 0.7; }
+
+/* Crash */
+.crash { position: relative; width: 100%; max-width: 560px; aspect-ratio: 5 / 3; border-radius: 16px; overflow: hidden; background: radial-gradient(circle at 20% 100%, rgba(83, 252, 24, 0.15), transparent 60%), linear-gradient(180deg, #0b0e11, #111820); border: 1px solid var(--border); }
+.crash-graph { position: absolute; inset: 0; width: 100%; height: 100%; }
+.crash-rocket { position: absolute; left: 0; top: 96%; transform: translate(-50%, -50%) rotate(-20deg); font-size: 2rem; transition: left 0.05s linear, top 0.05s linear; filter: drop-shadow(0 0 10px rgba(83, 252, 24, 0.8)); }
+.crash-mult { position: absolute; top: 28%; left: 0; right: 0; text-align: center; font-size: clamp(2.5rem, 9vw, 4.5rem); font-weight: 900; color: #fff; font-variant-numeric: tabular-nums; text-shadow: 0 0 20px rgba(83, 252, 24, 0.4); }
+.crash-mult.win { color: var(--accent); }
+.crash-mult.boom { color: var(--danger); animation: shake 0.4s; }
+@keyframes shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+.crash-sub { position: absolute; top: 55%; left: 0; right: 0; text-align: center; color: var(--muted); font-weight: 700; }
+.crash-history { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+.crash-history span { font-size: 0.75rem; font-weight: 800; padding: 2px 8px; border-radius: 99px; background: rgba(255, 92, 122, 0.15); color: var(--danger); }
+.crash-history span.hi { background: rgba(83, 252, 24, 0.15); color: var(--accent); }
+.big-btn.cashout { background: var(--gold); color: #0b0e11; animation: live-pulse 1s ease-in-out infinite; }
+
+/* Mines */
+.mines-board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; width: 100%; max-width: 420px; }
+.tile { aspect-ratio: 1; border-radius: 12px; border: 0; background: linear-gradient(180deg, #2b3542, #1c232c); box-shadow: 0 4px 0 #0f141a; font-size: 1.8rem; cursor: pointer; transition: transform 0.1s, background 0.2s; }
+.tile:not([disabled]):hover { transform: translateY(-2px); background: linear-gradient(180deg, #354152, #232c37); }
+.tile[disabled] { cursor: default; }
+.tile.flip { animation: flip 0.3s; }
+@keyframes flip { 50% { transform: scale(0.85); } }
+.tile.gem { background: linear-gradient(180deg, #14532d, #0f3d22); box-shadow: 0 0 12px rgba(83, 252, 24, 0.35), 0 4px 0 #0a2615; }
+.tile.mine { background: #3b1219; box-shadow: 0 4px 0 #1f0a0e; }
+.tile.mine.hit { background: #b91c1c; animation: shake 0.4s; }
+.tile.dim { opacity: 0.45; }
+.mines-info { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px; }
+.mines-info div { background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px; text-align: center; }
+.mines-info b { display: block; font-size: 1.3rem; color: var(--accent); }
+.mines-info span { font-size: 0.75rem; }
+.shop-price small { font-size: 0.65em; color: var(--muted); white-space: nowrap; }
