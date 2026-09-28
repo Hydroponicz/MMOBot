@@ -363,7 +363,7 @@ module.exports = {
       text = `💨 The giant ${raid.name} escaped${total ? ` with ${fmt(raid.hp)} HP left` : ''}! Better luck next time.`;
       this.emit('activity', { id: 0, kind: 'raid', username: '', text: `The giant ${raid.name} escaped!`, created_at: now });
     }
-    this.emit('raid', { active: false, result: won ? 'won' : 'escaped', name: raid.name, icon: raid.icon });
+    this.emit('raid', { active: false, world: !!raid.world, result: won ? 'won' : 'escaped', name: raid.name, icon: raid.icon });
     if (!finisher) this.announce(text);
     return text;
   },

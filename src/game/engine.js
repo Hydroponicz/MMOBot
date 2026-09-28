@@ -42,6 +42,8 @@ const {
   GATHER_HINT,
   unlockName,
 } = require('./features/shared');
+const { RACES } = require('./appearance');
+const { QUESTS, PETS, RACE_ITEMS } = require('./content');
 
 class GameEngine extends EventEmitter {
   // settings: a Settings instance (live, admin-editable). Tests may pass a plain { game, all } object.
@@ -371,6 +373,11 @@ class GameEngine extends EventEmitter {
       staminaMax: this.cfg.staminaMax,
       staminaMinutes: this.cfg.staminaMinutes,
       races: this.appearanceOptions().races,
+      quests: QUESTS.map((q) => ({ name: q.name, icon: q.icon, reward: q.reward, title: q.title, steps: q.steps.map((s) => `${s.text} ×${s.qty}`) })),
+      pets: PETS.map((p) => ({ name: p.name, icon: p.icon, skill: SKILLS[p.skill].name })),
+      raceItems: RACE_ITEMS.map((r) => ({ race: RACES[r.race].name, name: ITEMS[r.item].name, icon: ITEMS[r.item].icon, skill: SKILLS[r.skill].name, level: r.level })),
+      prestigeLevel: this.cfg.prestigeLevel ?? 100,
+      marketFee: this.cfg.marketFee ?? 0.05,
       raceChangeDays: this.cfg.raceChangeDays ?? 30,
       racePerks: this.cfg.racePerks !== false,
       chatPoints: this.cfg.chatPoints,
@@ -404,6 +411,7 @@ class GameEngine extends EventEmitter {
             seedCost: r.seed ? this.seedPrice(r) : undefined,
             loot: r.loot ? r.loot.map((i) => ({ item: ITEMS[i].name, icon: ITEMS[i].icon, value: this.sellValue(i) })) : undefined,
             stats: r.item && (ITEMS[r.item].gear || ITEMS[r.item].ammo) ? { slot: ITEMS[r.item].slot, attack: ITEMS[r.item].attack, defence: ITEMS[r.item].defence, wear: ITEMS[r.item].level, skill: ITEMS[r.item].wieldSkill, ammo: !!ITEMS[r.item].ammo } : undefined,
+            race: r.race ? RACES[r.race].name : undefined,
             inputs: r.inputs
               ? Object.entries(r.inputs).map(([i, q]) => ({ qty: q, item: ITEMS[i].name, icon: ITEMS[i].icon }))
               : undefined,

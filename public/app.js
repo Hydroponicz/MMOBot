@@ -58,18 +58,32 @@
     if (b && b.until > Date.now()) {
       parts.push(`<div class="banner boost">⚡ <b>${b.multiplier}x ${b.kind === 'xp' ? 'XP' : 'chat points'}</b> for everyone · ${Math.max(1, Math.ceil((b.until - Date.now()) / 60000))}m left${b.reason ? ` <span class="muted">(${esc(b.reason)})</span>` : ''}</div>`);
     }
-    const r = live.raid;
-    if (r && r.active) {
+    for (const r of [live.raid, live.world]) {
+      if (!r || !r.active) continue;
       const pct = Math.max(0, Math.round((r.hp / r.maxHp) * 100));
-      parts.push(`<div class="banner raid"><div class="banner-row"><span>${r.icon} <b>RAID: ${esc(r.name)}</b> (level ${r.level}) · type <code>!attack</code> in chat</span>
-        <span>${fmt(r.hp)} / ${fmt(r.maxHp)} HP · ${r.fighters} fighting · ${Math.max(0, Math.ceil((r.endsAt - Date.now()) / 60000))}m</span></div>
+      const ms = Math.max(0, r.endsAt - Date.now());
+      const left = r.world ? `${Math.ceil(ms / 86_400_000)}d left` : `${Math.ceil(ms / 60000)}m`;
+      parts.push(`<div class="banner raid${r.world ? ' world' : ''}"><div class="banner-row"><span>${r.icon} <b>${r.world ? 'WORLD BOSS' : 'RAID'}: ${esc(r.name)}</b> (level ${r.level}) · type <code>!attack</code> in chat</span>
+        <span>${fmt(r.hp)} / ${fmt(r.maxHp)} HP · ${r.fighters} fighting · ${left}</span></div>
+        <div class="raid-bar"><span style="width:${pct}%"></span></div></div>`);
+    }
+    const g = live.goal;
+    if (g && !g.done) {
+      const pct = Math.min(100, Math.round((g.progress / g.target) * 100));
+      parts.push(`<div class="banner goal"><div class="banner-row"><span>🎯 <b>Channel goal:</b> ${esc(g.label)}</span><span>${fmt(g.progress)} / ${fmt(g.target)}</span></div>
         <div class="raid-bar"><span style="width:${pct}%"></span></div></div>`);
     }
     el.innerHTML = parts.join('');
     el.hidden = !parts.length;
   }
   es.addEventListener('raid', (e) => {
-    live.raid = JSON.parse(e.data);
+    const r = JSON.parse(e.data);
+    if (r.world) live.world = r;
+    else live.raid = r;
+    drawBanner();
+  });
+  es.addEventListener('goal', (e) => {
+    live.goal = JSON.parse(e.data);
     drawBanner();
   });
   es.addEventListener('boost', (e) => {
@@ -83,8 +97,10 @@
     const el = document.getElementById('account');
     if (state.me) {
       el.innerHTML = `
+        <div class="bell-wrap"><button class="bell" id="bell" aria-label="Notifications">🔔<span class="bell-count" id="bell-count" hidden></span></button><div class="bell-menu" id="bell-menu" hidden></div></div>
         <a class="me-link" href="#/me">${avatar(state.me.avatarUrl, state.me.username, 'sm')}<span>${esc(state.me.username)}</span></a>
         <button class="btn btn-sm" id="logout">Log out</button>`;
+      setupBell();
       el.querySelector('#logout').onclick = async () => {
         await fetch('/auth/logout', { method: 'POST' });
         state.me = null;
@@ -99,6 +115,56 @@
     }
     document.getElementById('nav-admin').hidden = !state.isAdmin;
     document.getElementById('nav-dev').hidden = !state.devMode;
+  }
+
+  // Notification bell: saved notices (market sales, pets, quests) plus live reminders.
+  let bellTimer = null;
+  function setupBell() {
+    const btn = document.getElementById('bell');
+    const menu = document.getElementById('bell-menu');
+    const count = document.getElementById('bell-count');
+    let data = null;
+    const load = async () => {
+      if (!state.me) return;
+      try {
+        data = await api('/me/notifications');
+      } catch {
+        return;
+      }
+      count.hidden = !data.unread;
+      count.textContent = data.unread > 9 ? '9+' : data.unread;
+      if (!menu.hidden) draw();
+    };
+    const draw = () => {
+      const live = data.live.map((n) => `<li class="${n.info ? 'info' : ''}"><span>${n.icon}</span><span>${n.link ? `<a href="${n.link}">${esc(n.text)}</a>` : esc(n.text)}</span></li>`).join('');
+      const saved = data.saved.map((n) => `<li class="${n.read ? '' : 'unread'}"><span>•</span><span>${esc(n.text)} <small class="muted">${ago(n.at)}</small></span></li>`).join('');
+      menu.innerHTML = live || saved ? `<ul>${live}${saved}</ul>` : '<p class="muted" style="margin:8px">Nothing new.</p>';
+    };
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      menu.hidden = !menu.hidden;
+      if (!menu.hidden) {
+        if (!data) await load();
+        draw();
+        if (data.saved.some((n) => !n.read)) {
+          api('/me/notifications/read', { method: 'POST', body: {} }).catch(() => {});
+          data.saved.forEach((n) => (n.read = true));
+          data.unread = data.live.filter((n) => !n.info).length;
+          count.hidden = !data.unread;
+          count.textContent = data.unread;
+        }
+      }
+    };
+    if (!setupBell.bound) {
+      setupBell.bound = true;
+      document.addEventListener('click', (e) => {
+        const m = document.getElementById('bell-menu');
+        if (m && !e.target.closest('.bell-wrap')) m.hidden = true;
+      });
+    }
+    clearInterval(bellTimer);
+    bellTimer = setInterval(load, 60_000);
+    load();
   }
 
   function setActiveNav(route) {
@@ -216,6 +282,8 @@
             <h1>${esc(p.username)}${p.title ? ` <span class="char-titletext">${esc(p.title)}</span>` : ''}</h1>
             <div class="char-badges">
               ${p.appearance ? `<span class="badge" title="${esc([...p.appearance.pros, ...p.appearance.cons].join(' · '))}">${p.appearance.raceIcon} ${esc(p.appearance.raceName)}</span>` : ''}
+              ${p.appearance?.stars ? `<span class="badge gold" title="${esc(Object.entries(p.appearance.prestige || {}).map(([k, n]) => `${k} ×${n}`).join(', '))}">⭐ Prestige ${p.appearance.stars}</span>` : ''}
+              ${p.appearance?.pet ? `<span class="badge" title="Pet">${p.appearance.pet} ${esc((p.appearance.wardrobe?.pet || []).find((x) => x.icon === p.appearance.pet)?.name || 'Pet')}</span>` : ''}
               ${isMe ? '<a class="badge" href="#/customize">🎨 Customize</a>' : ''}
               ${p.subscriber ? '<span class="badge gold">⭐ Subscriber</span>' : ''}
               <span class="badge gold">💰 ${fmt(p.points)} points</span>
@@ -238,6 +306,7 @@
       ${equipmentPanel(p.combat, isMe)}
       ${farmPanel(p.farm, isMe)}
       ${museumPanel(p.museum)}
+      ${questsPanel(p.quests, isMe)}
       ${progressPanels(p.progression, isMe)}
 
       <div class="grid grid-2" style="margin-top:16px">
@@ -343,6 +412,31 @@
         ${monsterChips(c.monsters, c.ratedWith)}
         <p class="muted" style="margin-bottom:0;font-size:.85rem">Buy a sword or bow in the <a href="#/shop">shop</a>, or <code>!smith</code> / <code>!fletch</code> your own, then <code>!fight</code> (or <code>!shoot</code> with a bow, a quiver and arrows). <code>!targets</code> shows your best fights. Your best weapon is equipped automatically when you fight. Fights cost HP; monsters above your level hit much harder.</p>
       </section>`;
+  }
+
+  // Quest chains: the active one in full, the rest as a checklist.
+  function questsPanel(quests, isMe) {
+    if (!quests) return '';
+    const done = quests.filter((q) => q.status === 'done').length;
+    const active = quests.find((q) => q.status === 'active');
+    return `<section class="panel" style="margin-top:16px">
+      <div class="panel-head"><h2>📜 Quests</h2><span class="muted">${done}/${quests.length} done</span></div>
+      ${
+        active
+          ? `<div class="quest-active"><h3 style="margin:0 0 4px">${active.icon} ${esc(active.name)}</h3><p class="muted" style="margin:0 0 10px">${esc(active.intro)}</p>
+              <ul class="tasks">${active.steps
+                .map(
+                  (s) => `<li class="${s.have >= s.qty ? 'done' : ''}"><span>${esc(s.text)}</span><span>${Math.min(s.have, s.qty)}/${s.qty}${s.have >= s.qty ? ' ✅' : ''}</span>
+                    <div class="task-bar"><span style="width:${Math.min(100, Math.round((s.have / s.qty) * 100))}%"></span></div></li>`
+                )
+                .join('')}</ul>
+              <p class="muted" style="margin:8px 0 0;font-size:.85rem">Reward: ${fmt(active.reward)} pts + the title “${esc(active.title)}”.${isMe ? ' <code>!quest</code> shows this in chat.' : ''}</p></div>`
+          : '<p>🏆 Every quest is done!</p>'
+      }
+      <div class="quest-list">${quests
+        .map((q) => `<span class="badge${q.status === 'done' ? ' gold' : ''}" title="${esc(q.intro)}">${q.status === 'done' ? '✅' : q.status === 'active' ? '▶️' : '🔒'} ${q.icon} ${esc(q.name)}</span>`)
+        .join('')}</div>
+    </section>`;
   }
 
   // Daily tasks (your own page) and achievements.
@@ -456,7 +550,7 @@
   function staminaText(p) {
     const s = p.stamina;
     if (!s) return '';
-    const pips = `<span class="stamina-pips">${Array.from({ length: s.max }, (_, i) => `<i class="${i < s.charges ? 'on' : ''}"></i>`).join('')}</span>`;
+    const pips = s.max <= 10 ? `<span class="stamina-pips">${Array.from({ length: s.max }, (_, i) => `<i class="${i < s.charges ? 'on' : ''}"></i>`).join('')}</span>` : '';
     const left = s.refillAt ? Math.max(0, Math.ceil((s.refillAt - Date.now()) / 1000)) : 0;
     const wait = left >= 60 ? `${Math.floor(left / 60)}m ${left % 60}s` : `${left}s`;
     return `${pips} ⚡ Stamina <b>${s.charges}/${s.max}</b>${left ? ` · full again in ${wait}` : ' · full'}`;
@@ -688,6 +782,109 @@
     return pages.player([state.me.username]);
   };
 
+  // ---- Player market ------------------------------------------------------------------------
+  pages.market = async (_, query) => {
+    const d = await api('/market');
+    const loggedIn = d.points !== null;
+    let q = (query?.get('q') || '').toLowerCase();
+    const mine = (l) => state.me && l.seller === state.me.username;
+    const rows = () => {
+      const list = d.listings.filter((l) => !q || l.name.toLowerCase().includes(q) || l.seller.toLowerCase().includes(q));
+      if (!list.length) return `<div class="empty"><span class="ic">🏪</span>${q ? 'Nothing matches.' : 'Nothing for sale yet. Be the first to list something!'}</div>`;
+      return `<div class="table-wrap"><table>
+        <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Each</th><th class="num">Shop value</th><th>Seller</th><th></th></tr></thead>
+        <tbody>${list
+          .map(
+            (l) => `<tr><td>${l.icon} ${esc(l.name)}</td><td class="num">${fmt(l.qty)}</td><td class="num"><b>${fmt(l.price)}</b> pts</td><td class="num">${fmt(l.each)}</td>
+              <td class="num muted">${fmt(l.value)}</td><td><a href="${playerLink(l.seller)}">${esc(l.seller)}</a></td>
+              <td>${
+                !loggedIn
+                  ? ''
+                  : mine(l)
+                    ? `<button class="btn btn-sm" data-cancel="${l.id}">Cancel</button>`
+                    : `<button class="btn btn-primary btn-sm" data-buy="${l.id}" ${d.points < l.price ? 'disabled title="Not enough points"' : ''}>Buy</button>`
+              }</td></tr>`
+          )
+          .join('')}</tbody></table></div>`;
+    };
+    $app.innerHTML = `
+      <div class="panel-head" style="margin-bottom:6px"><h1 style="margin:0">🏪 Market</h1>${
+        loggedIn ? `<span class="badge gold" style="font-size:1rem">💰 ${fmt(d.points)} points</span>` : state.loginEnabled ? `<a class="btn btn-primary" href="/auth/login">Log in with Kick to trade</a>` : ''
+      }</div>
+      <p class="muted">Buy and sell items with other players. Listed items leave your backpack until they sell or you cancel. The market keeps ${Math.round(d.fee * 100)}% of each sale. Pets can't be sold.</p>
+      ${
+        loggedIn
+          ? d.blocked
+            ? `<div class="panel"><p class="muted" style="margin:0">${esc(d.blocked)}</p></div>`
+            : `<section class="panel">
+                <h2 style="margin-top:0">Sell something</h2>
+                <form id="sell-form" class="form-row" style="flex-wrap:wrap">
+                  <select name="item" aria-label="Item" required><option value="">Pick an item…</option>${d.inventory
+                    .map((i) => `<option value="${esc(i.id)}" data-qty="${i.qty}" data-value="${i.value}" data-max="${i.max}">${i.icon} ${esc(i.name)} (have ${fmt(i.qty)})</option>`)
+                    .join('')}</select>
+                  <input type="number" name="qty" value="1" min="1" style="max-width:90px" aria-label="Quantity">
+                  <input type="number" name="price" min="1" placeholder="Total price" style="max-width:140px" aria-label="Total price">
+                  <button class="btn btn-primary">List it</button>
+                </form>
+                <p class="muted" id="sell-hint" style="font-size:.85rem;margin-bottom:0"></p>
+              </section>`
+          : ''
+      }
+      <section class="panel" style="margin-top:16px">
+        <div class="panel-head"><h2>For sale</h2><input type="search" id="market-q" class="guide-search" placeholder="Search items or sellers" value="${esc(q)}" style="max-width:260px"></div>
+        <div id="market-rows">${rows()}</div>
+      </section>`;
+    const $rows = document.getElementById('market-rows');
+    document.getElementById('market-q').oninput = (e) => {
+      q = e.target.value.trim().toLowerCase();
+      $rows.innerHTML = rows();
+    };
+    $rows.onclick = async (e) => {
+      const b = e.target.closest('button[data-buy], button[data-cancel]');
+      if (!b) return;
+      const buying = !!b.dataset.buy;
+      const l = d.listings.find((x) => x.id === Number(b.dataset.buy || b.dataset.cancel));
+      if (buying && !confirm(`Buy ${l.qty}x ${l.name} for ${fmt(l.price)} pts?`)) return;
+      b.disabled = true;
+      try {
+        const r = await api(`/market/${l.id}/${buying ? 'buy' : 'cancel'}`, { method: 'POST', body: {} });
+        toast(r.message);
+        route();
+      } catch (err) {
+        toast(err.message);
+        b.disabled = false;
+      }
+    };
+    const form = document.getElementById('sell-form');
+    if (form) {
+      const hint = () => {
+        const o = form.item.selectedOptions[0];
+        if (!o?.value) return (document.getElementById('sell-hint').textContent = '');
+        const qty = Number(form.qty.value) || 1;
+        document.getElementById('sell-hint').textContent = `The shop pays ${fmt(o.dataset.value * qty)} pts for ${qty}. Most you can ask: ${fmt(o.dataset.max * qty)} pts. You get the price minus ${Math.round(d.fee * 100)}%.`;
+      };
+      form.item.onchange = () => {
+        const o = form.item.selectedOptions[0];
+        if (o?.value) {
+          form.qty.max = o.dataset.qty;
+          if (!form.price.value) form.price.value = Math.max(1, Math.round(o.dataset.value * 1.5 * (Number(form.qty.value) || 1)));
+        }
+        hint();
+      };
+      form.qty.oninput = hint;
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        try {
+          const r = await api('/market/sell', { method: 'POST', body: { item: form.item.value, qty: Number(form.qty.value), price: Number(form.price.value) } });
+          toast(r.message);
+          route();
+        } catch (err) {
+          toast(err.message);
+        }
+      };
+    }
+  };
+
   // ---- Character customizer: race and look -------------------------------------------------
   const LOOK_SECTIONS = [
     ['skin', 'Skin tone'],
@@ -877,7 +1074,7 @@
         <thead><tr><th>Level</th><th>${isProcess ? 'Makes' : 'Resource'}</th>${isProcess ? '<th>Type</th><th>Needs (from your backpack)</th>' : ''}${hasStats ? '<th>Stats</th>' : ''}<th class="num">XP</th><th class="num">Sells for</th></tr></thead>
         <tbody>${s.tiers
           .map(
-            (t) => `<tr><td><b>${t.level}</b></td><td>${t.icon} ${esc(t.item)}</td>
+            (t) => `<tr><td><b>${t.level}</b></td><td>${t.icon} ${esc(t.item)}${t.race ? ` <span class="badge" style="font-size:.7rem">${esc(t.race)} only</span>` : ''}</td>
             ${t.kind ? `<td><span class="kind kind-${esc(t.kind)}">${esc(t.kind)}</span></td>` : ''}
             ${t.inputs ? `<td class="wrap">${t.inputs.map((i) => `${i.qty}× ${i.icon} ${esc(i.item)}`).join(' + ')}</td>` : ''}
             ${hasStats ? `<td class="wrap">${t.stats ? gearStat(t.stats) : t.heal ? `❤️ heals ${fmt(t.heal)}` : ''}</td>` : ''}
@@ -929,7 +1126,7 @@
       skinning: `Needs a 🔪 Skinning Knife in your backpack (shop, or smith one at Smithing 20). ${c('skin')} animals for hides and raw meat. ${c('craft')} hides into leather armor.`,
       farming: `Everyone gets a free 🟫 plot; buy more in the <a href="#/shop">shop</a> (${shopCost('farm_plot')} pts each, up to 100). Buy seeds, ${c('plant carrot')}, then ${c('harvest')} when it's grown (1 crop per plot). ${c('farm')} shows your plots. Planting and harvesting each use a stamina charge.`,
       firemaking: `Buy a 🪨 Flint and Steel (${shopCost('flint_and_steel')} pts, 250 fires), then ${c('lightfire')} burns your best log (or ${c('lightfire oak')}). Better logs give more XP, and every fire leaves 🌫️ Ashes. If it doesn't catch, nothing is used up. ${c('fire')} shows how long it burns.`,
-      cooking: `While your fire burns (5 minutes, longer with better logs), ${c('cook')} your best raw food or name it: ${c('cook trout')}. <b>Cooking uses no stamina</b>, so cook as much as you like while the fire lasts. Food sometimes burns (less as you level). ${c('eat')} cooked food to heal.`,
+      cooking: `While your fire burns (5 minutes, longer with better logs), ${c('cook')} your best raw food or name it: ${c('cook trout')}. <b>Cooking uses no stamina</b>, so cook as much as you like while the fire lasts, or ${c('cook all')} to cook everything at once. Food sometimes burns (less as you level). ${c('eat')} cooked food to heal.`,
       smelting: `${c('smelt')} ores from your backpack into ingots (one ore) and alloys (mixed ores, e.g. copper + tin = bronze). Better furnaces can smelt two at once.`,
       smithing: `Needs a 🔨 Smithing Hammer in your backpack. ${c('smith bronze sword')} turns alloys into weapons and armor. ${c('equip')} them or ${c('sell')} them.`,
       fletching: `${c('fletch arrows')} makes 10 arrows from 1 Oak Logs + 1 🪶 Feathers + 1 Iron Ingot. Also bows (${c('fletch oak shortbow')}), staffs and a quiver.`,
@@ -981,7 +1178,8 @@
         body: `<p>Everyone starts as a random race with a random look. <a href="#/customize">Customize</a> your skin, face, hair, facial hair and outfit any time, and pick a race once every ${g.raceChangeDays} days. ${c('race')} shows yours in chat.${g.racePerks ? '' : ' <b>Race perks are switched off right now.</b>'}</p>
           <div class="race-mini">${g.races
             .map((r) => `<div><b>${r.icon} ${esc(r.name)}</b>${list([...r.pros.map((x) => `✅ ${esc(x)}`), ...r.cons.map((x) => `<span class="muted">❌ ${esc(x)}</span>`)])}</div>`)
-            .join('')}</div>`,
+            .join('')}</div>
+          <p style="margin-bottom:0"><b>Race-only items</b> only that race can make: ${g.raceItems.map((r) => `${r.icon} ${esc(r.name)} (${esc(r.race)}, ${esc(r.skill)} ${r.level})`).join(' · ')}.</p>`,
       },
       {
         id: 'points', tab: 'basics', icon: '💰', title: 'Points & selling', summary: 'Earn points by chatting, playing and selling loot',
@@ -1029,6 +1227,40 @@
       },
       ...g.skills.filter((s) => s.type === 'combat').map((s) => skillTopic(s, 'combat')),
       {
+        id: 'quests', tab: 'rewards', icon: '📜', title: 'Quests', summary: `${g.quests.length} short storylines with points and titles`,
+        body: `<p>Quests unlock one after another and count what you already do. ${c('quest')} shows your current step; your character page shows them all.</p>${list(
+          g.quests.map((q) => `${q.icon} <b>${esc(q.name)}</b>: ${q.steps.map(esc).join(' → ')}. <span class="muted">Reward ${fmt(q.reward)} pts + “${esc(q.title)}”</span>`)
+        )}`,
+      },
+      {
+        id: 'pets', tab: 'rewards', icon: '🐾', title: 'Pets', summary: 'Rare finds that follow you and boost a skill',
+        body: `<p>Every action has a tiny chance (about 1 in 2,500) to find that skill's pet. Your active pet shows next to your character and gives <b>+5% XP</b> in its skill. ${c('pet')} lists yours, ${c('pet owl')} switches, or pick one on the <a href="#/customize">Customize</a> page.</p>
+          <p class="pet-list">${g.pets.map((p) => `<span class="badge" title="${esc(p.skill)}">${p.icon} ${esc(p.name)} <span class="muted">${esc(p.skill)}</span></span>`).join(' ')}</p>`,
+      },
+      {
+        id: 'prestige', tab: 'rewards', icon: '⭐', title: 'Prestige', summary: `Reset a level ${g.prestigeLevel}+ skill for a star and +5% XP`,
+        body: list([
+          `At level ${g.prestigeLevel} in a skill, ${c('prestige mining')} resets it to level 1 for a permanent ⭐ on your character and <b>+5% XP</b> in that skill (up to 10 times, so +50%).`,
+          "You keep your items, tools and gear. It asks you to confirm first.",
+        ]),
+      },
+      {
+        id: 'cosmetics', tab: 'rewards', icon: '🎩', title: 'Cosmetics & gear looks', summary: 'Hats, capes and auras; your gear shows too',
+        body: list([
+          'Buy hats, capes and auras in the <a href="#/shop">shop</a> and wear them on the <a href="#/customize">Customize</a> page. They are looks only and take no backpack space.',
+          'The helmet, armor, shield and weapon you have equipped are drawn on your character, in the color of their metal.',
+          'Your character shows on your page, the leaderboards, the live feed and the stream overlay.',
+        ]),
+      },
+      {
+        id: 'market', tab: 'rewards', icon: '🏪', title: 'Player market', summary: 'Buy and sell items with other players',
+        body: list([
+          'On the <a href="#/market">Market</a> page, list items for a price. They leave your backpack until someone buys them or you cancel.',
+          `The market keeps ${Math.round(g.marketFee * 100)}% of each sale. There's a maximum price per item, and pets can't be sold.`,
+          'You get a 🔔 notification on the site when something sells.',
+        ]),
+      },
+      {
         id: 'daily', tab: 'rewards', icon: '📅', title: 'Daily reward & tasks', summary: 'Free points every day, more for streaks',
         body: list([`${c('daily')} gives points, more each day in a row (up to 7 days).`, `${c('tasks')} shows 3 daily tasks that pay when you finish them.`]),
       },
@@ -1054,6 +1286,14 @@
       {
         id: 'raids', tab: 'events', icon: '🐉', title: 'Raid bosses', summary: 'Everyone fights a giant boss together',
         body: list([`When a ⚔️ raid boss appears, type ${c('attack')} to hit it (each attack uses stamina). ${c('raid')} shows its HP.`, 'Beat it in time and the reward pool is split by damage. The top hitter is MVP and gets extra loot.']),
+      },
+      {
+        id: 'world-boss', tab: 'events', icon: '🌍', title: 'World boss', summary: 'A huge boss the whole community fights for days',
+        body: list([`Sometimes a world boss appears and stays for days. Its HP carries over between streams, so every ${c('attack')} counts.`, 'Beat it before it escapes for a reward pool 10× a normal raid. Normal raids can still happen while it is up.']),
+      },
+      {
+        id: 'goals', tab: 'events', icon: '🎯', title: 'Channel goals', summary: 'Chat works together for an XP boost',
+        body: list([`The streamer can set a goal like “500 mining actions”. Every matching action by anyone counts. ${c('goal')} shows the progress, and it's on the stream overlay.`, 'Reach it and everyone gets an XP boost.']),
       },
       {
         id: 'random-events', tab: 'events', icon: '👺', title: 'Treasure goblins & supply drops', summary: 'Be the first to type the command',
@@ -1084,6 +1324,7 @@
         ['farm', 'Your plots'],
         ['lightfire [log]', 'Light a fire (needs flint and steel)'],
         ['cook [food]', 'Cook on your fire, no stamina needed'],
+        ['cook all', 'Cook everything while the fire lasts'],
         ['fire', 'How long your fire burns'],
         ['eat [food]', 'Eat cooked food to heal'],
       ]],
@@ -1108,11 +1349,15 @@
         ['inv', 'Your backpack'],
         ['points', 'Your points'],
         ['give @name <item|points>', 'Give to another player'],
+        ['market', 'Player market link'],
       ]],
       ['You & rankings', [
         ['stats [name]', 'Levels and points'],
         ['stamina', 'Your stamina bar'],
         ['race [race]', 'Your race and its perks'],
+        ['quest', 'Your current quest step'],
+        ['pet [name]', 'Your pets, or switch the active one'],
+        ['prestige <skill>', 'Reset a high skill for a star and +5% XP'],
         ['top [skill]', 'Top 5 players'],
         ['daily', 'Daily reward'],
         ['tasks', "Today's tasks"],
@@ -1125,6 +1370,7 @@
         ['catch / grab', 'Claim a random event'],
         ['duel @name [bet]', 'Challenge a player (accept / decline)'],
         ['boost', 'Is an XP boost running?'],
+        ['goal', 'Channel goal progress'],
       ]],
       ['Casino', [
         ['slots 500', '🎰 Slots (all, half, 1k also work)'],
@@ -1360,6 +1606,8 @@
                   <option value="0">text only</option>
                 </select>
               </label>
+              <label><input type="checkbox" name="stats" checked> “this stream” panel</label>
+              <label><input type="checkbox" name="goal" checked> goal bar</label>
             </form>
             <div class="form-row" style="margin-top:10px">
               <input type="text" id="overlay-url" readonly style="max-width:none" aria-label="Overlay link">
@@ -1382,6 +1630,8 @@
       if (Number(f.seconds.value) !== 10) q.set('seconds', f.seconds.value);
       if (Number(f.max.value) !== 6) q.set('max', f.max.value);
       if (f.scenes.value === '0') q.set('scenes', '0');
+      if (!f.stats.checked) q.set('stats', '0');
+      if (!f.goal.checked) q.set('goal', '0');
       return `${location.origin}/overlay.html${q.toString() ? `?${q}` : ''}`;
     };
     const syncOverlay = () => {
@@ -1725,6 +1975,34 @@
           }
         </section>
         <section class="panel">
+          <h2>🌍 World boss</h2>
+          ${
+            d.worldBoss
+              ? `<p>${d.worldBoss.icon} <b>${esc(d.worldBoss.name)}</b> (level ${d.worldBoss.level}): ${fmt(d.worldBoss.hp)} / ${fmt(d.worldBoss.maxHp)} HP, ${d.worldBoss.fighters} fighting, ${Math.ceil((d.worldBoss.endsAt - Date.now()) / 86_400_000)} days left.</p><button class="btn" id="wb-end">End world boss (it escapes)</button>`
+              : `<p class="muted">A huge boss that stays for days (Settings → Events) and keeps its HP between streams, so the whole community wears it down. Normal raids still run while it's up.</p>
+                 <div class="form-row"><select id="wb-monster" aria-label="World boss"><option value="">Auto</option>${d.monsters
+                   .map((m) => `<option value="${esc(m.id)}">${m.icon} ${esc(m.name)} (${m.level})</option>`)
+                   .join('')}</select>
+                 <button class="btn btn-primary" id="wb-start">Start world boss</button></div>`
+          }
+        </section>
+        <section class="panel">
+          <h2>🎯 Channel goal</h2>
+          ${
+            d.goal
+              ? `<p><b>${esc(d.goal.label)}</b>: ${fmt(d.goal.progress)} / ${fmt(d.goal.target)}${d.goal.done ? ' ✅ reached!' : ''}</p><button class="btn" id="goal-end">End goal</button>`
+              : `<p class="muted">Chat works together: when they reach the target, everyone gets an XP boost. Shows on the overlay and <code>!goal</code>.</p>
+                 <div class="form-row" style="flex-wrap:wrap"><select id="goal-skill" aria-label="Which actions"><option value="any">Any action</option>${d.skills
+                   .map((s) => `<option value="${esc(s.id)}">${s.icon} ${esc(s.name)}</option>`)
+                   .join('')}</select>
+                 <input type="number" id="goal-target" value="500" min="1" style="max-width:100px" aria-label="Target">
+                 <input type="number" id="goal-mult" value="2" min="1.1" max="10" step="0.5" style="max-width:70px" aria-label="XP multiplier">
+                 <input type="number" id="goal-min" value="30" min="1" max="60" style="max-width:70px" aria-label="Minutes">
+                 <button class="btn btn-primary" id="goal-start">Start goal</button></div>
+                 <p class="muted" style="font-size:.8rem;margin-bottom:0">Target actions · XP multiplier · boost minutes</p>`
+          }
+        </section>
+        <section class="panel">
           <h2>⚡ Channel boost</h2>
           ${
             d.boost
@@ -1760,6 +2038,17 @@
     };
     $app.querySelector('#raid-start')?.addEventListener('click', () => act('/admin/raid', { monster: $app.querySelector('#raid-monster').value }));
     $app.querySelector('#raid-end')?.addEventListener('click', () => confirm('End the raid? The boss escapes and nobody is paid.') && act('/admin/raid/end', {}));
+    $app.querySelector('#wb-start')?.addEventListener('click', () => act('/admin/raid', { world: true, monster: $app.querySelector('#wb-monster').value }));
+    $app.querySelector('#wb-end')?.addEventListener('click', () => confirm('End the world boss? It escapes and nobody is paid.') && act('/admin/worldboss/end', {}));
+    $app.querySelector('#goal-start')?.addEventListener('click', () =>
+      act('/admin/goal', {
+        skill: $app.querySelector('#goal-skill').value,
+        target: Number($app.querySelector('#goal-target').value),
+        multiplier: Number($app.querySelector('#goal-mult').value),
+        minutes: Number($app.querySelector('#goal-min').value),
+      })
+    );
+    $app.querySelector('#goal-end')?.addEventListener('click', () => act('/admin/goal/end', {}));
     $app.querySelector('#boost-start')?.addEventListener('click', () =>
       act('/admin/boost', { kind: $app.querySelector('#boost-kind').value, multiplier: Number($app.querySelector('#boost-mult').value), minutes: Number($app.querySelector('#boost-min').value) })
     );
@@ -1974,6 +2263,8 @@
     const [me, site] = await Promise.all([api('/me'), api('/site')]);
     Object.assign(state, { me: me.user, isAdmin: me.isAdmin, loginEnabled: me.loginEnabled, devMode: me.devMode, site });
     live.raid = site.raid;
+    live.world = site.worldBoss;
+    live.goal = site.goal;
     live.boost = site.boost;
     drawBanner();
     if (site.channel) document.getElementById('brand-name').textContent = `${site.channel} MMO`;

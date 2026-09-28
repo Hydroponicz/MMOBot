@@ -377,3 +377,34 @@ test('character customizer: options, save a look and race, race change is locked
   assert.match((await again.json()).error, /change your race again/);
   assert.equal((await put({ look: { skin: 'nope' } }, cookie)).status, 400);
 });
+
+test('market and notifications API', async (t) => {
+  const { createSessions } = require('../src/web/session');
+  const config = makeConfig();
+  config.game = { ...config.game, tradeMinHours: 0, tradeMinActions: 0 };
+  const s = await start(config);
+  t.after(s.close);
+  const alice = s.repo.upsertUser({ kickUserId: '7', username: 'Alice' });
+  const bob = s.repo.upsertUser({ kickUserId: '8', username: 'Bob' });
+  const login = (u) => {
+    let cookie;
+    createSessions({ secret: config.sessionSecret, secure: false }).write({ cookie: (n, v) => (cookie = `${n}=${v}`) }, 'mmo_session', { uid: u.id }, 60_000);
+    return (path, body) =>
+      fetch(`${s.url}/api${path}`, { method: body ? 'POST' : 'GET', headers: { cookie, 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
+  };
+  const asAlice = login(alice);
+  const asBob = login(bob);
+  s.repo.addItem(alice.id, 'iron_ore', 4);
+  s.repo.addPoints(bob.id, 500);
+  const m = await (await asAlice('/market')).json();
+  assert.ok(m.inventory.some((i) => i.id === 'iron_ore'));
+  assert.equal((await asAlice('/market/sell', { item: 'iron_ore', qty: 9, price: 10 })).status, 400);
+  const listed = await (await asAlice('/market/sell', { item: 'iron_ore', qty: 4, price: 100 })).json();
+  assert.equal(listed.ok, true);
+  assert.equal((await asBob(`/market/${listed.id}/buy`, {})).status, 200);
+  const n = await (await asAlice('/me/notifications')).json();
+  assert.match(n.saved[0].text, /Bob bought your 4x/);
+  assert.equal((await fetch(`${s.url}/api/me/notifications`)).status, 401);
+  await asAlice('/me/notifications/read', {});
+  assert.equal((await (await asAlice('/me/notifications')).json()).saved[0].read, true);
+});

@@ -31,7 +31,9 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       channel: config.kick.channel,
       totals: repo.totals(),
       skills: SKILL_IDS.map((id) => ({ id, name: SKILLS[id].name, icon: SKILLS[id].icon })),
-      raid: engine.publicRaid(),
+      raid: engine.publicRaid(repo.getSetting('raid')),
+      worldBoss: repo.getSetting('world_boss') ? engine.publicRaid(repo.getSetting('world_boss')) : null,
+      goal: engine.publicGoal(),
       boost: engine.activeBoost(),
     });
   });
@@ -199,8 +201,10 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     const goal = engine.publicGoal();
     if (goal) sendGoal(goal);
     sendStats(engine.publicStreamStats());
-    const raid = engine.publicRaid();
-    if (raid.active) sendRaid(raid);
+    for (const key of ['world_boss', 'raid']) {
+      const r = repo.getSetting(key);
+      if (r) sendRaid(engine.publicRaid(r));
+    }
     const boost = engine.activeBoost();
     if (boost) sendBoost(boost);
     req.on('close', () => {
@@ -392,7 +396,10 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   router.get('/admin/events', requireAdmin, (req, res) => {
     res.json({
       stream: repo.getSetting('stream'),
-      raid: engine.publicRaid(),
+      raid: engine.publicRaid(repo.getSetting('raid')),
+      worldBoss: repo.getSetting('world_boss') ? engine.publicRaid(repo.getSetting('world_boss')) : null,
+      goal: engine.publicGoal(),
+      skills: SKILL_IDS.map((id) => ({ id, name: SKILLS[id].name, icon: SKILLS[id].icon })),
       boost: engine.activeBoost(),
       randomEvent: repo.getSetting('random_event'),
       chatters: engine.activeChatters(10).length,
@@ -407,7 +414,8 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     res.json({ ok: true, ...(r || {}) });
   };
   router.post('/admin/raid', requireAdmin, adminAct((req) => engine.startRaid({ monsterId: req.body?.monster || null, hpMultiplier: Number(req.body?.hpMultiplier) || null, world: !!req.body?.world })));
-  router.post('/admin/raid/end', requireAdmin, adminAct(() => ({ text: engine.finishRaid(false) })));
+  router.post('/admin/raid/end', requireAdmin, adminAct(() => ({ text: engine.finishRaid(false, null, repo.getSetting('raid')) })));
+  router.post('/admin/worldboss/end', requireAdmin, adminAct(() => ({ text: engine.finishRaid(false, null, repo.getSetting('world_boss')) })));
   router.post('/admin/boost', requireAdmin, adminAct((req) => {
     const multiplier = Number(req.body?.multiplier);
     const minutes = Number(req.body?.minutes);

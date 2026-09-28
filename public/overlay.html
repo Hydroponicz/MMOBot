@@ -12,7 +12,9 @@
          &seconds=10      how long each event stays    &max=6        how many can be on screen at once
          &quiet=1         don't show the "connected" message when the overlay loads
          &raid=0          hide the raid boss health bar and channel boost banner at the top
-         &scenes=0        plain text rows instead of animated characters doing the action */
+         &scenes=0        plain text rows instead of animated characters doing the action
+         &stats=0         hide the rotating "this stream" panel (top XP, last rare find, raid MVP)
+         &goal=0          hide the channel goal bar */
     html, body { margin: 0; background: transparent; overflow: hidden; }
     body { font-family: Inter, system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; justify-content: flex-end; padding: 12px; box-sizing: border-box; gap: 8px; }
     .ev {
@@ -49,6 +51,18 @@
     .bar { height: 16px; margin-top: 6px; border-radius: 99px; background: #1c232c; overflow: hidden; }
     .bar span { display: block; height: 100%; background: linear-gradient(90deg, #dc2626, #f87171); transition: width 0.4s; }
     .boss .top { margin-top: 6px; font-size: 13px; font-weight: 600; color: #8b98a8; }
+    .boss.world { border-color: #a45cff; }
+    .boss.world .bar span { background: linear-gradient(90deg, #6d28d9, #a78bfa); }
+    .goal { border: 2px solid #ffc940; }
+    .goal .name { display: flex; justify-content: space-between; font-size: 15px; }
+    .goal .name small { color: #8b98a8; font-weight: 600; }
+    .goal .bar span { background: linear-gradient(90deg, #f59e0b, #fde047); }
+    .goal.done { border-color: #53fc18; color: #53fc18; text-align: center; }
+    .stats { font-size: 14px; font-weight: 700; min-height: 34px; display: flex; align-items: center; gap: 8px; }
+    .stats .lbl { color: #8b98a8; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
+    .stats .who { display: inline-flex; align-items: center; gap: 4px; margin-right: 8px; }
+    .stats .who b { color: #53fc18; }
+    .stats .slide { animation: in 0.4s ease-out; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
     .boost { border: 2px solid #53fc18; color: #53fc18; text-align: center; font-size: 16px; }
     /* Animated scene: the player's character doing the action. */
     .ev.scene { padding: 4px 14px 4px 4px; gap: 6px; }
@@ -203,7 +217,13 @@
     const showTop = params.get('raid') !== '0';
     const topEl = document.getElementById('top');
     let raid = null;
+    let world = null;
     let boost = null;
+    let goal = null;
+    let stats = null;
+    let slide = 0;
+    const showGoal = params.get('goal') !== '0';
+    const showStats = params.get('stats') !== '0';
     const fmtN = (n) => Number(n).toLocaleString();
     function drawTop() {
       if (!showTop) return;
@@ -212,19 +232,57 @@
         const m = Math.max(1, Math.ceil((boost.until - Date.now()) / 60000));
         parts.push(`<div class="panel boost">⚡ ${boost.multiplier}x ${boost.kind === 'xp' ? 'XP' : 'chat points'} for everyone · ${m}m left</div>`);
       }
-      if (raid && raid.active) {
-        const pct = Math.max(0, Math.round((raid.hp / raid.maxHp) * 100));
-        const m = Math.max(0, Math.ceil((raid.endsAt - Date.now()) / 60000));
-        const tops = (raid.top || []).slice(0, 3).map((t) => `${esc(t.username)} ${fmtN(t.damage)}`).join(' · ');
-        parts.push(`<div class="panel boss"><div class="name"><span>${raid.icon} RAID: ${esc(raid.name)}</span><small>${fmtN(raid.hp)} / ${fmtN(raid.maxHp)} HP · ${m}m</small></div>
-          <div class="bar"><span style="width:${pct}%"></span></div><div class="top">Type !attack · ${raid.fighters || 0} fighting${tops ? ` · ${tops}` : ''}</div></div>`);
+      for (const r of [raid, world]) {
+        if (!r || !r.active) continue;
+        const pct = Math.max(0, Math.round((r.hp / r.maxHp) * 100));
+        const ms = Math.max(0, r.endsAt - Date.now());
+        const left = r.world ? `${Math.ceil(ms / 86_400_000)}d` : `${Math.ceil(ms / 60000)}m`;
+        const tops = (r.top || []).slice(0, 3).map((t) => `${esc(t.username)} ${fmtN(t.damage)}`).join(' · ');
+        parts.push(`<div class="panel boss${r.world ? ' world' : ''}"><div class="name"><span>${r.icon} ${r.world ? 'WORLD BOSS' : 'RAID'}: ${esc(r.name)}</span><small>${fmtN(r.hp)} / ${fmtN(r.maxHp)} HP · ${left}</small></div>
+          <div class="bar"><span style="width:${pct}%"></span></div><div class="top">Type !attack · ${r.fighters || 0} fighting${tops ? ` · ${tops}` : ''}</div></div>`);
+      }
+      if (showGoal && goal) {
+        const pct = Math.min(100, Math.round((goal.progress / goal.target) * 100));
+        parts.push(
+          goal.done
+            ? `<div class="panel goal done">🎉 CHANNEL GOAL REACHED! ${goal.multiplier}x XP for everyone!</div>`
+            : `<div class="panel goal"><div class="name"><span>🎯 GOAL: ${esc(goal.label)}</span><small>${fmtN(goal.progress)} / ${fmtN(goal.target)}</small></div><div class="bar"><span style="width:${pct}%"></span></div></div>`
+        );
+      }
+      if (showStats && stats) {
+        const slides = [];
+        if (stats.top && stats.top.length) {
+          slides.push(`<span class="lbl">Top XP this stream</span>${stats.top
+            .map((t, i) => `<span class="who">${['🥇', '🥈', '🥉'][i]}${scenes && t.appearance ? `<span class="face" style="width:24px;height:24px">${MMOAvatar.svg(t.appearance, { size: 24, head: true })}</span>` : ''}<b>${esc(t.username)}</b> ${fmtN(t.xp)}</span>`)
+            .join('')}`);
+        }
+        if (stats.lastRare) slides.push(`<span class="lbl">Last rare find</span>💎 <b style="color:#c084fc">${esc(stats.lastRare.username)}</b> ${esc(stats.lastRare.text)}`);
+        if (stats.lastPet) slides.push(`<span class="lbl">New pet</span>🐾 <b style="color:#ffc940">${esc(stats.lastPet.username)}</b> ${esc(stats.lastPet.text)}`);
+        if (stats.mvp) slides.push(`<span class="lbl">Raid MVP</span>👑 <b style="color:#ff5c7a">${esc(stats.mvp.username)}</b>`);
+        if (stats.actions) slides.push(`<span class="lbl">This stream</span>⚡ ${fmtN(stats.actions)} actions by chat`);
+        if (slides.length) parts.push(`<div class="panel stats"><span class="slide">${slides[slide % slides.length]}</span></div>`);
       }
       topEl.innerHTML = parts.join('');
     }
     es.addEventListener('raid', (e) => {
-      raid = JSON.parse(e.data);
+      const r = JSON.parse(e.data);
+      if (r.world) world = r;
+      else raid = r;
       drawTop();
     });
+    es.addEventListener('goal', (e) => {
+      goal = JSON.parse(e.data);
+      drawTop();
+    });
+    es.addEventListener('streamstats', (e) => {
+      stats = JSON.parse(e.data);
+      drawTop();
+    });
+    // Rotate the "this stream" panel.
+    setInterval(() => {
+      slide++;
+      if (showStats && stats) drawTop();
+    }, 8000);
     es.addEventListener('boost', (e) => {
       boost = JSON.parse(e.data);
       drawTop();

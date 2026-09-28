@@ -40,7 +40,12 @@
 
     // ---- aura, cape and a weapon on the back, all behind the character
     if (C.aura) out.push(`<circle cx="60" cy="74" r="62" fill="${C.aura}" opacity=".16"/><circle cx="60" cy="74" r="50" fill="${C.aura}" opacity=".16"/>`);
-    if (C.cape) p('M22,110 Q8,138 2,140 L118,140 Q112,138 98,110Z', C.cape);
+    if (C.cape) {
+      // A drape behind the body plus a high collar that shows above the shoulders.
+      p('M24,102 Q2,126 -2,140 L122,140 Q118,126 96,102Z', C.cape);
+      p('M28,110 L36,86 L50,104Z', C.cape, `stroke="${shade(C.cape, -0.3)}" stroke-width="1.2"`);
+      p('M92,110 L84,86 L70,104Z', C.cape, `stroke="${shade(C.cape, -0.3)}" stroke-width="1.2"`);
+    }
     if (G.weapon) {
       const [wc, wd] = metal(G.weapon.color);
       if (G.weapon.type === 'bow') {
