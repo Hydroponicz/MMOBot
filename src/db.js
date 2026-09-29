@@ -356,7 +356,7 @@ function createRepo(db) {
     pruneLogs: db.prepare('DELETE FROM logs WHERE ts < ? OR id <= (SELECT MAX(id) FROM logs) - 50000'),
     logSources: db.prepare('SELECT DISTINCT source FROM logs ORDER BY source'),
     searchUsers: db.prepare(
-      `SELECT id, username, points, message_count, actions_count, last_seen_at, banned FROM users
+      `SELECT id, username, points, message_count, actions_count, last_seen_at, banned, race, race_changed_at FROM users
        WHERE username_lower LIKE ? ESCAPE '\\' ORDER BY last_seen_at DESC LIMIT 25`
     ),
     totals: db.prepare(

@@ -96,6 +96,28 @@ module.exports = {
     return { ok: true, message: 'Look saved!' };
   },
 
+  // Admin: set a player's race, ignoring the race change wait. The wait itself is left as it was
+  // (clear it with adminResetRaceWait). Returns { ok, before } or { ok: false, error }.
+  adminSetRace(userId, race) {
+    const a = this.appearance(userId);
+    if (!a) return { ok: false, error: 'player not found' };
+    if (!RACE_IDS.includes(race)) return { ok: false, error: `unknown race: ${race}` };
+    const u = this.repo.getUser(userId);
+    const before = { race: u.race || null, raceChangedAt: a.raceChangedAt };
+    this.repo.setAppearance(userId, race, a.look, a.raceChangedAt);
+    return { ok: true, before, name: `${RACES[race].icon} ${RACES[race].name}` };
+  },
+
+  // Admin: let a player pick their race again right away.
+  adminResetRaceWait(userId) {
+    const a = this.appearance(userId);
+    if (!a) return { ok: false, error: 'player not found' };
+    const u = this.repo.getUser(userId);
+    const before = { race: u.race || null, raceChangedAt: a.raceChangedAt };
+    this.repo.setAppearance(userId, u.race, a.look, 0);
+    return { ok: true, before };
+  },
+
   // What the avatar draws: race, look, worn gear, cosmetics, pet and prestige stars.
   characterView(userId) {
     const a = this.appearance(userId);

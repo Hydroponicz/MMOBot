@@ -2405,7 +2405,18 @@
   // ---- Admin: players ----------------------------------------------------
   adminPages.players = async (query, header) => {
     const q = query.get('q') || '';
-    const { players } = await api(`/admin/players?q=${encodeURIComponent(q)}`);
+    const { players, races } = await api(`/admin/players?q=${encodeURIComponent(q)}`);
+    const raceCell = (p) => {
+      const days = p.raceWaitUntil ? Math.ceil((p.raceWaitUntil - Date.now()) / 86_400_000) : 0;
+      return `<form class="form-row race-form" data-id="${p.id}" data-name="${esc(p.username)}">
+          <select name="race" aria-label="Race">${races.map((r) => `<option value="${esc(r.id)}"${r.id === p.race ? ' selected' : ''}>${r.icon} ${esc(r.name)}</option>`).join('')}</select>
+          <button class="btn btn-sm">Set</button></form>
+        <div class="muted" style="font-size:.8rem;margin-top:4px">${
+          days
+            ? `Can change in ${days} day${days === 1 ? '' : 's'} <button class="btn btn-sm" data-race-wait="${p.id}" data-name="${esc(p.username)}">Reset wait</button>`
+            : p.raceChosen ? 'Can change race now' : 'Hasn\'t picked a race yet'
+        }</div>`;
+    };
     $app.innerHTML = `
       ${header}
       <section class="panel">
@@ -2414,7 +2425,7 @@
           <button class="btn btn-primary">Search</button>
         </form>
         <div class="table-wrap" style="margin-top:14px"><table>
-          <thead><tr><th>Player</th><th class="num">Points</th><th class="num">Messages</th><th class="num">Actions</th><th>Last seen</th><th>Give / take points</th><th>Give / take items</th><th></th></tr></thead>
+          <thead><tr><th>Player</th><th class="num">Points</th><th class="num">Messages</th><th class="num">Actions</th><th>Last seen</th><th>Race</th><th>Give / take points</th><th>Give / take items</th><th></th></tr></thead>
           <tbody>${
             players.length
               ? players
@@ -2424,6 +2435,7 @@
               <td class="num" data-points="${p.id}">${fmt(p.points)}</td>
               <td class="num">${fmt(p.message_count)}</td><td class="num">${fmt(p.actions_count)}</td>
               <td>${ago(p.last_seen_at)}</td>
+              <td>${raceCell(p)}</td>
               <td><form class="form-row points-form" data-id="${p.id}" data-name="${esc(p.username)}">
                 <input type="number" name="delta" step="1" placeholder="+500 or -100" style="max-width:130px" aria-label="Points to add or remove">
                 <input type="text" name="reason" placeholder="reason (optional)" style="max-width:170px" aria-label="Reason">
@@ -2439,7 +2451,7 @@
             </tr>`
                   )
                   .join('')
-              : `<tr><td colspan="8" class="empty">No players found.</td></tr>`
+              : `<tr><td colspan="9" class="empty">No players found.</td></tr>`
           }</tbody>
         </table></div>
       </section>`;
@@ -2447,6 +2459,32 @@
       e.preventDefault();
       location.hash = `#/admin?tab=players&q=${encodeURIComponent(e.target.q.value.trim())}`;
     };
+    $app.querySelectorAll('.race-form').forEach((f) => {
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        const r = races.find((x) => x.id === f.race.value);
+        if (!confirm(`Make ${f.dataset.name} ${r.icon} ${r.name}? This ignores their race change wait (the wait itself isn't changed).`)) return;
+        try {
+          const res = await api(`/admin/players/${f.dataset.id}/race`, { method: 'POST', body: { race: f.race.value } });
+          toast(res.message);
+          route();
+        } catch (err) {
+          toast(`Failed: ${err.message}`);
+        }
+      };
+    });
+    $app.querySelectorAll('[data-race-wait]').forEach((b) => {
+      b.onclick = async () => {
+        if (!confirm(`Let ${b.dataset.name} pick a new race right away on the Customize page?`)) return;
+        try {
+          const res = await api(`/admin/players/${b.dataset.raceWait}/race-wait`, { method: 'POST', body: {} });
+          toast(res.message);
+          route();
+        } catch (err) {
+          toast(`Failed: ${err.message}`);
+        }
+      };
+    });
     $app.querySelectorAll('.items-form').forEach((f) => {
       f.onsubmit = async (e) => {
         e.preventDefault();

@@ -9,6 +9,7 @@ const { levelForXp, progress, CHARACTER_MAX_LEVEL, CHARACTER_SKILL_COUNT } = req
 const { makeIsAdmin } = require('./auth');
 const { SettingsError } = require('../settings');
 const casino = require('../game/casino');
+const { RACES, RACE_IDS } = require('../game/appearance');
 
 function apiRouter({ engine, repo, kick, bot, config, settings, logger = console, backups = null }) {
   const router = express.Router();
@@ -534,7 +535,34 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   // ---- Admin: players -----------------------------------------------------
 
   router.get('/admin/players', requireAdmin, (req, res) => {
-    res.json({ players: repo.searchUsers(req.query.q || '') });
+    const players = repo.searchUsers(req.query.q || '').map((p) => {
+      const a = engine.appearance(p.id);
+      const { race: _r, race_changed_at: _c, ...rest } = p;
+      return { ...rest, race: a?.race, raceChosen: !!p.race, raceWaitUntil: engine.raceChangeAt(p.id) };
+    });
+    res.json({ players, races: RACE_IDS.map((id) => ({ id, name: RACES[id].name, icon: RACES[id].icon })) });
+  });
+
+  // Change a player's race, ignoring their race change wait (the wait itself is left alone).
+  router.post('/admin/players/:id/race', requireAdmin, (req, res) => {
+    const user = repo.getUser(Number(req.params.id));
+    if (!user) return res.status(404).json({ error: 'player not found' });
+    const r = engine.adminSetRace(user.id, String(req.body?.race || ''));
+    if (!r.ok) return res.status(400).json({ error: r.error });
+    audit(req, 'race', `set ${user.username}'s race to ${r.name}`, { type: 'race', userId: user.id, ...r.before });
+    logger.info(`[admin] ${req.user.username} set ${user.username}'s race to ${r.name}`);
+    res.json({ ok: true, message: `${user.username} is now ${r.name}` });
+  });
+
+  // Clear a player's race change wait so they can pick a new race on the Customize page right away.
+  router.post('/admin/players/:id/race-wait', requireAdmin, (req, res) => {
+    const user = repo.getUser(Number(req.params.id));
+    if (!user) return res.status(404).json({ error: 'player not found' });
+    const r = engine.adminResetRaceWait(user.id);
+    if (!r.ok) return res.status(400).json({ error: r.error });
+    audit(req, 'race', `reset ${user.username}'s race change wait`, { type: 'race', userId: user.id, ...r.before });
+    logger.info(`[admin] ${req.user.username} reset ${user.username}'s race change wait`);
+    res.json({ ok: true, message: `${user.username} can pick a new race now` });
   });
 
   router.post('/admin/players/:id/points', requireAdmin, (req, res) => {
@@ -619,6 +647,9 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
         } else repo.addItem(u.userId, u.item, -u.qty);
       } else if (u.type === 'ban') {
         repo.setUserField(u.userId, 'banned', u.banned ? 1 : 0);
+      } else if (u.type === 'race') {
+        const a = engine.appearance(u.userId);
+        repo.setAppearance(u.userId, u.race, a.look, u.raceChangedAt);
       } else if (u.type === 'reset') {
         repo.restorePlayer(u.userId, u.snapshot);
       } else if (u.type === 'settings') {

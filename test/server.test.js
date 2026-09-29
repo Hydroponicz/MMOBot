@@ -283,6 +283,40 @@ test('admin tools: give/take items, ban, reset a player', async (t) => {
   assert.equal(s.repo.getSkills(u.id).fishing, 0);
 });
 
+test('admin tools: reset a player\'s race change wait, or set their race regardless of it (undoable)', async (t) => {
+  const s = await adminServer(t);
+  s.engine.cfg.raceChangeDays = 30;
+  const u = s.repo.upsertUser({ kickUserId: '5', username: 'Viewer' });
+  const viewer = s.repo.getUser(u.id);
+  assert.equal(s.engine.setAppearance(viewer, { race: 'halfling' }).ok, true);
+  assert.match(s.engine.setAppearance(viewer, { race: 'dwarf' }).error, /change your race again in 30 day/);
+
+  const found = await (await s.api('/api/admin/players?q=view')).json();
+  assert.equal(found.players[0].race, 'halfling');
+  assert.ok(found.players[0].raceWaitUntil > Date.now());
+  assert.ok(found.races.some((r) => r.id === 'orc'));
+
+  // Admin sets the race: works despite the wait, and leaves the wait alone.
+  const set = await (await s.api(`/api/admin/players/${u.id}/race`, { method: 'POST', body: { race: 'orc' } })).json();
+  assert.match(set.message, /Viewer is now .*Orc/);
+  assert.equal(s.engine.appearance(u.id).race, 'orc');
+  assert.ok(s.engine.raceChangeAt(u.id) > 0);
+  assert.equal((await s.api(`/api/admin/players/${u.id}/race`, { method: 'POST', body: { race: 'dragon' } })).status, 400);
+
+  // Reset the wait: the player can pick again themselves.
+  await s.api(`/api/admin/players/${u.id}/race-wait`, { method: 'POST', body: {} });
+  assert.equal(s.engine.raceChangeAt(u.id), 0);
+  assert.equal(s.engine.appearance(u.id).race, 'orc', 'race kept');
+  assert.equal(s.engine.setAppearance(s.repo.getUser(u.id), { race: 'dwarf' }).ok, true);
+
+  // Both are in the audit log and can be undone.
+  const { entries } = await (await s.api('/api/admin/audit')).json();
+  const setEntry = entries.find((e) => e.summary.startsWith("set Viewer's race"));
+  assert.ok(setEntry.canUndo && entries.some((e) => e.summary.startsWith("reset Viewer's race change wait")));
+  await s.api(`/api/admin/audit/${setEntry.id}/undo`, { method: 'POST', body: {} });
+  assert.equal(s.engine.appearance(u.id).race, 'halfling', 'back to what it was before the admin change');
+});
+
 test('admin tools: backup downloads the database; restore replaces it on the next start', async (t) => {
   const fs = require('node:fs');
   const os = require('node:os');
