@@ -154,10 +154,13 @@ module.exports = {
       return { consumed: true, reply: `${skill.icon} ${msg}... better luck next time!${hint}` };
     }
 
+    // Booster crops (Glowmoss bait, Stoneroot, Truffles, Tanbark): one is used up for +1 item and
+    // better rare odds (+20% per tier).
+    const boost = this.useBooster?.(user, skillId) || null;
     let drop = null;
     let rare = false;
     for (const r of skill.rares || []) {
-      if (this.rng() < r.chance * (tool ? tool.rareBonus : 1) * this.luck(user.id)) {
+      if (this.rng() < r.chance * (tool ? tool.rareBonus : 1) * this.luck(user.id) * (boost ? 1 + 0.2 * boost.tier : 1)) {
         drop = r;
         rare = true;
         break;
@@ -169,8 +172,10 @@ module.exports = {
     // Rares stay single.
     const every = this.cfg.gatherBonusLevels ?? 50;
     const extra = !rare && every > 0 ? Math.floor(level / every) : 0;
-    const qty = Math.max(1, Math.min(1 + extra, bag.capacity - bag.used));
+    // (A used booster frees its own backpack slot.)
+    const qty = Math.max(1, Math.min(1 + extra + (boost && !rare ? 1 : 0), bag.capacity - bag.used + (boost ? 1 : 0)));
     const result = this.reward(user, skillId, drop.item, drop.xp * qty, { rare, qty });
+    if (boost) result.reply = result.reply.replace(/!/, ` (used ${itemLabel(boost.item)})!`);
     // Skinned animals also give their meat, if there's room for it.
     if (drop.meat) {
       const bag = this.backpack(user.id);
@@ -296,7 +301,10 @@ module.exports = {
         const opts = [...new Set(skill.recipes.filter((r) => r.level <= level).map((r) => r.word || ITEMS[r.item].name.split(' ')[0].toLowerCase()))].slice(-8);
         return { consumed: false, reply: `unknown recipe. You can ${skill.command}: ${opts.join(', ')} (e.g. !${skill.command} ${opts[opts.length - 1]})` };
       }
-      recipe = skill.recipes.find((r) => r.item === id);
+      // Several recipes can make the same item (Magic Runes from Ashes + Tin or from Runebloom): use
+      // the best one you've unlocked and have the ingredients for.
+      const options = skill.recipes.filter((r) => r.item === id);
+      recipe = [...options].reverse().find((r) => r.level <= level && hasInputs(r)) || options[0];
       if (recipe.level > level) {
         return { consumed: false, reply: `you need ${skill.icon} ${skill.name} level ${recipe.level} for ${ITEMS[id].name}.` };
       }
@@ -335,8 +343,10 @@ module.exports = {
       const burnt = inputs.length > 1 ? ITEMS[recipe.item].name : ITEMS[inputs[0]].name;
       return { consumed: true, reply: `🔥 oops, you burned the ${burnt}! It's ruined. Keep practising, you burn less as you level.${fire}` };
     }
-    const done = this.reward(user, skillId, recipe.item, recipe.xp, { rare: false, qty: recipe.yield || 1 });
-    return { ...done, reply: `${done.reply}${fire}` };
+    // Smelting flux (Emberroot and its tiers): used up for +15% chance per tier to smelt two.
+    const flux = skillId === 'smelting' ? this.useCrop?.(user.id, 'emberroot') || null : null;
+    const done = this.reward(user, skillId, recipe.item, recipe.xp, { rare: false, qty: recipe.yield || 1, doubleBonus: flux ? 0.15 * flux.tier : 0 });
+    return { ...done, reply: `${done.reply}${flux ? ` (used ${itemLabel(flux.item)})` : ''}${fire}` };
   },
 
   // !lightfire [log]: burn a log from your backpack with your Flint and Steel. Uses the best log you
@@ -383,10 +393,12 @@ module.exports = {
     if (wornOut) this.repo.removeItem(user.id, 'flint_and_steel', 1);
     this.repo.setEquipment(user.id, 'flint_used', wornOut ? 0 : used);
     // The fire burns for a while: 5 minutes, plus a minute per log tier. Cook on it with !cook.
-    const minutes = 5 + SKILLS.firemaking.resources.indexOf(log);
+    // Resin (a Farming crop) is used up for a longer fire that cooks more: +2 minutes and +5 meals per tier.
+    const resin = this.useCrop?.(user.id, 'pine_resin') || null;
+    const minutes = 5 + SKILLS.firemaking.resources.indexOf(log) + (resin ? 2 * resin.tier : 0);
     const until = Math.max(this.now() + minutes * 60_000, this.now() + this.fireLeft(user.id));
     // Each fire cooks a limited number of meals (more with Firemaking); relighting adds another fire's worth.
-    const meals = this.fireMealsLeft(user.id) + this.fireMeals(user.id);
+    const meals = this.fireMealsLeft(user.id) + this.fireMeals(user.id) + (resin ? 5 * resin.tier : 0);
     this.repo.setSetting(this.fireKey(user.id), until);
     this.repo.setSetting(this.fireMealsKey(user.id), meals);
     const xpGain = this.xpFor(log.xp);
@@ -397,7 +409,7 @@ module.exports = {
       : ` 🪨 ${maxUses - used}/${maxUses} uses left.`;
     return {
       consumed: true,
-      reply: `🔥 you lit a fire with ${itemLabel(log.item)} and got ${itemLabel('ashes')}! ${gained.text} It burns for ${minutesLeft(until - this.now())} and can cook ${meals} meal${meals === 1 ? '' : 's'}: !cook on it.${flintNote}`,
+      reply: `🔥 you lit a fire with ${itemLabel(log.item)}${resin ? ` and ${itemLabel(resin.item)}` : ''} and got ${itemLabel('ashes')}! ${gained.text} It burns for ${minutesLeft(until - this.now())} and can cook ${meals} meal${meals === 1 ? '' : 's'}: !cook on it.${flintNote}`,
     };
   },
 
@@ -482,13 +494,14 @@ module.exports = {
     return ITEMS.flint_and_steel.uses - (this.repo.getEquipment(userId).flint_used || 0);
   },
 
-  reward(user, skillId, item, baseXp, { rare, qty: baseQty = 1 }) {
+  reward(user, skillId, item, baseXp, { rare, qty: baseQty = 1, doubleBonus = 0 }) {
     const skill = SKILLS[skillId];
     const tool = this.currentTool(user.id, skillId);
     const xpGain = this.xpFor(baseXp, tool);
     // Better furnaces sometimes make two (only if there's room in the backpack for the extra one).
     let qty = baseQty;
-    if (baseQty === 1 && tool?.doubleChance > 0 && this.rng() < tool.doubleChance) {
+    const doubleChance = (tool?.doubleChance || 0) + doubleBonus;
+    if (baseQty === 1 && doubleChance > 0 && this.rng() < doubleChance) {
       const bagNow = this.backpack(user.id);
       if (bagNow.used + 1 < bagNow.capacity) qty = 2;
     }

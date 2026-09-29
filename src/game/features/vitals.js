@@ -247,6 +247,7 @@ module.exports = {
     }
     const p = ITEMS[id].potion;
     if (p.buff) return this.drinkBuff(user, id, now);
+    if (p.stamina) return this.drinkTrailBrew(user, id, now);
     const heals = p.hp && (vit.ko || vit.hp < vit.maxHp);
     const mana = p.mana && vit.mana < vit.maxMana;
     if (!heals && !mana) return `no need — ${this.vitalsLine(vit)}.`;

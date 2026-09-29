@@ -5,7 +5,7 @@
     skin: { porcelain: '#f7dfcd', fair: '#efc7a8', light: '#e0ae87', tan: '#c98c60', olive: '#b07b4f', brown: '#8d5a3b', dark: '#61402a', deep: '#3f281a', moss: '#8aa85e', jade: '#5f8c4c', ash: '#b9c1c9', frost: '#9db4c6' },
     hairColor: { black: '#1f1a17', darkbrown: '#4a2f1f', brown: '#7a4a2a', auburn: '#8e3b1f', red: '#c2451e', blonde: '#e0bd68', platinum: '#efe6c8', grey: '#9a9a9a', white: '#f2f2f2', blue: '#3f6fd1', green: '#3fa062', pink: '#e36fb1', purple: '#7b4cc2' },
     eyeColor: { brown: '#5a3a22', hazel: '#8a6a2f', green: '#3f8a4a', blue: '#3a6fc2', grey: '#7d8790', amber: '#d08a1c', red: '#c22a2a', violet: '#8a4cc2', glow: '#5ff2e6' },
-    outfit: { red: '#b8433a', blue: '#3a64b8', green: '#3f8a4a', purple: '#6e45a8', brown: '#7a5334', black: '#2a2d33', gold: '#c9a23a' },
+    outfit: { red: '#b8433a', blue: '#3a64b8', green: '#3f8a4a', purple: '#6e45a8', brown: '#7a5334', black: '#2a2d33', gold: '#c9a23a', crimson: '#9e1b32', indigo: '#2e2a8a', saffron: '#e0a526', silver: '#b9c0c8', celestial: '#43c6c9' },
   };
 
   // Darken (amt < 0) or lighten (amt > 0) a #rrggbb color.

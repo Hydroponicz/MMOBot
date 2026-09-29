@@ -610,6 +610,11 @@ function createRepo(db) {
     readNotifications: (userId) => db.prepare('UPDATE notifications SET read = 1 WHERE user_id = ? AND read = 0').run(userId),
     pruneNotifications: (before) => db.prepare('DELETE FROM notifications WHERE created_at < ?').run(before),
     setLastSeen: (userId, ts) => db.prepare('UPDATE users SET last_seen_at = ? WHERE id = ?').run(ts, userId),
+    // Everyone holding any of these items: [{ user_id, item, qty }].
+    itemsHeld(items) {
+      if (!items.length) return [];
+      return db.prepare(`SELECT user_id, item, qty FROM inventory WHERE qty > 0 AND item IN (${items.map(() => '?').join(',')})`).all(...items);
+    },
     setStamina: (userId, stamina, at) => db.prepare('UPDATE users SET stamina = ?, stamina_at = ? WHERE id = ?').run(stamina, at, userId),
     // Simple per-player fields (whitelisted, so the column name is never user input).
     // Lets every player of a race pick a new race right away (used when a race's perks change).

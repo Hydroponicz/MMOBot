@@ -626,6 +626,7 @@ test('fletching: arrows (oak + feather + iron ingot), bows and a quiver; archery
   repo.addItem(u.id, 'oak_logs', 3);
   repo.addItem(u.id, 'feathers', 1);
   repo.addItem(u.id, 'iron_bar', 1);
+  repo.addItem(u.id, 'flax', 1); // bows need a flax string
   assert.match(say('!fletch arrows'), /you need a 🧺 Quiver to hold arrows! !buy quiver \(250 pts\) or !fletch quiver/);
   repo.addPoints(u.id, 1000);
   assert.match(say('!buy quiver'), /bought 🧺 Quiver for 250 pts! Now !fletch arrows/);
@@ -882,11 +883,11 @@ test('!drink picks the right potion, !heal spends mana, potions can be bought an
   assert.match(say('!sell all'), /nothing to sell/);
 
   // Brewing from crops.
-  repo.addItem(u.id, 'carrot', 2);
-  assert.match(say('!brew'), /⚗️ you brewed 🧪 Minor Health Potion! \+24 XP/);
+  repo.addItem(u.id, 'mint', 2);
+  assert.match(say('!brew'), /⚗️ you brewed 🧪 Minor Health Potion! \+29 XP/);
   tick();
   assert.match(say('!brew health potion'), /need ⚗️ Alchemy level 25/);
-  assert.match(say('!brew'), /nothing to brew! a Minor Health Potion \(potion\) needs 2 Carrot\. You're missing 2 Carrot — try !plant carrot/);
+  assert.match(say('!brew'), /nothing to brew! a Minor Health Potion \(potion\) needs 2 Mint\. You're missing 2 Mint — try !plant mint/);
   assert.match(engine.equippedInfo(u), /❤️ 70\/70 HP · 🔷 22\/24 mana/);
 });
 
@@ -1100,7 +1101,7 @@ test('farming: free starter plot, buy seeds and plots, plant, wait 20 minutes, h
   assert.match(say('!harvest'), /🌾 harvested 3 plots: 🥕 3x Carrot! \+36 XP.* !plant again!/);
   assert.equal(repo.getInventory(u.id).carrot, 3);
   assert.equal(engine.farmPlots(u.id).filter((p) => p.crop).length, 0);
-  assert.match(say('!sell carrot all'), /sold 🥕 3x Carrot for 33 pts/);
+  assert.match(say('!sell carrot all'), /sold 🥕 3x Carrot for 12 pts/);
 });
 
 test('farm plots get exponentially pricier; the growth rate is a setting', () => {
@@ -1160,7 +1161,7 @@ test('farming level gates seeds; plot limit is 100; harvest respects backpack sp
   const { repo, engine, say, u, wait } = farmSetup();
   engine.cfg.plotsPerStamina = 0; // (stamina per plot is tested on its own below)
   repo.addPoints(u.id, 1_000_000_000);
-  assert.match(say('!buy tomato seeds'), /need 🌱 Farming level 30 to grow Tomato/);
+  assert.match(say('!buy sweet carrot seeds'), /need 🌱 Farming level 61 to grow Sweet Carrot/);
   assert.match(say('!buy plot 150'), /bought 99 farm plots/, 'capped at 100 including the free one');
   assert.match(say('!buy plot'), /maximum of 100 farm plots/);
   say('!buy carrot seeds 100');
@@ -1187,36 +1188,40 @@ test('growth time multiplier (admin) speeds up new plantings', () => {
   assert.match(engine.handleChat({ kickUserId: '1', username: 'Alice', content: '!plant' }).reply, /ready in 10m/);
 });
 
-test('201 crops, a new one every 2-3 levels from Carrot (1) to World Tree Fruit (500)', () => {
-  const { SKILLS, ITEMS } = require('../src/game/skills');
+test('16 crops that each feed another skill: 15 lines of 5 tiers plus Coffee', () => {
+  const { SKILLS, ITEMS, PLANT_LINES, SHOP } = require('../src/game/skills');
   const crops = SKILLS.farming.resources;
-  assert.equal(crops.length, 201);
-  assert.deepEqual(crops.slice(0, 4).map((c) => `${c.item}@${c.level}`), ['carrot@1', 'radish@2', 'lettuce@4', 'potato@5']);
+  assert.equal(PLANT_LINES.length, 15);
+  assert.equal(crops.length, 76);
+  assert.deepEqual(crops.slice(0, 4).map((c) => `${c.item}@${c.level}`), ['carrot@1', 'mint@3', 'flax@5', 'potato@8']);
   assert.equal(crops[0].grow, 20);
-  assert.equal(crops.at(-1).item, 'world_tree_fruit');
-  assert.equal(crops.at(-1).level, 500);
-  for (let i = 1; i < crops.length; i++) {
-    assert.ok(crops[i].level - crops[i - 1].level <= 3, `gap before ${crops[i].item}`);
-    assert.ok(ITEMS[crops[i].item].value >= ITEMS[crops[i - 1].item].value, crops[i].item);
+  assert.ok(crops.every((c) => c.level <= 500 && c.use && ITEMS[c.item].plantUse));
+  // Better tiers of a line unlock later and are worth more.
+  for (const line of PLANT_LINES) {
+    const tiers = crops.filter((c) => c.line === line.id).sort((a, b) => a.tier - b.tier);
+    assert.equal(tiers.length, 5, line.id);
+    for (let t = 1; t < 5; t++) assert.ok(tiers[t].level > tiers[t - 1].level && ITEMS[tiers[t].item].value >= ITEMS[tiers[t - 1].item].value);
   }
-  for (const c of crops) {
-    assert.deepEqual(c.yield, [1, 1]);
-    assert.ok(ITEMS[c.item].value >= c.seedCost * 5, `${c.item} is profitable`);
-  }
-  // The original crops kept their levels, so existing seeds still work.
-  const lvl = Object.fromEntries(crops.map((c) => [c.item, c.level]));
-  assert.deepEqual([lvl.potato, lvl.tomato, lvl.watermelon, lvl.mandrake], [5, 30, 100, 200]);
+  // Crops sell for little: the value is in using them.
+  for (const c of crops) assert.ok(ITEMS[c.item].value <= c.seedCost * 2 + 1, `${c.item} isn't a points printer`);
+  // Coffee: special, seeds aren't sold, 2 beans per plot.
+  const coffee = crops.find((c) => c.item === 'coffee_beans');
+  assert.ok(coffee.special);
+  assert.deepEqual(coffee.yield, [2, 2]);
+  assert.ok(!SHOP.some((x) => x.item === 'coffee_beans_seeds'));
+  // Old crops are legacy items: not plantable, not in the shop.
+  assert.ok(ITEMS.tomato.legacy && !crops.some((c) => c.item === 'tomato') && !SHOP.some((x) => x.item === 'tomato_seeds'));
 });
 
 test('similar crop names are planted by their full name', () => {
   const { repo, say, u, wait } = farmSetup();
-  repo.addXp(u.id, 'farming', xpForLevel(200));
+  repo.addXp(u.id, 'farming', xpForLevel(300));
   repo.addPoints(u.id, 100_000);
   say('!buy plot');
-  say('!buy lemon balm seeds');
-  assert.match(say('!plant'), /planted 🍋 Lemon Balm in 1 plot/);
+  say('!buy moonmoss seeds');
+  assert.match(say('!plant'), /planted 🌿 Moonmoss in 1 plot/);
   wait(11);
-  assert.match(say('!plant lemon'), /you have no Lemon Seeds! !buy lemon seeds/);
+  assert.match(say('!plant moon potato'), /you have no Moon Potato Seeds! !buy moon potato seeds/);
 });
 
 test('players who bought plots before the free plot existed get it on top', () => {
@@ -1530,7 +1535,7 @@ test('Kick follows reward once; subs and gifted subs reward and start a double-X
   assert.match(engine.channelEvent('channel.subscription.renewal', { subscriber: { user_id: 6, username: 'Subby' } }), /resubscribed/);
 
   const gift = { gifter: { user_id: 7, username: 'Gifter' }, giftees: [{ user_id: 8, username: 'Lucky1' }, { user_id: 9, username: 'Lucky2' }] };
-  assert.match(engine.channelEvent('channel.subscription.gifts', gift), /🎁 @Gifter gifted 2 subs! \+500 pts to them, \+500 each to the lucky ones\. DOUBLE XP for everyone for 10m!/);
+  assert.match(engine.channelEvent('channel.subscription.gifts', gift), /🎁 @Gifter gifted 2 subs! \+500 pts to them, \+500 each to the lucky ones\. ☕ \+2 Coffee Seeds for the gifter! DOUBLE XP for everyone for 10m!/);
   assert.equal(repo.getUserByName('lucky2').points, 500);
   assert.match(say('!fish'), /\+20 XP/, 'double XP');
   assert.match(engine.boostInfo(), /⚡ 2x XP for everyone for another 10m \(Gifter gifted 2 subs\)/);
@@ -2485,14 +2490,14 @@ test('agility shortcuts make a lap free; halflings get a free race change once',
 test('all crops and crop dishes share one sell-price drop; other items keep their own', () => {
   const { repo, engine } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
-  engine.addSupply('zucchini', 500);
-  const drop = engine.supplyFactor('zucchini');
+  engine.addSupply('wheat', 500);
+  const drop = engine.supplyFactor('wheat');
   assert.ok(drop < 0.9);
-  assert.equal(engine.supplyFactor('celery'), drop, 'another crop dropped too');
-  assert.equal(engine.supplyFactor('roasted_blueberry'), drop, 'and crop dishes');
+  assert.equal(engine.supplyFactor('potato'), drop, 'another crop dropped too');
+  assert.equal(engine.supplyFactor('wheat_bread'), drop, 'and crop dishes');
   assert.equal(engine.supplyFactor('shark'), 1, 'fish are separate');
   assert.equal(engine.supplyFactor('cooked_shrimp'), 1, 'and so is cooked fish');
-  assert.match(engine.priceCheck(u, ['celery']), /after lots of crops and crop dishes sold lately/);
+  assert.match(engine.priceCheck(u, ['potato']), /after lots of crops and crop dishes sold lately/);
 });
 
 test('houses: end-game homes add stamina charges, need a character level and go up one step at a time', () => {
@@ -2532,4 +2537,110 @@ test('agility XP is saved for players from before the skill existed; top Agility
   const base = (engine.cfg.staminaMinutes ?? 5) * 60_000;
   repo.addXp(u.id, 'agility', xpForLevel(500));
   assert.equal(engine.staminaRefillMs(u.id), base * 0.5, 'half the time at the top');
+});
+
+test('crops feed other skills: boosters, resin, flux, flax, cloth robes and bloom runes', () => {
+  const { repo, say, engine, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  // Glowmoss bait: used up by !fish for +1 fish.
+  repo.addItem(u.id, 'glowmoss', 1);
+  assert.match(say('!fish'), /2x Shrimp \(used 🌿 Glowmoss\)!/);
+  assert.equal(repo.getInventory(u.id).glowmoss, undefined);
+  tick(60);
+  assert.match(say('!fish'), /you caught 🦐 Shrimp!/, 'no bait, one fish');
+  // The best tier is used first.
+  repo.addItem(u.id, 'stoneroot', 1);
+  repo.addItem(u.id, 'goldroot', 1);
+  tick(60);
+  assert.match(say('!mine'), /used 🪨 Goldroot/);
+  // Resin: a longer fire that cooks more meals (+5 per tier).
+  repo.addItem(u.id, 'flint_and_steel', 1);
+  repo.addItem(u.id, 'logs', 1);
+  repo.addItem(u.id, 'amber_resin', 1);
+  tick(60);
+  assert.match(say('!lightfire'), /with 🪵 Logs and 🟠 Amber Resin .*can cook 20 meals/);
+  // Flux: much better odds of smelting two (the test rng rolls 0.99, so force it).
+  engine.rng = () => 0.1;
+  repo.addItem(u.id, 'copper_ore', 1);
+  repo.addItem(u.id, 'tin_ore', 1);
+  repo.addItem(u.id, 'emberroot', 1);
+  tick(60);
+  assert.match(say('!smelt'), /2x Bronze Alloy.*\(used 🔥 Emberroot\)/);
+  engine.rng = () => 0.99;
+  // Cloth robes give mages a spell bonus.
+  repo.addItem(u.id, 'cotton', 3);
+  repo.addXp(u.id, 'crafting', xpForLevel(20));
+  tick(60);
+  assert.match(say('!craft cotton robe'), /Cotton Robe/);
+  say('!equip cotton robe');
+  assert.ok(engine.combatStats(u.id).magicBonus > 0);
+  // Runebloom makes far more runes than Ashes + Tin.
+  repo.addItem(u.id, 'runebloom', 1);
+  repo.addXp(u.id, 'crafting', xpForLevel(25));
+  tick(60);
+  assert.match(say('!craft runes'), /20x Magic Rune/);
+});
+
+test('dye flowers unlock premium outfit colors; random looks never use them', () => {
+  const { repo, engine } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  const user = repo.getUser(u.id);
+  assert.match(engine.setAppearance(user, { look: { outfit: 'crimson' } }).error, /needs 3 Rose Madder/);
+  repo.addItem(u.id, 'rose_madder', 3);
+  assert.equal(engine.setAppearance(user, { look: { outfit: 'crimson' } }).ok, true);
+  assert.equal(repo.getInventory(u.id).rose_madder, undefined, 'used up the first time');
+  assert.equal(engine.setAppearance(user, { look: { outfit: 'blue' } }).ok, true);
+  assert.equal(engine.setAppearance(user, { look: { outfit: 'crimson' } }).ok, true, 'unlocked for good');
+  const { randomCharacter } = require('../src/game/appearance');
+  for (let i = 0; i < 200; i++) assert.ok(!['crimson', 'indigo', 'saffron', 'silver', 'celestial'].includes(randomCharacter(`k${i}`).look.outfit));
+});
+
+test('coffee: seeds only from gifting subs; Trail Brew restores a stamina charge once an hour', () => {
+  const { repo, engine, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!buy coffee beans seeds'), /usage: !buy/, 'not sold in the shop');
+  engine.channelEvent('channel.subscription.gifts', { gifter: { user_id: '1', username: 'Alice' }, giftees: [{ user_id: '2', username: 'Bob' }, { user_id: '3', username: 'Cat' }] });
+  assert.equal(repo.getInventory(u.id).coffee_beans_seeds, 2);
+  repo.addItem(u.id, 'coffee_beans', 4);
+  repo.addXp(u.id, 'alchemy', 10);
+  tick(60);
+  assert.match(say('!brew trail brew'), /Trail Brew/);
+  tick(60);
+  assert.match(say('!brew trail brew'), /Trail Brew/);
+  tick(60);
+  assert.match(say('!drink trail brew'), /stamina is already full/);
+  // Tired: one charge back.
+  say('!fish');
+  assert.equal(engine.stamina(u.id).charges, 0);
+  assert.match(say('!drink trail brew'), /second wind! Stamina 1\/1/);
+  tick(1);
+  say('!fish');
+  assert.match(say('!drink trail brew'), /only have one Trail Brew an hour/);
+});
+
+test('old crops are bought back once, and old crops still in plots pay out when harvested', () => {
+  const { openDb } = require('../src/db');
+  const { GameEngine } = require('../src/game/engine');
+  const { ITEMS } = require('../src/game/skills');
+  const repo = openDb(':memory:');
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addItem(u.id, 'tomato', 10);
+  repo.addItem(u.id, 'tomato_seeds', 4);
+  repo.addItem(u.id, 'roasted_zucchini', 2);
+  repo.addItem(u.id, 'carrot', 5); // still a crop: kept
+  repo.plant(u.id, 1, 'watermelon', 0, 1);
+  const expected = ITEMS.tomato.value * 10 + ITEMS.tomato_seeds.value * 4 + ITEMS.roasted_zucchini.value * 2;
+  let t = 1_000_000;
+  const engine = new GameEngine({ repo, config: baseConfig, rng: () => 0.99, now: () => t });
+  assert.equal(repo.getUser(u.id).points, expected);
+  assert.deepEqual(repo.getInventory(u.id), { carrot: 5 });
+  // Only once.
+  repo.addItem(u.id, 'tomato', 1);
+  new GameEngine({ repo, config: baseConfig, now: () => t });
+  assert.equal(repo.getInventory(u.id).tomato, 1);
+  // The old watermelon in the plot pays out in points.
+  const before = repo.getUser(u.id).points;
+  const reply = engine.handleChat({ kickUserId: '1', username: 'Alice', content: '!harvest' }).reply;
+  assert.match(reply, /Old crops from before the Farming rework were bought back/);
+  assert.equal(repo.getUser(u.id).points - before, ITEMS.watermelon.value + 5, '+5 chat points');
 });

@@ -92,6 +92,8 @@ module.exports = {
       const count = Math.max(1, (payload.giftees || []).length);
       const gifter = who(payload.gifter);
       reward(gifter, (c.giftPointsPerSub || 0) * count);
+      // Coffee seeds (Trail Brew) only come from gifting subs.
+      const seeds = gifter ? this.giveCoffeeSeeds(gifter, count) : 0;
       for (const g of giftees) {
         this.repo.setUserField(g.id, 'subscriber', 1);
         reward(g, c.subPoints);
@@ -104,7 +106,7 @@ module.exports = {
         boost = ` ${b.multiplier === 2 ? 'DOUBLE' : `${b.multiplier}x`} XP for everyone for ${minutesLeft(b.until - now)}! 🎉`;
       }
       if (gifter) this.emitActivity(gifter, { kind: 'gift', text: `gifted ${count} sub${count > 1 ? 's' : ''}! 🎁` });
-      return `🎁 ${name} gifted ${count} sub${count > 1 ? 's' : ''}!${gifter && c.giftPointsPerSub ? ` +${fmt(c.giftPointsPerSub * count)} pts to them` : ''}${giftees.length && c.subPoints ? `, +${fmt(c.subPoints)} each to the lucky ones` : ''}.${boost}`;
+      return `🎁 ${name} gifted ${count} sub${count > 1 ? 's' : ''}!${gifter && c.giftPointsPerSub ? ` +${fmt(c.giftPointsPerSub * count)} pts to them` : ''}${giftees.length && c.subPoints ? `, +${fmt(c.subPoints)} each to the lucky ones` : ''}.${seeds ? ` ☕ +${seeds} Coffee Seed${seeds === 1 ? '' : 's'} for the gifter!` : ''}${boost}`;
     }
 
     if (type === 'livestream.status.updated') {

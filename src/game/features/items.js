@@ -38,6 +38,10 @@ function itemIndex() {
     if (it.potion?.buff) at(id).uses.push({ text: `!drink: ${BUFFS[it.potion.buff].name} for ${it.potion.minutes || BUFFS[it.potion.buff].minutes} min (${BUFFS[it.potion.buff].text})` });
     if (it.cosmetic) at(id).uses.push({ text: `wear it on the Customize page (${it.cosmetic.slot})` });
     if (it.gear) at(id).uses.push({ text: '!equip it' });
+    // Crops: what the crop line is for (boosters, resin, flux and dyes have no recipe to point at).
+    if (it.plantUse) at(id).uses.unshift({ text: it.plantUse });
+    if (it.potion?.stamina) at(id).uses.push({ text: '!drink: +1 stamina charge (once an hour)' });
+    if (it.legacy) at(id).uses.push({ text: 'an old crop from before the Farming rework: sell it' });
   }
   return INDEX;
 }

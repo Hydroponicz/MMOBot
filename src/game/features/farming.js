@@ -182,11 +182,19 @@ module.exports = {
     let room = bag.capacity - bag.used;
     const gathered = {};
     let harvestedPlots = 0;
+    let legacyPoints = 0;
     let xp = 0;
     this.repo.transaction(() => {
       for (const p of ready) {
         if (harvestedPlots >= maxPlots) break;
         const crop = CROPS.find((c) => c.item === p.crop);
+        // An old crop from before the Farming rework: paid out in points (no backpack space needed).
+        if (!crop) {
+          legacyPoints += this.legacyHarvestValue(p.crop, 1);
+          this.repo.clearPlot(user.id, p.plot);
+          harvestedPlots++;
+          continue;
+        }
         const [lo, hi] = crop.yield;
         const qty = lo + Math.floor(this.rng() * (hi - lo + 1));
         if (qty > room) break;
@@ -196,6 +204,10 @@ module.exports = {
         gathered[p.crop] = (gathered[p.crop] || 0) + qty;
         xp += crop.xp;
         harvestedPlots++;
+      }
+      if (legacyPoints) {
+        this.repo.addPoints(user.id, legacyPoints);
+        this.track('sold', legacyPoints);
       }
       if (harvestedPlots) {
         this.repo.setFarmAt(user.id, this.now());
@@ -208,9 +220,10 @@ module.exports = {
       return `🎒 no backpack space to harvest (${bag.used}/${bag.capacity}) — each plot's crop needs a free slot. !sell or !upgrade backpack first.`;
     }
 
-    const list = Object.entries(gathered).map(([id, q]) => itemLabel(id, q)).join(', ');
+    const legacyNote = legacyPoints ? ` 🌱 Old crops from before the Farming rework were bought back for ${fmt(legacyPoints)} pts.` : '';
+    const list = Object.entries(gathered).map(([id, q]) => itemLabel(id, q)).join(', ') || 'old crops';
     this.emitActivity(user, { kind: 'action', skill: 'farming', xp, text: `harvested ${Object.entries(gathered).map(([id, q]) => `${q}x ${ITEMS[id].name}`).join(', ')}` });
-    const gained = this.grantXp(user, 'farming', this.xpFor(xp));
+    const gained = xp ? this.grantXp(user, 'farming', this.xpFor(xp)) : { text: '' };
     const leftover = ready.length - harvestedPlots;
     const tiredOut = harvestedPlots >= maxPlots;
     const note = leftover
@@ -219,7 +232,7 @@ module.exports = {
         : ` 🎒 Backpack full — ${leftover} plot${leftover === 1 ? '' : 's'} still waiting!`
       : ' !plant again!';
     const cost = per ? Math.ceil(harvestedPlots / per) : 1;
-    return `🌾 harvested ${harvestedPlots} plot${harvestedPlots === 1 ? '' : 's'}${cost > 1 ? ` (${cost} stamina)` : ''}: ${list}! ${gained.text}${note}`;
+    return `🌾 harvested ${harvestedPlots} plot${harvestedPlots === 1 ? '' : 's'}${cost > 1 ? ` (${cost} stamina)` : ''}: ${list}! ${gained.text}${note}${legacyNote}`;
   },
 
   // !farm: plot overview.

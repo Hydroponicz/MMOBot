@@ -62,8 +62,10 @@ module.exports = {
     const defence = Math.round(armorIds.reduce((sum, id) => sum + (ITEMS[id].defence || 0) * this.enchantMult(userId, id), 0) * (set ? set.defence : 1));
     // Leather armor helps archers.
     const archeryBonus = armor.reduce((sum, it) => sum + (it?.archeryBonus || 0), 0);
+    // Cloth robes help mages.
+    const magicBonus = armor.reduce((sum, it) => sum + (it?.magicBonus || 0), 0);
     const attack = weapon ? Math.round(ITEMS[weapon].attack * this.enchantMult(userId, weapon) * (set ? set.attack : 1)) : 0;
-    return { worn, weapon, attack, defence, archeryBonus, set, level: this.combatLevel(userId) };
+    return { worn, weapon, attack, defence, archeryBonus, magicBonus, set, level: this.combatLevel(userId) };
   },
 
   // Look at every weapon the player owns (worn or in the backpack), take the combat skill they're
@@ -118,7 +120,7 @@ module.exports = {
     const st = this.combatStats(userId);
     // Arrows, spells, and leather armor's archery bonus add to the weapon's attack.
     const attack =
-      ITEMS[pick.weapon].attack * this.enchantMult(userId, pick.weapon) * (st.set ? st.set.attack : 1) + (pick.arrow ? ITEMS[pick.arrow].attack : 0) + (pick.spell ? pick.spell.attack : 0) + (pick.skillId === 'archery' ? st.archeryBonus : 0);
+      ITEMS[pick.weapon].attack * this.enchantMult(userId, pick.weapon) * (st.set ? st.set.attack : 1) + (pick.arrow ? ITEMS[pick.arrow].attack : 0) + (pick.spell ? pick.spell.attack : 0) + (pick.skillId === 'archery' ? st.archeryBonus : 0) + (pick.skillId === 'magic' ? st.magicBonus : 0);
     const perk = this.perks(userId);
     return {
       // Banshee Fury +25% and Venom Coating +20% attack, Stoneskin +25% defence. Race perks scale both.

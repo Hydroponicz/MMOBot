@@ -457,6 +457,7 @@
             <span class="badge">⚔️ Attack +${fmt(c.attack)}</span>
             <span class="badge">🛡️ Defence +${fmt(c.defence)}</span>
             ${c.archeryBonus ? `<span class="badge">🏹 Archery +${fmt(c.archeryBonus)}</span>` : ''}
+            ${c.magicBonus ? `<span class="badge">🔮 Magic +${fmt(c.magicBonus)}</span>` : ''}
             <span class="badge">🎖️ Combat level ${fmt(c.level)}</span>
           </div>
         </div>
@@ -937,16 +938,16 @@
       <div class="shop-grid">${arrows.map(card).join('')}</div>
 
       <h2 style="margin:28px 0 6px">🌱 Seeds</h2>
-      <p class="muted">One seed per plot: <code>!plant carrot</code>, then <code>!harvest</code> when it's grown (1 crop per plot). Seeds don't take backpack space.${loggedIn ? ` Your Farming level: <b>${farmingLevel}</b>.` : ''}</p>
+      <p class="muted">One seed per plot: <code>!plant carrot</code>, then <code>!harvest</code> when it's grown (1 crop per plot). Seeds don't take backpack space. <b>Every crop feeds another skill</b> (food, potions, bowstrings, robes, runes, bait, flux, dyes...), and better tiers unlock with Farming level. Crops sell for little: use them, or sell them to players who need them on the <a href="#/market">Market</a>. ☕ Coffee seeds only come from gifting subs.${loggedIn ? ` Your Farming level: <b>${farmingLevel}</b>.` : ''}</p>
       <section class="panel"><div class="table-wrap"><table>
-        <thead><tr><th>Level</th><th>Seed</th><th>Grows</th><th class="num">Ready in</th><th class="num">Crop sells for</th><th class="num">Price</th>${loggedIn ? '<th>Buy</th>' : ''}</tr></thead>
+        <thead><tr><th>Level</th><th>Seed</th><th>Used for</th><th class="num">Ready in</th><th class="num">Crop sells for</th><th class="num">Price</th>${loggedIn ? '<th>Buy</th>' : ''}</tr></thead>
         <tbody>${seeds
           .map((i) => {
             const locked = loggedIn && farmingLevel < i.level;
             return `<tr class="${locked ? 'locked' : ''}">
               <td><b>${i.level}</b></td>
               <td>🌱 ${esc(i.crop.name)} seeds</td>
-              <td>${i.crop.icon} ${esc(i.crop.kind)}</td>
+              <td style="max-width:340px;white-space:normal">${i.crop.icon} <span class="muted">${esc(i.crop.use || i.crop.kind)}</span></td>
               <td class="num">${i.crop.grow} min</td>
               <td class="num">${fmt(i.crop.value)} pts</td>
               <td class="num">${fmt(i.cost)} pts</td>
@@ -1429,7 +1430,7 @@
                 ([key, label]) => `<div class="look-row"><div class="look-label">${label}</div><div class="look-options">${data.options[key]
                   .map((o) =>
                     o.color
-                      ? `<button class="swatch${draft.look[key] === o.id ? ' active' : ''}" data-key="${key}" data-val="${o.id}" title="${esc(o.label)}" style="--sw:${o.color}"></button>`
+                      ? `<button class="swatch${draft.look[key] === o.id ? ' active' : ''}${o.dye && !(mine.dyes || []).includes(o.id) ? ' dye-locked' : ''}" data-key="${key}" data-val="${o.id}" title="${esc(o.dye && !(mine.dyes || []).includes(o.id) ? `${o.label}: needs 3 ${o.dye} (a dye flower from Farming) the first time` : o.label)}" style="--sw:${o.color}"></button>`
                       : `<button class="tab${draft.look[key] === o.id ? ' active' : ''}" data-key="${key}" data-val="${o.id}">${esc(o.label)}</button>`
                   )
                   .join('')}</div></div>`
@@ -1460,7 +1461,7 @@
       else if (b.dataset.key) draft.look[b.dataset.key] = b.dataset.val;
       else if ('random' in b.dataset) {
         for (const [key] of LOOK_SECTIONS) {
-          const opts = data.options[key];
+          const opts = data.options[key].filter((o) => !o.dye || (mine.dyes || []).includes(o.id));
           draft.look[key] = opts[Math.floor(Math.random() * opts.length)].id;
         }
       } else if ('save' in b.dataset) {
@@ -1581,14 +1582,16 @@
       woodcutting: `${c('chop')} cuts logs (${c('chop oak')} for a specific tree). Logs are used for fires, bows, arrows and staffs.${bigger('log per chop')} 🌳 Tree Saplings train it for you: ${c('collect')}.`,
       digging: `${c('dig')} unearths coins, relics and fossils. ${c('donate')} them to the museum for 3× their value.${bigger('find per dig')} 🏺 Dig Sites train it for you: ${c('collect')}.`,
       skinning: `Needs a 🔪 Skinning Knife in your backpack (shop, or smith one at Smithing 20). ${c('skin')} animals for hides and raw meat. ${c('craft')} hides into leather armor.`,
-      farming: `Everyone gets a free 🟫 plot; buy more in the <a href="#/shop">shop</a> (the first costs ${shopCost('farm_plot')} pts and each one after costs ${Math.round(((g.plotPriceGrowth ?? 1.12) - 1) * 100)}% more, up to 100). Buy seeds, ${c('plant carrot')}, then ${c('harvest')} when it's grown (1 crop per plot). ${c('farm')} shows your plots. Planting and harvesting each use a stamina charge per ${g.plotsPerStamina ?? 25} plots (70 plots = 3 charges); with too few charges, the rest wait.`,
+      farming: `Everyone gets a free 🟫 plot; buy more in the <a href="#/shop">shop</a> (the first costs ${shopCost('farm_plot')} pts and each one after costs ${Math.round(((g.plotPriceGrowth ?? 1.12) - 1) * 100)}% more, up to 100). Buy seeds, ${c('plant carrot')}, then ${c('harvest')} when it's grown (1 crop per plot). ${c('farm')} shows your plots. Planting and harvesting each use a stamina charge per ${g.plotsPerStamina ?? 25} plots (70 plots = 3 charges); with too few charges, the rest wait. <b>Every crop feeds another skill</b>, and each line has better tiers as you level (crops sell for little, so use them or trade them):<ul>${(g.plantLines || [])
+        .map((l) => `<li>${l.tiers[0].icon} <b>${esc(l.tiers.map((t) => t.name).join(' → '))}</b> <span class="muted">(${esc(l.skill)}, Farming ${l.tiers.map((t) => t.level).join('/')})</span>: ${esc(l.text)}</li>`)
+        .join('')}</ul>`,
       firemaking: `Buy a 🪨 Flint and Steel (${shopCost('flint_and_steel')} pts, 250 fires), then ${c('lightfire')} burns your best log (or ${c('lightfire oak')}). Better logs give more XP, and every fire leaves 🌫️ Ashes. If it doesn't catch, nothing is used up. ${c('fire')} shows how long it burns.`,
       cooking: `While your fire burns (5 minutes, longer with better logs), ${c('cook')} your best raw food or name it: ${c('cook trout')}. <b>Cooking uses no stamina</b>, but each fire can cook only so many meals: ${g.fireMealsBase ?? 10}, plus 1 per ${g.fireMealsPerLevels ?? 2} Firemaking levels. ${c('cook all')} cooks as much as the fire allows; light another fire for more. Food sometimes burns (less as you level). ${c('eat')} cooked food to heal.`,
       smelting: `${c('smelt')} ores from your backpack into ingots (one ore) and alloys (mixed ores, e.g. copper + tin = bronze). Better furnaces can smelt two at once.`,
       smithing: `Needs a 🔨 Smithing Hammer in your backpack. ${c('smith bronze sword')} turns alloys into weapons and armor. ${c('equip')} them or ${c('sell')} them.`,
       fletching: `${c('fletch arrows')} makes 10 arrows from 1 Oak Logs + 1 🪶 Feathers + 1 Iron Ingot. Also bows (${c('fletch oak shortbow')}), staffs and a quiver.`,
       crafting: `${c('craft')} hides into leather armor (it adds to your attack when you ${c('shoot')}), bigger quivers, and Magic Runes (${c('craft runes')}: 1 Ashes + 1 Tin Ore makes 10).`,
-      alchemy: `${c('brew')} potions from crops you farm, e.g. 2 Carrots make a Minor Health Potion. Undead potions come from Ashes plus something dead (see <b>Undead potions</b> in the Combat tab).`,
+      alchemy: `${c('brew')} potions from herbs you farm, e.g. 2 Mint make a Minor Health Potion and 2 Lavender a Minor Mana Potion. ☕ 2 Coffee Beans brew a Trail Brew (+1 stamina, once an hour; Coffee seeds come from gifting subs). Undead potions come from Ashes plus something dead (see <b>Undead potions</b> in the Combat tab).`,
       swords: `With a sword, ${c('fight')} monsters for Swords XP and loot. ${c('fight goblin')} picks a target; a plain ${c('fight')} picks your best safe match.`,
       archery: `With a bow, a 🧺 quiver and arrows, ${c('shoot')} monsters for Archery XP. Each fight uses one arrow; better arrows hit harder. ${c('quiver')} shows your arrows, ${c('buy arrows 50')} buys more.`,
       agility: `${c('run')} runs a lap of your best obstacle course (or name one: ${c('run rooftops')}). Laps give XP and points but no items, so they never fill your backpack. The reward is stamina: every level makes your stamina refill ${((g.agilityRefillPerLevel ?? 0.001) * 100).toFixed(1)}% faster, up to ${Math.round((g.agilityRefillMax ?? 0.5) * 100)}% faster at the top (half the wait). You sometimes slip (a little XP) and now and then find a shortcut that makes the lap free. ${c('stamina')} shows your refill speed.`,

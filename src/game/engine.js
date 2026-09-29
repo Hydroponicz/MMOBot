@@ -44,6 +44,7 @@ const {
 } = require('./features/shared');
 const { RACES } = require('./appearance');
 const { QUESTS, PETS, RACE_ITEMS } = require('./content');
+const { PLANT_LINES } = require('./skills');
 
 class GameEngine extends EventEmitter {
   // settings: a Settings instance (live, admin-editable). Tests may pass a plain { game, all } object.
@@ -63,6 +64,8 @@ class GameEngine extends EventEmitter {
     this.betWarned = new Map();
     this.fightWarned = new Map(); // userId -> { monster, at }: "type it again to fight anyway"
     this.lastChat = new Map(); // userId -> their last message (no points for repeats)
+    // Old crops (before the Farming rework) are bought back once.
+    this.migrateLegacyCrops();
     // Halflings lost their extra stamina charge (Agility): they get one free race change.
     if (!repo.getSetting('migrated:halfling_refill')) {
       repo.resetRaceWaitFor('halfling');
@@ -357,6 +360,7 @@ class GameEngine extends EventEmitter {
           attack: st.attack,
           defence: st.defence,
           archeryBonus: st.archeryBonus,
+          magicBonus: st.magicBonus,
           level: st.level,
           hp: Math.floor(vit.hp),
           maxHp: vit.maxHp,
@@ -424,6 +428,12 @@ class GameEngine extends EventEmitter {
       plotPriceGrowth: this.cfg.plotPriceGrowth ?? 1.12,
       gatherBonusLevels: this.cfg.gatherBonusLevels ?? 50,
       plotsPerStamina: this.cfg.plotsPerStamina ?? 25,
+      // What each crop line is for (Farming feeds the other skills).
+      plantLines: [...PLANT_LINES, { id: 'coffee', skill: 'alchemy', text: ITEMS.coffee_beans.plantUse, tiers: [['coffee_beans', ITEMS.coffee_beans.name, ITEMS.coffee_beans.icon]] }].map((l) => ({
+        skill: SKILLS[l.skill]?.name || l.skill,
+        text: l.text,
+        tiers: l.tiers.map(([id]) => ({ name: ITEMS[id].name, icon: ITEMS[id].icon, level: SKILLS.farming.resources.find((c) => c.item === id)?.level })),
+      })),
       fireMealsBase: this.cfg.fireMealsBase ?? 10,
       fireMealsPerLevels: this.cfg.fireMealsPerLevels ?? 2,
       stationXpBonus: this.cfg.stationXpBonus ?? 1.2,
@@ -502,7 +512,7 @@ function isChatCommand(word) {
 }
 
 // Feature modules add their methods to the engine.
-for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events', 'museum', 'progression', 'character', 'community', 'market', 'gear', 'social', 'guilds', 'items', 'cards', 'relics', 'stream', 'stations', 'prices', 'pvpCombat', 'pvp', 'houses']) {
+for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events', 'museum', 'progression', 'character', 'community', 'market', 'gear', 'social', 'guilds', 'items', 'cards', 'relics', 'stream', 'stations', 'prices', 'pvpCombat', 'pvp', 'houses', 'plants']) {
   Object.assign(GameEngine.prototype, require(`./features/${mod}`));
 }
 

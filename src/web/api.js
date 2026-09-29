@@ -91,7 +91,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       const crop = crops[x.item];
       if (!crop) return x;
       const it = ITEMS[crop.item];
-      return { ...x, crop: { name: it.name, icon: it.icon, kind: crop.kind, value: engine.sellValue(crop.item), grow: Math.max(1, Math.round(crop.grow * (engine.cfg.growMultiplier ?? 1))) } };
+      return { ...x, crop: { name: it.name, icon: it.icon, kind: crop.kind, use: crop.use, tier: crop.tier, value: engine.sellValue(crop.item), grow: Math.max(1, Math.round(crop.grow * (engine.cfg.growMultiplier ?? 1))) } };
     });
     const me = req.user ? repo.getUser(req.user.id) : null;
     // Plots get pricier with each one bought, so a logged-in player sees the price of their next plot.

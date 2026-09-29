@@ -6,6 +6,9 @@ const crypto = require('node:crypto');
 //   xp: { skillId: multiplier } ("all" applies to every skill), hp, mana, attack, defence,
 //   sell (item sell prices), luck (rare finds), food (HP healed by food), stamina (extra charges),
 //   refill (stamina refill time, 0.9 = 10% faster).
+const DYE_LINE = require('./plantables').LINES.find((l) => l.use === 'dye');
+const DYED = new Set(DYE_LINE.colors.map(([id]) => id));
+
 const RACES = {
   human: {
     name: 'Human',
@@ -171,6 +174,8 @@ const OPTIONS = {
     ['brown', 'Brown', '#7a5334'],
     ['black', 'Black', '#2a2d33'],
     ['gold', 'Gold', '#c9a23a'],
+    // Dyed colors: unlocked with dye flowers from Farming (see plants.js).
+    ...DYE_LINE.colors.map(([id, label, color], i) => [id, label, color, DYE_LINE.tiers[i][1]]),
   ],
 };
 const LOOK_KEYS = Object.keys(OPTIONS);
@@ -211,7 +216,7 @@ function randomCharacter(seed) {
     mouth: pick(ids('mouth')),
     facialHair: rnd() < beardy ? pick(ids('facialHair').filter((f) => f !== 'none')) : 'none',
     extra: rnd() < 0.6 ? 'none' : pick(ids('extra').filter((e) => e !== 'none')),
-    outfit: pick(ids('outfit')),
+    outfit: pick(ids('outfit').filter((o) => !DYED.has(o))),
   };
   if (race === 'dwarf' && look.facialHair !== 'none' && rnd() < 0.5) look.facialHair = 'longbeard';
   return { race, look };
@@ -232,7 +237,7 @@ function cleanLook(input, base) {
 
 // Options as plain JSON for the website.
 const publicOptions = () =>
-  Object.fromEntries(LOOK_KEYS.map((key) => [key, OPTIONS[key].map(([id, label, color]) => ({ id, label, ...(color ? { color } : {}) }))]));
+  Object.fromEntries(LOOK_KEYS.map((key) => [key, OPTIONS[key].map(([id, label, color, dye]) => ({ id, label, ...(color ? { color } : {}), ...(dye ? { dye } : {}) }))]));
 
 const publicRaces = () => RACE_IDS.map((id) => ({ id, name: RACES[id].name, icon: RACES[id].icon, text: RACES[id].text, pros: RACES[id].pros, cons: RACES[id].cons }));
 

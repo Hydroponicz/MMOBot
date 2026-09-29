@@ -77,6 +77,11 @@ module.exports = {
       if (!fits || !inv[want]) return { ok: false, error: `you don't own that ${key}` };
       cleaned.look[key] = want;
     }
+    // Dyed outfit colors need their dye flower the first time.
+    if (cleaned.look.outfit !== current.look.outfit) {
+      const dyeError = this.unlockDye(user.id, cleaned.look.outfit);
+      if (dyeError) return { ok: false, error: dyeError };
+    }
     let newRace = current.race;
     let changedAt = current.raceChangedAt;
     if (race !== undefined && race !== null && race !== current.race) {
@@ -161,6 +166,7 @@ module.exports = {
       raceChangeAt: this.raceChangeAt(userId),
       perksOn: this.cfg.racePerks !== false,
       wardrobe: this.wardrobe(userId),
+      dyes: this.dyesUnlocked(userId),
       prestige: this.prestigeOf(userId),
     };
   },

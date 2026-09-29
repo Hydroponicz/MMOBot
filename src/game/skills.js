@@ -947,46 +947,79 @@ LATE_LEVELS.forEach((level, i) => {
 });
 CROP_LIST.sort((a, b) => a[3] - b[3]);
 
-// One crop per plot: a crop sells for about 6x its seed price, and both rise with the Farming level.
+// The crops above are the OLD crop list (201 of them, mostly grown to be sold). They were replaced
+// by the plantables in plantables.js; the old ones stay defined as legacy items so anything still in
+// a backpack or a plot keeps working (and is bought back, see migrateLegacyCrops in farming.js).
+const { LINES: PLANT_LINES, TIER_OFFSETS, COFFEE } = require('./plantables');
 const baseValue = (level) => 3 + 0.5 * level + 0.0045 * level * level;
-const cropValue = (level) => Math.round(3 * baseValue(level));
 const cropXp = (level) => Math.round(10 + 1.6 * level + 0.0045 * level * level);
 const growMinutes = (level) => 20 + 5 * Math.floor(level / 40); // carrot 20 min ... level 500: 80 min
+const seedCostFor = (level) => Math.max(2, Math.round(baseValue(level) / 2));
 const MAX_PLOTS = 100;
 const STARTER_PLOTS = 1; // every player gets one free plot
 ITEMS.farm_plot = { name: 'Farm Plot', icon: '🟫', value: 0, notItem: true };
+
+// New crops: every tier of every line, plus Coffee.
+const PLANTABLES = []; // { id, name, icon, level, line, tier }
+for (const line of PLANT_LINES) {
+  line.tiers.forEach(([id, name, icon], tier) => PLANTABLES.push({ id, name, icon, level: line.start + TIER_OFFSETS[tier], line, tier: tier + 1 }));
+}
+PLANTABLES.push({ id: COFFEE.id, name: COFFEE.name, icon: COFFEE.icon, level: COFFEE.level, line: { id: 'coffee', skill: 'alchemy', use: 'coffee', text: COFFEE.text }, tier: 1, special: true, yield: COFFEE.yield });
+PLANTABLES.sort((a, b) => a.level - b.level);
+const PLANT_IDS = new Set(PLANTABLES.map((p) => p.id));
+
+// Legacy: old crops that aren't plantable any more, their seeds and the dishes cooked from them.
+// Old values are kept, so the buyback pays what they were worth.
+const LEGACY_ITEMS = new Set();
 for (const [id, name, icon, level, kind] of CROP_LIST) {
-  if (ITEMS[id]) throw new Error(`crop id ${id} clashes with an existing item`);
-  const value = cropValue(level);
-  ITEMS[id] = { name, icon, value, crop: kind };
-  const seedCost = Math.max(2, Math.round(baseValue(level) / 2));
-  // Seeds are kept by "!sell all" and sell back for half their shop price.
-  ITEMS[`${id}_seeds`] = { name: `${name} Seeds`, icon: '🌱', value: Math.max(1, Math.round(seedCost / 2)), keep: true, seedFor: id };
+  const seedCost = seedCostFor(level);
+  if (!PLANT_IDS.has(id)) {
+    ITEMS[id] = { name, icon, value: Math.round(3 * baseValue(level)), crop: kind, legacy: true };
+    ITEMS[`${id}_seeds`] = { name: `${name} Seeds`, icon: '🌱', value: Math.max(1, Math.round(seedCost / 2)), keep: true, seedFor: id, legacy: true };
+    LEGACY_ITEMS.add(id).add(`${id}_seeds`);
+  }
+  if (kind === 'vegetable' && !(id === 'carrot')) {
+    const dish = `roasted_${id}`;
+    ITEMS[dish] = { name: `Roasted ${name}`, icon, value: Math.round(3 * baseValue(level) * 1.6) + 1, food: { heal: Math.round(10 + level * 2) }, legacy: true };
+    LEGACY_ITEMS.add(dish);
+  }
+}
+for (const p of PLANTABLES) {
+  const seedCost = seedCostFor(p.level);
+  // Crops sell for about twice their seed price: the value is in using them.
+  ITEMS[p.id] = { name: p.name, icon: p.icon, value: Math.max(2, seedCost * 2), crop: p.line.use, plantLine: p.line.id, plantTier: p.tier, plantUse: p.line.text };
+  ITEMS[`${p.id}_seeds`] = { name: `${p.name} Seeds`, icon: '🌱', value: Math.max(1, Math.round(seedCost / 2)), keep: true, seedFor: p.id };
   SKILLS.farming.resources.push({
-    item: id,
-    level,
-    kind,
-    xp: cropXp(level),
-    seed: `${id}_seeds`,
+    item: p.id,
+    level: p.level,
+    kind: p.line.use,
+    use: p.line.text,
+    line: p.line.id,
+    tier: p.tier,
+    xp: cropXp(p.level),
+    seed: `${p.id}_seeds`,
     seedCost,
-    grow: growMinutes(level),
-    yield: [1, 1], // crops per plot
+    special: !!p.special, // Coffee: seeds aren't sold
+    grow: growMinutes(p.level),
+    yield: [p.yield || 1, p.yield || 1], // crops per plot
   });
 }
+// The crop line (and tier) of an item, for the skills that use them.
+const lineItems = (lineId) => PLANTABLES.filter((p) => p.line.id === lineId).sort((a, b) => a.tier - b.tier);
 
 // ---- Potions (Alchemy, !brew; also sold in the shop) ------------------------------------
 // Health potions heal a share of your max HP (and revive you if you're knocked out); mana
 // potions restore mana; an elixir does both. They're kept by "!sell all".
 const POTION_LIST = [
   // id, name, icon, Alchemy level, ingredients, { hp, mana } as a share of max, shop price
-  ['minor_health_potion', 'Minor Health Potion', '🧪', 1, { carrot: 2 }, { hp: 0.25 }, 150],
-  ['minor_mana_potion', 'Minor Mana Potion', '🔹', 10, { parsley: 2 }, { mana: 0.4 }, 150],
+  ['minor_health_potion', 'Minor Health Potion', '🧪', 1, { mint: 2 }, { hp: 0.25 }, 150],
+  ['minor_mana_potion', 'Minor Mana Potion', '🔹', 10, { lavender: 2 }, { mana: 0.4 }, 150],
   ['health_potion', 'Health Potion', '❤️', 25, { mint: 1, chamomile: 1 }, { hp: 0.5 }, 400],
   ['mana_potion', 'Mana Potion', '🔷', 50, { lavender: 1, sage: 1 }, { mana: 0.7 }, 400],
-  ['greater_health_potion', 'Greater Health Potion', '💖', 75, { rosemary: 1, ginseng: 1 }, { hp: 0.75 }, 900],
-  ['greater_mana_potion', 'Greater Mana Potion', '💠', 120, { snapdragon: 1, moonpetal: 1 }, { mana: 1 }, 900],
-  ['super_health_potion', 'Super Health Potion', '💗', 200, { mandrake: 1, bloodroot: 1 }, { hp: 1 }, 2000],
-  ['elixir', 'Elixir of Life', '🌟', 300, { silverleaf: 1, stormvine: 1, emberroot: 1 }, { hp: 1, mana: 1 }, 3500],
+  ['greater_health_potion', 'Greater Health Potion', '💖', 75, { chamomile: 1, ginseng: 1 }, { hp: 0.75 }, 900],
+  ['greater_mana_potion', 'Greater Mana Potion', '💠', 120, { sage: 1, snapdragon: 1 }, { mana: 1 }, 900],
+  ['super_health_potion', 'Super Health Potion', '💗', 200, { ginseng: 1, mandrake: 1 }, { hp: 1 }, 2000],
+  ['elixir', 'Elixir of Life', '🌟', 300, { mandrake: 1, lifebloom: 1, moonpetal: 1 }, { hp: 1, mana: 1 }, 3500],
 ];
 for (const [id, name, icon, level, inputs, restores] of POTION_LIST) {
   for (const i of Object.keys(inputs)) if (!ITEMS[i]) throw new Error(`potion ${id} needs unknown item ${i}`);
@@ -1042,8 +1075,13 @@ const addFood = (raw, id, name, icon, level, xp, kind, word) => {
   SKILLS.cooking.recipes.push({ item: id, level, kind, word, xp: Math.round(xp * 1.1), inputs: { [raw]: 1 } });
 };
 for (const r of SKILLS.fishing.resources) addFood(r.item, `cooked_${r.item}`, `Cooked ${ITEMS[r.item].name}`, ITEMS[r.item].icon, r.level, r.xp, 'fish', ITEMS[r.item].name.toLowerCase());
-for (const r of SKILLS.farming.resources.filter((c) => c.kind === 'vegetable')) {
-  addFood(r.item, `roasted_${r.item}`, `Roasted ${ITEMS[r.item].name}`, ITEMS[r.item].icon, r.level, r.xp, 'vegetable', ITEMS[r.item].name.toLowerCase());
+// Dishes from the cooking crops (carrots, potatoes, wheat): one per tier.
+for (const line of PLANT_LINES.filter((l) => l.use === 'cook')) {
+  lineItems(line.id).forEach((p, i) => {
+    const [id, name, icon] = line.dishes ? line.dishes[i] : [`${line.dish.toLowerCase()}_${p.id}`, `${line.dish} ${p.name}`, p.icon];
+    const r = SKILLS.farming.resources.find((c) => c.item === p.id);
+    addFood(p.id, id, name, icon, r.level, r.xp, 'vegetable', p.name.toLowerCase());
+  });
 }
 for (const [hide, id, animal] of MEATS) {
   const r = SKILLS.skinning.resources.find((x) => x.item === hide);
@@ -1078,7 +1116,52 @@ for (const [id, name, icon, level, inputs, buff, xp] of UNDEAD_POTIONS) {
   ITEMS[id] = { name, icon, value: Math.round(inputValue * 1.3), keep: true, potion: { buff } };
   SKILLS.alchemy.recipes.push({ item: id, level, kind: 'undead', xp, inputs });
 }
+// Trail Brew (from Coffee Beans, whose seeds only come from gifting subs): restores 1 stamina charge,
+// at most once an hour (see drink()).
+ITEMS.trail_brew = { name: 'Trail Brew', icon: '☕', value: 250, keep: true, potion: { stamina: 1 } };
+SKILLS.alchemy.recipes.push({ item: 'trail_brew', level: 1, kind: 'potion', xp: 40, inputs: { coffee_beans: 2 } });
 SKILLS.alchemy.recipes.sort((a, b) => a.level - b.level);
+
+// ---- Crops in other skills ---------------------------------------------------------------
+// Bows need flax for the string: two bow tiers per flax tier.
+const flax = lineItems('flax');
+SKILLS.fletching.recipes
+  .filter((r) => r.group === 'bow')
+  .sort((a, b) => a.level - b.level)
+  .forEach((r, i) => {
+    r.inputs = { ...r.inputs, [flax[Math.min(flax.length - 1, Math.floor(i / 2))].id]: 1 };
+  });
+// Cloth robes from cotton: Magic's armor. Less defence than leather or metal, but each piece adds to
+// your spell attack when you !cast (like leather does for bows).
+const ROBE_PIECES = [
+  // piece, name, icon, slot, cotton, defence multiplier
+  ['hood', 'Hood', '🎩', 'head', 1, 1],
+  ['skirt', 'Robe Skirt', '👗', 'legs', 2, 2],
+  ['robe', 'Robe', '🥼', 'body', 3, 3],
+];
+const ROBE_TIERS = [
+  // name prefix, Combat level to wear, base defence, full-set magic bonus
+  ['Cotton', 1, 1, 2],
+  ['Silken', 40, 4, 8],
+  ['Mystic', 100, 9, 20],
+  ['Moonweave', 200, 16, 40],
+  ['Starweave', 350, 30, 70],
+];
+lineItems('cotton').forEach((p, i) => {
+  const [prefix, wear, def, magic] = ROBE_TIERS[i];
+  const craftLevel = SKILLS.farming.resources.find((c) => c.item === p.id).level;
+  for (const [piece, pieceName, icon, slot, qty, mult] of ROBE_PIECES) {
+    const id = `${prefix.toLowerCase()}_${piece}`;
+    ITEMS[id] = { name: `${prefix} ${pieceName}`, icon, value: Math.round(ITEMS[p.id].value * qty * 3), keep: true, gear: true, slot, level: wear, defence: Math.max(1, Math.round(def * mult * 0.8)), magicBonus: Math.max(1, Math.round((magic * qty) / 6)) };
+    SKILLS.crafting.recipes.push({ item: id, level: craftLevel, kind: 'armor', xp: Math.round(cropXp(craftLevel) * qty * 0.8), inputs: { [p.id]: qty } });
+  }
+});
+// Magic Runes from runebloom petals: far more per craft than Ashes + Tin, more with better blooms.
+lineItems('runebloom').forEach((p, i) => {
+  SKILLS.crafting.recipes.push({ item: 'magic_rune', level: p.level, kind: 'ammo', group: 'rune', yield: 20 + 20 * i, xp: Math.round(cropXp(p.level) * 0.6), inputs: { [p.id]: 1 } });
+});
+SKILLS.crafting.recipes.sort((a, b) => a.level - b.level);
+SKILLS.fletching.recipes.sort((a, b) => a.level - b.level);
 
 // ---- Museum ---------------------------------------------------------------------------------
 // !donate digging finds (and rare treasures). Each donation pays 3x the item's value; finishing a
@@ -1099,12 +1182,12 @@ const SHOP = [
   { item: 'bronze_sword', cost: 1000, description: "A ready-made sword so you can start fighting with !fight right away. Or smith your own!" },
   { item: 'skinning_knife', cost: 500, description: 'Lets you !skin animals for hides. Keep it in your backpack. Or smith one at Smithing 20 from a Sterling Alloy (silver + copper ore).' },
   { item: 'farm_plot', cost: 750, category: 'farming', description: `An extra plot of land for !plant (everyone starts with ${STARTER_PLOTS} free). Each grows one crop. Every plot costs more than the one before. Up to ${MAX_PLOTS} plots.` },
-  ...SKILLS.farming.resources.map((c) => ({
+  ...SKILLS.farming.resources.filter((c) => !c.special).map((c) => ({
     item: c.seed,
     cost: c.seedCost,
     category: 'seeds',
     level: c.level,
-    description: `Plant with !plant ${ITEMS[c.item].name.toLowerCase()} (Farming ${c.level}). Ready in ${c.grow} min, 1 ${ITEMS[c.item].name} per plot.`,
+    description: `Plant with !plant ${ITEMS[c.item].name.toLowerCase()} (Farming ${c.level}). Ready in ${c.grow} min, 1 ${ITEMS[c.item].name} per plot. ${c.use}.`,
   })),
   ...POTION_LIST.map(([item, , , level, inputs, restores, cost]) => ({
     item,
@@ -1127,7 +1210,7 @@ const SHOP = [
     description: `Adds +${attack} attack to every shot. They go in your quiver, not your backpack.`,
   })),
   { item: 'oak_staff', cost: 500, description: 'A ready-made staff for Magic: !cast spells at monsters (uses Magic Runes and a little mana). Or !fletch oak staff from 2 Oak Logs.' },
-  { item: 'magic_rune', cost: 8, category: 'arrows', description: 'One per !cast. Runes don\'t take backpack slots. Or !craft runes (1 Ashes + 1 Tin Ore makes 10).' },
+  { item: 'magic_rune', cost: 8, category: 'arrows', description: 'One per !cast. Runes don\'t take backpack slots. Or !craft runes: 1 Ashes + 1 Tin Ore makes 10, 1 Runebloom (a Farming crop) makes 20, better blooms more.' },
   // Always add new shop items at the end (see above).
   { item: 'flint_and_steel', cost: 50, description: 'Lights fires with !lightfire (burns one log from your backpack for Firemaking XP and Ashes). Good for 250 fires, then it wears out.' },
 ];
@@ -1240,6 +1323,10 @@ module.exports = {
   SPELLS,
   MUSEUM,
   findItem,
+  PLANT_LINES,
+  PLANTABLES,
+  LEGACY_ITEMS,
+  lineItems,
 };
 
 // Cosmetics, pets, race-only items and quests add themselves to ITEMS, SHOP and the recipes.

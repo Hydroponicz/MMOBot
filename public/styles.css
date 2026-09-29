@@ -1042,3 +1042,6 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 .pvp-grid { display: grid; gap: 16px; }
 .pvp-grid > .panel { margin: 0; }
 .shop-item.owned { border-color: var(--gold); }
+
+.swatch.dye-locked { position: relative; opacity: .55; }
+.swatch.dye-locked::after { content: '🌸'; position: absolute; right: -4px; bottom: -4px; font-size: .7rem; }

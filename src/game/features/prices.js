@@ -74,7 +74,7 @@ module.exports = {
   priceList(userId = null) {
     const now = this.now();
     return Object.entries(ITEMS)
-      .filter(([, it]) => it.value > 0 && !it.notItem && !it.bound && !it.pet && !it.cosmetic)
+      .filter(([, it]) => it.value > 0 && !it.notItem && !it.bound && !it.pet && !it.cosmetic && !it.legacy)
       .map(([id, it]) => {
         const base = this.baseSellValue(id, userId);
         const f = this.supplyFactor(id, now);
