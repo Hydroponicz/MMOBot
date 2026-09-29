@@ -147,6 +147,7 @@ const FIELDS = {
     marketFee: { type: 'number', label: 'Market fee (0-0.5)', help: 'Share of each market sale that disappears (a points sink). 0.05 = 5%.', min: 0, max: 0.5 },
     sellMultiplier: { type: 'number', label: 'Sell price multiplier', help: 'Scales what items sell for with !sell.', min: 0, max: 100 },
     growMultiplier: { type: 'number', label: 'Crop growth time multiplier', help: '0.5 = crops grow twice as fast (applies to new plantings).', min: 0.01, max: 100 },
+    plotPriceGrowth: { type: 'number', label: 'Farm plot price growth', help: 'Each farm plot costs this many times the one before (the first bought plot costs the shop price). 1.12 = 12% more each: plot 10 ≈ 1,900, plot 20 ≈ 5,800, plot 30 ≈ 18,000, plot 50 ≈ 173,000. 1 = flat price.', min: 1, max: 3 },
   },
 };
 
@@ -323,7 +324,7 @@ class Settings extends EventEmitter {
         seasonDays: config.game.seasonDays ?? 30,
         tradeDailyPoints: config.game.tradeDailyPoints ?? 10000,
       },
-      economy: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, growMultiplier: 1, petDropMultiplier: config.game.petDropMultiplier ?? 1, marketFee: config.game.marketFee ?? 0.05 },
+      economy: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, growMultiplier: 1, plotPriceGrowth: config.game.plotPriceGrowth ?? 1.12, petDropMultiplier: config.game.petDropMultiplier ?? 1, marketFee: config.game.marketFee ?? 0.05 },
       disabledCommands: [],
     };
     for (const [key, t] of Object.entries(TABLES)) {

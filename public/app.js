@@ -804,7 +804,7 @@
 
   let shopShowAllSeeds = false;
   pages.shop = async () => {
-    const { items, points, farmingLevel, plots } = await api('/shop');
+    const { items, points, farmingLevel, plots, plotGrowth, plotNext } = await api('/shop');
     const loggedIn = points !== null;
     const buyBtn = (i, locked) =>
       loggedIn ? `<button class="btn btn-primary btn-sm" data-buy="${esc(i.item)}" ${locked ? 'disabled' : ''}>Buy</button>` : '';
@@ -816,9 +816,10 @@
             <h2>${esc(i.name)}</h2>
             <p class="muted">${esc(i.description || '')}</p>
             ${i.attack ? `<p class="shop-stat">⚔️ +${i.attack} attack · needs ${esc(i.wieldSkill || 'Swords')} ${i.level}</p>` : ''}
-            ${i.item === 'farm_plot' && loggedIn ? `<p class="shop-stat">You own ${plots}/100 plots</p>` : ''}
+            ${i.item === 'farm_plot' && loggedIn ? `<p class="shop-stat">You own ${plots}/100 plots · each plot costs ${Math.round(((plotGrowth ?? 1.12) - 1) * 100)}% more than the last</p>` : ''}
+            ${i.item === 'farm_plot' && !loggedIn ? `<p class="shop-stat">Each plot costs ${Math.round(((plotGrowth ?? 1.12) - 1) * 100)}% more than the last</p>` : ''}
             <div class="shop-buy">
-              <span class="shop-price">${fmt(i.cost)} pts${i.category === 'arrows' ? ' <small>each</small>' : ''}</span>
+              <span class="shop-price"${i.item === 'farm_plot' ? ' id="plot-price"' : ''}>${fmt(i.cost)} pts${i.category === 'arrows' ? ' <small>each</small>' : i.item === 'farm_plot' && loggedIn ? ' <small>next plot</small>' : ''}</span>
               ${(i.item === 'farm_plot' || i.category === 'potions' || i.category === 'arrows') && loggedIn ? `<input type="number" class="qty" id="qty-${esc(i.item)}" value="${i.category === 'arrows' ? 50 : 1}" min="1" max="${i.category === 'arrows' ? 500 : 100}" aria-label="How many">` : ''}
               ${buyBtn(i, i.item === 'farm_plot' && plots >= 100)}
             </div>
@@ -900,6 +901,17 @@
         }</section>`;
     const showAll = $app.querySelector('#show-all-seeds');
     if (showAll) showAll.onclick = () => ((shopShowAllSeeds = true), route());
+    // Buying several plots: show the total (each one costs more than the last).
+    const plotQty = document.getElementById('qty-farm_plot');
+    if (plotQty && plotNext) {
+      plotQty.oninput = () => {
+        const n = Math.max(1, Math.floor(Number(plotQty.value) || 1));
+        const el = document.getElementById('plot-price');
+        if (n === 1) el.innerHTML = `${fmt(plotNext[0])} pts <small>next plot</small>`;
+        else if (n <= plotNext.length) el.innerHTML = `${fmt(plotNext[n - 1])} pts <small>for ${n} plots</small>`;
+        else el.innerHTML = `${fmt(plotNext[plotNext.length - 1])}+ pts <small>for ${n} plots</small>`;
+      };
+    }
     $app.querySelectorAll('[data-buy]').forEach((b) => {
       b.onclick = async () => {
         const qtyInput = document.getElementById(`qty-${b.dataset.buy}`);
@@ -1444,7 +1456,7 @@
       woodcutting: `${c('chop')} cuts logs (${c('chop oak')} for a specific tree). Logs are used for fires, bows, arrows and staffs.`,
       digging: `${c('dig')} unearths coins, relics and fossils. ${c('donate')} them to the museum for 3× their value.`,
       skinning: `Needs a 🔪 Skinning Knife in your backpack (shop, or smith one at Smithing 20). ${c('skin')} animals for hides and raw meat. ${c('craft')} hides into leather armor.`,
-      farming: `Everyone gets a free 🟫 plot; buy more in the <a href="#/shop">shop</a> (${shopCost('farm_plot')} pts each, up to 100). Buy seeds, ${c('plant carrot')}, then ${c('harvest')} when it's grown (1 crop per plot). ${c('farm')} shows your plots. Planting and harvesting each use a stamina charge.`,
+      farming: `Everyone gets a free 🟫 plot; buy more in the <a href="#/shop">shop</a> (the first costs ${shopCost('farm_plot')} pts and each one after costs ${Math.round(((g.plotPriceGrowth ?? 1.12) - 1) * 100)}% more, up to 100). Buy seeds, ${c('plant carrot')}, then ${c('harvest')} when it's grown (1 crop per plot). ${c('farm')} shows your plots. Planting and harvesting each use a stamina charge.`,
       firemaking: `Buy a 🪨 Flint and Steel (${shopCost('flint_and_steel')} pts, 250 fires), then ${c('lightfire')} burns your best log (or ${c('lightfire oak')}). Better logs give more XP, and every fire leaves 🌫️ Ashes. If it doesn't catch, nothing is used up. ${c('fire')} shows how long it burns.`,
       cooking: `While your fire burns (5 minutes, longer with better logs), ${c('cook')} your best raw food or name it: ${c('cook trout')}. <b>Cooking uses no stamina</b>, so cook as much as you like while the fire lasts, or ${c('cook all')} to cook everything at once. Food sometimes burns (less as you level). ${c('eat')} cooked food to heal.`,
       smelting: `${c('smelt')} ores from your backpack into ingots (one ore) and alloys (mixed ores, e.g. copper + tin = bronze). Better furnaces can smelt two at once.`,

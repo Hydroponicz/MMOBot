@@ -337,7 +337,7 @@ class GameEngine extends EventEmitter {
       })),
       farm: {
         max: MAX_PLOTS,
-        plotCost: this.shopItems().find((x) => x.item === 'farm_plot')?.cost,
+        plotCost: this.plotPrice(userId),
         plots: this.farmPlots(userId).map((p) => ({
           ...p,
           crop: p.crop ? { id: p.crop, name: ITEMS[p.crop].name, icon: ITEMS[p.crop].icon } : null,
@@ -413,6 +413,7 @@ class GameEngine extends EventEmitter {
       chatPoints: this.cfg.chatPoints,
       chatCooldown: this.cfg.chatCooldown,
       chatPointsFullPerDay: this.cfg.chatPointsFullPerDay ?? 30,
+      plotPriceGrowth: this.cfg.plotPriceGrowth ?? 1.12,
       xpMultiplier: this.cfg.xpMultiplier,
       disabledCommands: this.cfg.disabledCommands || [],
       backpack: this.backpackTiers().map((t, i) => ({ level: i + 1, ...t })),

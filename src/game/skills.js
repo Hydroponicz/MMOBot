@@ -1096,7 +1096,7 @@ const SHOP = [
   { item: 'smithing_hammer', cost: 500, description: 'Lets you !smith weapons and armor from alloys. Keep it in your backpack.' },
   { item: 'bronze_sword', cost: 1000, description: "A ready-made sword so you can start fighting with !fight right away. Or smith your own!" },
   { item: 'skinning_knife', cost: 500, description: 'Lets you !skin animals for hides. Keep it in your backpack. Or smith one at Smithing 20 from a Sterling Alloy (silver + copper ore).' },
-  { item: 'farm_plot', cost: 750, category: 'farming', description: `An extra plot of land for !plant (everyone starts with ${STARTER_PLOTS} free). Each grows one crop. Up to ${MAX_PLOTS} plots.` },
+  { item: 'farm_plot', cost: 750, category: 'farming', description: `An extra plot of land for !plant (everyone starts with ${STARTER_PLOTS} free). Each grows one crop. Every plot costs more than the one before. Up to ${MAX_PLOTS} plots.` },
   ...SKILLS.farming.resources.map((c) => ({
     item: c.seed,
     cost: c.seedCost,

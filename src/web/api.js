@@ -93,11 +93,18 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       return { ...x, crop: { name: it.name, icon: it.icon, kind: crop.kind, value: engine.sellValue(crop.item), grow: Math.max(1, Math.round(crop.grow * (engine.cfg.growMultiplier ?? 1))) } };
     });
     const me = req.user ? repo.getUser(req.user.id) : null;
+    // Plots get pricier with each one bought, so a logged-in player sees the price of their next plot.
+    if (me) {
+      const plot = items.find((x) => x.item === 'farm_plot');
+      if (plot) plot.cost = engine.plotPrice(me.id);
+    }
     res.json({
       items,
       points: me ? me.points : null,
       farmingLevel: me ? levelForXp(repo.getSkills(me.id).farming, maxLevel('farming')) : null,
       plots: me ? engine.plotCount(me.id) : null,
+      plotGrowth: engine.cfg.plotPriceGrowth ?? 1.12,
+      plotNext: me ? [1, 2, 3, 4, 5].map((n) => engine.plotsPrice(me.id, n)) : null,
     });
   });
 

@@ -1042,7 +1042,8 @@ test('farming: free starter plot, buy seeds and plots, plant, wait 20 minutes, h
   assert.match(say('!plant'), /you have no seeds! !buy carrot seeds 1 \(2 pts each\)/);
   assert.match(say('!harvest'), /your plots are empty/);
   repo.addPoints(u.id, 2000);
-  assert.match(say('!buy plot 2'), /bought 2 farm plots for 1,500 pts! You now have 3\/100\. Buy seeds \(!buy carrot seeds 3\)/);
+  // Each plot costs 12% more than the last: 750 + 840.
+  assert.match(say('!buy plot 2'), /bought 2 farm plots for 1,590 pts! You now have 3\/100\. Next plot: 940 pts\. Buy seeds \(!buy carrot seeds 3\)/);
   assert.match(say('!buy carrot seeds 5'), /bought 🌱 5x Carrot Seeds for 10 pts! Now !plant carrot/);
   assert.equal(engine.backpack(u.id).used, 0, "seeds don't use backpack slots");
 
@@ -1059,6 +1060,23 @@ test('farming: free starter plot, buy seeds and plots, plant, wait 20 minutes, h
   assert.equal(repo.getInventory(u.id).carrot, 3);
   assert.equal(engine.farmPlots(u.id).filter((p) => p.crop).length, 0);
   assert.match(say('!sell carrot all'), /sold 🥕 3x Carrot for 33 pts/);
+});
+
+test('farm plots get exponentially pricier; the growth rate is a setting', () => {
+  const { repo, engine, say, u } = farmSetup();
+  const prices = [];
+  for (let i = 0; i < 5; i++) prices.push(engine.plotPrice(u.id, i));
+  assert.deepEqual(prices, [750, 840, 940, 1050, 1180]);
+  assert.equal(engine.plotsPrice(u.id, 3), 750 + 840 + 940);
+  assert.equal(engine.plotPrice(u.id, 28), 17_900, 'plot 30');
+  // Not enough for two: nothing is bought.
+  repo.addPoints(u.id, 1000);
+  assert.match(say('!buy plot 2'), /1,590/);
+  assert.equal(engine.plotCount(u.id), 1);
+  assert.match(say('!buy plot'), /bought a farm plot for 750 pts!.*Next plot: 840 pts/);
+  assert.equal(engine.profile(u.id).farm.plotCost, 840);
+  engine.cfg.plotPriceGrowth = 1;
+  assert.equal(engine.plotPrice(u.id, 10), 750, 'growth 1 = flat price');
 });
 
 test('farming and skilling share one stamina bar', () => {
@@ -1080,7 +1098,7 @@ test('farming and skilling share one stamina bar', () => {
 
 test('farming level gates seeds; plot limit is 100; harvest respects backpack space', () => {
   const { repo, engine, say, u, wait } = farmSetup();
-  repo.addPoints(u.id, 1_000_000);
+  repo.addPoints(u.id, 1_000_000_000);
   assert.match(say('!buy tomato seeds'), /need 🌱 Farming level 30 to grow Tomato/);
   assert.match(say('!buy plot 150'), /bought 99 farm plots/, 'capped at 100 including the free one');
   assert.match(say('!buy plot'), /maximum of 100 farm plots/);

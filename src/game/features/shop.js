@@ -145,14 +145,16 @@ module.exports = {
     const have = this.plotCount(user.id);
     if (have >= MAX_PLOTS) return `you already have the maximum of ${MAX_PLOTS} farm plots! 🏆`;
     qty = Math.min(qty, MAX_PLOTS - have);
-    const total = found.cost * qty;
+    // Each plot costs more than the last (see farming.plotPrice).
+    const total = this.plotsPrice(user.id, qty);
     return this.repo.transaction(() => {
       const refused = this.pay(user, total, qty > 1 ? `${qty} farm plots` : 'farm plot');
       if (refused) return refused;
       this.repo.setEquipment(user.id, 'plots', have + qty - STARTER_PLOTS);
       this.emitActivity(user, { kind: 'buy', text: `bought ${qty > 1 ? `${qty} farm plots` : 'a farm plot'} (${have + qty} total)` });
       const first = ` Buy seeds (!buy carrot seeds ${have + qty}) and !plant them!`;
-      return `🟫 bought ${qty > 1 ? `${qty} farm plots` : 'a farm plot'} for ${fmt(total)} pts! You now have ${have + qty}/${MAX_PLOTS}.${first}`;
+      const next = have + qty < MAX_PLOTS ? ` Next plot: ${fmt(this.plotPrice(user.id))} pts.` : '';
+      return `🟫 bought ${qty > 1 ? `${qty} farm plots` : 'a farm plot'} for ${fmt(total)} pts! You now have ${have + qty}/${MAX_PLOTS}.${next}${first}`;
     });
   },
 

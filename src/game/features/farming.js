@@ -64,14 +64,30 @@ module.exports = {
     });
   },
 
-  noPlotsMessage() {
-    const plot = this.shopItems().find((x) => x.item === 'farm_plot');
-    return `you don't have a farm plot yet! 🟫 !buy plot (${fmt(plot?.cost ?? 0)} pts) or ${this.siteUrl}/#/shop`;
+  // Plot prices grow exponentially: each plot you buy costs plotPriceGrowth times the one before
+  // (the first bought plot costs the shop price). `ahead` = how many more you'd buy before this one.
+  plotPrice(userId, ahead = 0) {
+    const base = this.shopItems().find((x) => x.item === 'farm_plot')?.cost ?? 750;
+    const growth = this.cfg.plotPriceGrowth ?? 1.12;
+    const bought = Math.max(0, this.plotCount(userId) - STARTER_PLOTS) + ahead;
+    const price = base * growth ** bought;
+    return Math.min(1e15, price < 10000 ? Math.round(price / 10) * 10 : Math.round(price / 100) * 100);
+  },
+
+  // Total for the next `qty` plots.
+  plotsPrice(userId, qty) {
+    let total = 0;
+    for (let i = 0; i < qty; i++) total += this.plotPrice(userId, i);
+    return total;
+  },
+
+  noPlotsMessage(userId) {
+    return `you don't have a farm plot yet! 🟫 !buy plot (${fmt(this.plotPrice(userId))} pts) or ${this.siteUrl}/#/shop`;
   },
 
   // !plant [crop] [amount]: one seed per empty plot.
   plant(user, args) {
-    if (!this.plotCount(user.id)) return this.noPlotsMessage();
+    if (!this.plotCount(user.id)) return this.noPlotsMessage(user.id);
 
     const plots = this.farmPlots(user.id);
     const empty = plots.filter((p) => !p.crop);
@@ -134,7 +150,7 @@ module.exports = {
 
   // !harvest: collect every ready plot (as much as fits in the backpack).
   harvest(user) {
-    if (!this.plotCount(user.id)) return this.noPlotsMessage();
+    if (!this.plotCount(user.id)) return this.noPlotsMessage(user.id);
 
     const plots = this.farmPlots(user.id);
     const ready = plots.filter((p) => p.ready);
@@ -187,7 +203,7 @@ module.exports = {
   // !farm: plot overview.
   farmInfo(user) {
     const plots = this.farmPlots(user.id);
-    if (!plots.length) return this.noPlotsMessage();
+    if (!plots.length) return this.noPlotsMessage(user.id);
     const ready = plots.filter((p) => p.ready).length;
     const growing = plots.filter((p) => p.crop && !p.ready).sort((a, b) => a.readyAt - b.readyAt);
     const empty = plots.filter((p) => !p.crop).length;
