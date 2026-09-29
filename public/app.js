@@ -1193,7 +1193,7 @@
         <div class="panel-head"><h2>💹 Price checker</h2><input type="search" id="price-q" class="guide-search" placeholder="Search items, e.g. carrot" style="max-width:260px"></div>
         <p class="muted" style="margin-top:0">What the shop pays right now (<code>!sell</code>). ${
           pr.on
-            ? `When lots of one item is sold across the channel its price drops (to ${Math.round(pr.floor * 100)}% at most), then recovers by half every ${pr.recoveryHours} hours. Selling a big pile slides the price as you go. Spread your selling out, or list it on the market below.`
+            ? `When lots of one item is sold across the channel its price drops (to ${Math.round(pr.floor * 100)}% at most), then recovers by half every ${pr.recoveryHours} hours. Selling a big pile slides the price as you go, and all crops and crop dishes share one price drop. Spread your selling out, or list it on the market below.`
             : 'Prices are fixed right now.'
         } In chat: <code>!price carrot</code>.</p>
         <div class="form-row" style="margin-bottom:10px;flex-wrap:wrap">
@@ -1236,7 +1236,7 @@
           .map(
             (x) => `<tr><td>${x.icon} ${esc(x.name)}</td><td class="num muted">${fmt(x.base)}</td><td class="num"><b>${fmt(x.mine)}</b> pts</td>
               <td class="num" style="color:${x.change < 0 ? 'var(--danger)' : 'var(--muted)'}">${x.change < 0 ? `${x.change}%` : 'full price'}</td>
-              <td class="num muted">${x.recent ? `~${fmt(x.recent)}` : '—'}</td>
+              <td class="num muted">${x.group && x.recent ? '<span title="All crops and crop dishes share one price drop">🌾 all crops</span>' : x.recent ? `~${fmt(x.recent)}` : '—'}</td>
               ${loggedIn ? `<td class="num">${x.have ? `${fmt(x.have)} <span class="muted">(${fmt(x.have * x.mine)} pts)</span>` : '<span class="muted">—</span>'}</td>` : ''}</tr>`
           )
           .join('')}</tbody></table></div>${total > list.length ? `<p class="muted" style="margin:8px 0 0;font-size:.85rem">Showing ${list.length} of ${total}. Search to find more.</p>` : ''}`;
@@ -1534,9 +1534,9 @@
       woodcutting: `${c('chop')} cuts logs (${c('chop oak')} for a specific tree). Logs are used for fires, bows, arrows and staffs.${bigger('log per chop')} 🌳 Tree Saplings train it for you: ${c('collect')}.`,
       digging: `${c('dig')} unearths coins, relics and fossils. ${c('donate')} them to the museum for 3× their value.${bigger('find per dig')} 🏺 Dig Sites train it for you: ${c('collect')}.`,
       skinning: `Needs a 🔪 Skinning Knife in your backpack (shop, or smith one at Smithing 20). ${c('skin')} animals for hides and raw meat. ${c('craft')} hides into leather armor.`,
-      farming: `Everyone gets a free 🟫 plot; buy more in the <a href="#/shop">shop</a> (the first costs ${shopCost('farm_plot')} pts and each one after costs ${Math.round(((g.plotPriceGrowth ?? 1.12) - 1) * 100)}% more, up to 100). Buy seeds, ${c('plant carrot')}, then ${c('harvest')} when it's grown (1 crop per plot). ${c('farm')} shows your plots. Planting and harvesting each use a stamina charge.`,
+      farming: `Everyone gets a free 🟫 plot; buy more in the <a href="#/shop">shop</a> (the first costs ${shopCost('farm_plot')} pts and each one after costs ${Math.round(((g.plotPriceGrowth ?? 1.12) - 1) * 100)}% more, up to 100). Buy seeds, ${c('plant carrot')}, then ${c('harvest')} when it's grown (1 crop per plot). ${c('farm')} shows your plots. Planting and harvesting each use a stamina charge per ${g.plotsPerStamina ?? 25} plots (70 plots = 3 charges); with too few charges, the rest wait.`,
       firemaking: `Buy a 🪨 Flint and Steel (${shopCost('flint_and_steel')} pts, 250 fires), then ${c('lightfire')} burns your best log (or ${c('lightfire oak')}). Better logs give more XP, and every fire leaves 🌫️ Ashes. If it doesn't catch, nothing is used up. ${c('fire')} shows how long it burns.`,
-      cooking: `While your fire burns (5 minutes, longer with better logs), ${c('cook')} your best raw food or name it: ${c('cook trout')}. <b>Cooking uses no stamina</b>, so cook as much as you like while the fire lasts, or ${c('cook all')} to cook everything at once. Food sometimes burns (less as you level). ${c('eat')} cooked food to heal.`,
+      cooking: `While your fire burns (5 minutes, longer with better logs), ${c('cook')} your best raw food or name it: ${c('cook trout')}. <b>Cooking uses no stamina</b>, but each fire can cook only so many meals: ${g.fireMealsBase ?? 10}, plus 1 per ${g.fireMealsPerLevels ?? 2} Firemaking levels. ${c('cook all')} cooks as much as the fire allows; light another fire for more. Food sometimes burns (less as you level). ${c('eat')} cooked food to heal.`,
       smelting: `${c('smelt')} ores from your backpack into ingots (one ore) and alloys (mixed ores, e.g. copper + tin = bronze). Better furnaces can smelt two at once.`,
       smithing: `Needs a 🔨 Smithing Hammer in your backpack. ${c('smith bronze sword')} turns alloys into weapons and armor. ${c('equip')} them or ${c('sell')} them.`,
       fletching: `${c('fletch arrows')} makes 10 arrows from 1 Oak Logs + 1 🪶 Feathers + 1 Iron Ingot. Also bows (${c('fletch oak shortbow')}), staffs and a quiver.`,

@@ -129,19 +129,30 @@ module.exports = {
     // Stamina is checked only when there's something to plant, so "what's growing?" is free.
     const tired = this.staminaCheck(user, now);
     if (tired !== null) return tired || null;
-    const n = Math.min(empty.length, inv[crop.seed], limit);
+    // Big farms cost more stamina: one charge per plotsPerStamina plots (25).
+    const per = this.plotsPerStamina();
+    const charges = this.stamina(user.id, now).charges;
+    const n = Math.min(empty.length, inv[crop.seed], limit, per ? charges * per : Infinity);
+    const cost = per ? Math.ceil(n / per) : 1;
     const growMs = Math.round(crop.grow * 60_000 * (this.cfg.growMultiplier ?? 1));
     const result = this.repo.transaction(() => {
       this.repo.removeItem(user.id, crop.seed, n);
       for (const p of empty.slice(0, n)) this.repo.plant(user.id, p.plot, crop.item, now, now + growMs);
       this.repo.setFarmAt(user.id, now);
-      this.spendStamina(user, now);
+      for (let i = 0; i < cost; i++) this.spendStamina(user, now);
       return this.grantXp(user, 'farming', this.xpFor(Math.max(1, Math.round(crop.xp * 0.2)) * n));
     });
     const c = ITEMS[crop.item];
     this.emitActivity(user, { kind: 'action', skill: 'farming', item: crop.item, text: `planted ${n}x ${c.name}` });
     const left = empty.length - n;
-    return `🌱 planted ${c.icon} ${c.name} in ${n} plot${n === 1 ? '' : 's'} — ready in ${minutesLeft(growMs)}. ${result.text}${left ? ` (${left} plot${left === 1 ? '' : 's'} still empty)` : ''}`;
+    const staminaNote = cost > 1 ? ` (${cost} stamina: 1 per ${per} plots)` : '';
+    const outOfStamina = left && per && n === charges * per ? `, !plant again when you have stamina` : '';
+    return `🌱 planted ${c.icon} ${c.name} in ${n} plot${n === 1 ? '' : 's'} — ready in ${minutesLeft(growMs)}.${staminaNote} ${result.text}${left ? ` (${left} plot${left === 1 ? '' : 's'} still empty${outOfStamina})` : ''}`;
+  },
+
+  // Plots one stamina charge plants or harvests (0 = any number for one charge).
+  plotsPerStamina() {
+    return this.cfg.plotsPerStamina ?? 25;
   },
 
   seedPrice(crop) {
@@ -163,6 +174,9 @@ module.exports = {
 
     const tired = this.staminaCheck(user);
     if (tired !== null) return tired || null;
+    // One stamina charge per plotsPerStamina plots; with too few charges the rest wait.
+    const per = this.plotsPerStamina();
+    const maxPlots = per ? this.stamina(user.id).charges * per : Infinity;
 
     const bag = this.backpack(user.id);
     let room = bag.capacity - bag.used;
@@ -171,6 +185,7 @@ module.exports = {
     let xp = 0;
     this.repo.transaction(() => {
       for (const p of ready) {
+        if (harvestedPlots >= maxPlots) break;
         const crop = CROPS.find((c) => c.item === p.crop);
         const [lo, hi] = crop.yield;
         const qty = lo + Math.floor(this.rng() * (hi - lo + 1));
@@ -184,7 +199,8 @@ module.exports = {
       }
       if (harvestedPlots) {
         this.repo.setFarmAt(user.id, this.now());
-        this.spendStamina(user);
+        const cost = per ? Math.ceil(harvestedPlots / per) : 1;
+        for (let i = 0; i < cost; i++) this.spendStamina(user);
       }
     });
     if (!harvestedPlots) {
@@ -196,8 +212,14 @@ module.exports = {
     this.emitActivity(user, { kind: 'action', skill: 'farming', xp, text: `harvested ${Object.entries(gathered).map(([id, q]) => `${q}x ${ITEMS[id].name}`).join(', ')}` });
     const gained = this.grantXp(user, 'farming', this.xpFor(xp));
     const leftover = ready.length - harvestedPlots;
-    const note = leftover ? ` 🎒 Backpack full — ${leftover} plot${leftover === 1 ? '' : 's'} still waiting!` : ' !plant again!';
-    return `🌾 harvested ${harvestedPlots} plot${harvestedPlots === 1 ? '' : 's'}: ${list}! ${gained.text}${note}`;
+    const tiredOut = harvestedPlots >= maxPlots;
+    const note = leftover
+      ? tiredOut
+        ? ` 😮‍💨 Out of stamina — ${leftover} plot${leftover === 1 ? '' : 's'} still waiting (1 stamina per ${per} plots).`
+        : ` 🎒 Backpack full — ${leftover} plot${leftover === 1 ? '' : 's'} still waiting!`
+      : ' !plant again!';
+    const cost = per ? Math.ceil(harvestedPlots / per) : 1;
+    return `🌾 harvested ${harvestedPlots} plot${harvestedPlots === 1 ? '' : 's'}${cost > 1 ? ` (${cost} stamina)` : ''}: ${list}! ${gained.text}${note}`;
   },
 
   // !farm: plot overview.

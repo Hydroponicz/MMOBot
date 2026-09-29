@@ -108,7 +108,9 @@ module.exports = {
     const list = made.map((id) => itemLabel(id, after[id] - (before[id] || 0))).join(', ');
     const xp = this.repo.getSkills(user.id).cooking - xpBefore;
     this.emitActivity(user, { kind: 'action', summary: true, skill: 'cooking', item: made[0] || null, xp, text: `cooked ${cooked} food${burnt ? ` (burned ${burnt})` : ''}` });
-    return `🍳 cooked ${cooked}${burnt ? ` (burned ${burnt})` : ''}: ${list || 'nothing'}! +${fmt(xp)} Cooking XP (Cooking ${skillLevel('cooking', this.repo.getSkills(user.id).cooking)}). 🔥 Fire: ${minutesLeft(this.fireLeft(user.id))} left.`;
+    const mealsLeft = this.fireMealsLeft(user.id);
+    const out = mealsLeft ? `${minutesLeft(this.fireLeft(user.id))}, ${mealsLeft} meal${mealsLeft === 1 ? '' : 's'} left` : 'cooked all it can, !lightfire again';
+    return `🍳 cooked ${cooked}${burnt ? ` (burned ${burnt})` : ''}: ${list || 'nothing'}! +${fmt(xp)} Cooking XP (Cooking ${skillLevel('cooking', this.repo.getSkills(user.id).cooking)}). 🔥 Fire: ${out}.`;
   },
 
   gather(user, skillId, args) {
@@ -261,6 +263,9 @@ module.exports = {
     if (skill.needsFire && !this.fireLeft(user.id)) {
       return { consumed: false, reply: `🔥 you need a fire to ${skill.command} on! !lightfire first (a Flint and Steel and logs), then !${skill.command} while it burns.` };
     }
+    if (skill.needsFire && this.fireMealsLeft(user.id) <= 0) {
+      return { consumed: false, reply: `🔥 your fire has cooked all it can (${this.fireMeals(user.id)} meals a fire; more with Firemaking). !lightfire again to keep cooking.` };
+    }
     const hasInputs = (r) => Object.entries(r.inputs).every(([item, qty]) => (inv[item] || 0) >= qty);
     const needs = (r) => Object.entries(r.inputs).map(([i, q]) => `${q} ${ITEMS[i].name}`).join(' + ');
     const missing = (r) => {
@@ -322,7 +327,8 @@ module.exports = {
       if (q.arrows + (recipe.yield || 1) > q.capacity) return { consumed: false, reply: `🧺 your quiver is full (${fmt(q.arrows)}/${fmt(q.capacity)} arrows). !shoot some first.` };
     }
     for (const [item, qty] of Object.entries(recipe.inputs)) this.repo.removeItem(user.id, item, qty);
-    const fire = skill.needsFire ? ` 🔥 Fire: ${minutesLeft(this.fireLeft(user.id))} left.` : '';
+    if (skill.needsFire) this.repo.setSetting(this.fireMealsKey(user.id), this.fireMealsLeft(user.id) - 1);
+    const fire = skill.needsFire ? ` 🔥 Fire: ${minutesLeft(this.fireLeft(user.id))}, ${this.fireMealsLeft(user.id)} meal${this.fireMealsLeft(user.id) === 1 ? '' : 's'} left.` : '';
     // Cooking: likely to burn at the recipe's level, rarely 50+ levels above it. Burnt food is lost.
     if (skill.burnable && this.rng() < clamp(0.3 - (level - recipe.level) * 0.0056, 0.02, 0.3)) {
       const inputs = Object.keys(recipe.inputs);
@@ -379,7 +385,10 @@ module.exports = {
     // The fire burns for a while: 5 minutes, plus a minute per log tier. Cook on it with !cook.
     const minutes = 5 + SKILLS.firemaking.resources.indexOf(log);
     const until = Math.max(this.now() + minutes * 60_000, this.now() + this.fireLeft(user.id));
+    // Each fire cooks a limited number of meals (more with Firemaking); relighting adds another fire's worth.
+    const meals = this.fireMealsLeft(user.id) + this.fireMeals(user.id);
     this.repo.setSetting(this.fireKey(user.id), until);
+    this.repo.setSetting(this.fireMealsKey(user.id), meals);
     const xpGain = this.xpFor(log.xp);
     this.emitActivity(user, { kind: 'action', skill: 'firemaking', item: log.item, xp: xpGain, text: `burned ${ITEMS[log.item].name}` });
     const gained = this.grantXp(user, 'firemaking', xpGain);
@@ -388,7 +397,7 @@ module.exports = {
       : ` 🪨 ${maxUses - used}/${maxUses} uses left.`;
     return {
       consumed: true,
-      reply: `🔥 you lit a fire with ${itemLabel(log.item)} and got ${itemLabel('ashes')}! ${gained.text} It burns for ${minutesLeft(until - this.now())}: !cook on it.${flintNote}`,
+      reply: `🔥 you lit a fire with ${itemLabel(log.item)} and got ${itemLabel('ashes')}! ${gained.text} It burns for ${minutesLeft(until - this.now())} and can cook ${meals} meal${meals === 1 ? '' : 's'}: !cook on it.${flintNote}`,
     };
   },
 
@@ -402,10 +411,32 @@ module.exports = {
     return Math.max(0, (this.repo.getSetting(this.fireKey(userId)) || 0) - this.now());
   },
 
+  fireMealsKey(userId) {
+    return `firemeals:${userId}`;
+  },
+
+  // Meals one fire can cook: fireMealsBase (10) + 1 per fireMealsPerLevels (2) Firemaking levels.
+  // Stops one fire (one stamina charge) cooking a whole farm's harvest.
+  fireMeals(userId) {
+    const level = skillLevel('firemaking', this.repo.getSkills(userId).firemaking);
+    const per = this.cfg.fireMealsPerLevels ?? 2;
+    return (this.cfg.fireMealsBase ?? 10) + (per > 0 ? Math.floor(level / per) : 0);
+  },
+
+  // Meals your current fire can still cook (0 when it's out). A missing count on a burning fire (lit
+  // before the limit existed) counts as a fresh fire.
+  fireMealsLeft(userId) {
+    if (!this.fireLeft(userId)) return 0;
+    const left = this.repo.getSetting(this.fireMealsKey(userId));
+    return left === null || left === undefined ? this.fireMeals(userId) : left;
+  },
+
   // !fire
   fireInfo(user) {
     const left = this.fireLeft(user.id);
-    return left ? `🔥 your fire burns for another ${minutesLeft(left)}. !cook while it lasts.` : 'no fire going. !lightfire to light one (needs a Flint and Steel and logs).';
+    return left
+      ? `🔥 your fire burns for another ${minutesLeft(left)} and can cook ${this.fireMealsLeft(user.id)} more meal${this.fireMealsLeft(user.id) === 1 ? '' : 's'}. !cook while it lasts.`
+      : `no fire going. !lightfire to light one (needs a Flint and Steel and logs; each fire cooks ${this.fireMeals(user.id)} meals).`;
   },
 
   // !eat [food]: cooked food heals HP. With no name, eats the smallest food that fills you up (or

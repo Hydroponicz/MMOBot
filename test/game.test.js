@@ -763,10 +763,10 @@ test('cooking: needs a lit fire; cooks fish, vegetables and meat; food can burn'
   assert.match(say('!cook'), /🔥 you need a fire to cook on! !lightfire first/);
   repo.addItem(u.id, 'flint_and_steel', 1);
   repo.addItem(u.id, 'logs', 1);
-  assert.match(say('!lightfire'), /It burns for 5m: !cook on it\./);
-  assert.match(engine.fireInfo(u), /your fire burns for another 5m/);
+  assert.match(say('!lightfire'), /It burns for 5m and can cook 10 meals: !cook on it\./);
+  assert.match(engine.fireInfo(u), /your fire burns for another 5m and can cook 10 more meals/);
   tick();
-  assert.match(say('!cook'), /🍳 you cooked 🦐 Cooked Shrimp! \+11 XP.* 🔥 Fire: 5m left\./);
+  assert.match(say('!cook'), /🍳 you cooked 🦐 Cooked Shrimp! \+11 XP.* 🔥 Fire: 5m, 9 meals left\./);
   tick();
   // Burnt: the raw food is gone, nothing made.
   assert.match(say('!cook shrimp'), /🔥 oops, you burned the Shrimp! It's ruined/);
@@ -788,6 +788,28 @@ test('cooking: needs a lit fire; cooks fish, vegetables and meat; food can burn'
   tick(6 * 60);
   repo.addItem(u.id, 'raw_rabbit', 1);
   assert.match(say('!cook'), /you need a fire/);
+});
+
+test('each fire cooks a limited number of meals (more with Firemaking); relighting adds more', () => {
+  const { repo, engine, say, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addItem(u.id, 'flint_and_steel', 1);
+  repo.addItem(u.id, 'logs', 2);
+  repo.addXp(u.id, 'firemaking', xpForLevel(20));
+  assert.equal(engine.fireMeals(u.id), 20, '10 + 1 per 2 Firemaking levels');
+  engine.cfg.fireMealsBase = 2;
+  engine.cfg.fireMealsPerLevels = 0;
+  say('!lightfire');
+  repo.addItem(u.id, 'shrimp', 5);
+  tick();
+  assert.match(say('!cook all'), /cooked 2: .*Fire: cooked all it can, !lightfire again/);
+  assert.equal(repo.getInventory(u.id).shrimp, 3);
+  tick();
+  assert.match(say('!cook'), /your fire has cooked all it can \(2 meals a fire/);
+  tick();
+  assert.match(say('!lightfire'), /can cook 2 meals/);
+  tick();
+  assert.match(say('!cook all'), /cooked 2/);
 });
 
 test('cooking: better food gives more XP, and the burn chance falls with level', () => {
@@ -1115,8 +1137,28 @@ test('farming and skilling share one stamina bar', () => {
   assert.match(say('!plant carrot'), /planted 🥕 Carrot in 1 plot/);
 });
 
+test('big farms cost 1 stamina per 25 plots to plant and harvest; with too little the rest wait', () => {
+  const { repo, engine, say, u, wait } = farmSetup();
+  engine.cfg.staminaMax = 3;
+  repo.addPoints(u.id, 1_000_000_000);
+  say('!buy plot 69');
+  repo.addItem(u.id, 'carrot_seeds', 70);
+  engine.backpack = () => ({ capacity: 1000, used: 0 });
+  assert.match(say('!plant carrot'), /planted 🥕 Carrot in 70 plots .*\(3 stamina: 1 per 25 plots\)/);
+  assert.equal(engine.stamina(u.id).charges, 0);
+  wait(60 * 60);
+  // One charge left: 25 plots now, the rest wait.
+  repo.setStamina(u.id, 1, engine.now());
+  assert.match(say('!harvest'), /harvested 25 plots: .*Out of stamina — 45 plots still waiting \(1 stamina per 25 plots\)/);
+  repo.setStamina(u.id, 3, engine.now());
+  wait(1);
+  assert.match(say('!harvest'), /harvested 45 plots \(2 stamina\)/);
+  assert.equal(engine.stamina(u.id).charges, 1);
+});
+
 test('farming level gates seeds; plot limit is 100; harvest respects backpack space', () => {
   const { repo, engine, say, u, wait } = farmSetup();
+  engine.cfg.plotsPerStamina = 0; // (stamina per plot is tested on its own below)
   repo.addPoints(u.id, 1_000_000_000);
   assert.match(say('!buy tomato seeds'), /need 🌱 Farming level 30 to grow Tomato/);
   assert.match(say('!buy plot 150'), /bought 99 farm plots/, 'capped at 100 including the free one');
@@ -2438,4 +2480,17 @@ test('agility shortcuts make a lap free; halflings get a free race change once',
   repo.setAppearance(u.id, 'halfling', {}, 1_500_000);
   new GameEngine({ repo, config: baseConfig, now: () => 2_000_000 });
   assert.equal(repo.getUser(u.id).race_changed_at, 1_500_000);
+});
+
+test('all crops and crop dishes share one sell-price drop; other items keep their own', () => {
+  const { repo, engine } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  engine.addSupply('zucchini', 500);
+  const drop = engine.supplyFactor('zucchini');
+  assert.ok(drop < 0.9);
+  assert.equal(engine.supplyFactor('celery'), drop, 'another crop dropped too');
+  assert.equal(engine.supplyFactor('roasted_blueberry'), drop, 'and crop dishes');
+  assert.equal(engine.supplyFactor('shark'), 1, 'fish are separate');
+  assert.equal(engine.supplyFactor('cooked_shrimp'), 1, 'and so is cooked fish');
+  assert.match(engine.priceCheck(u, ['celery']), /after lots of crops and crop dishes sold lately/);
 });

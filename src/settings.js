@@ -179,6 +179,9 @@ const FIELDS = {
     agilityShortcutChance: { type: 'number', label: 'Agility: shortcut chance', help: 'Chance an Agility lap costs no stamina (0.05 = 5%).', min: 0, max: 1 },
     stationXpBonus: { type: 'number', label: 'Gathering station XP multiplier', help: '!collect turns station work into XP only (no items, no points). 1.2 = 20% more XP than gathering the same things by hand.', min: 0, max: 10 },
     gatherBonusLevels: { type: 'int', label: 'Bigger gathering hauls every (levels)', help: 'Fishing, mining, woodcutting, digging and the like give +1 item (and its XP) per action for every this many levels: 2 at level 50, 3 at level 100. 0 turns it off.', min: 0, max: 1000 },
+    plotsPerStamina: { type: 'int', label: 'Farm plots per stamina charge', help: 'Planting or harvesting uses 1 stamina charge per this many plots (70 plots = 3 charges). 0 = any number of plots for 1 charge.', min: 0, max: 1000 },
+    fireMealsBase: { type: 'int', label: 'Meals per fire', help: 'How many meals one fire can cook (plus Firemaking below). Each fire costs a stamina charge.', min: 1, max: 10000 },
+    fireMealsPerLevels: { type: 'int', label: 'Extra meal per Firemaking levels', help: 'One more meal per fire for every this many Firemaking levels (2 = +1 per 2 levels). 0 = off.', min: 0, max: 1000 },
     plotPriceGrowth: { type: 'number', label: 'Farm plot price growth', help: 'Each farm plot costs this many times the one before (the first bought plot costs the shop price). 1.12 = 12% more each: plot 10 ≈ 1,900, plot 20 ≈ 5,800, plot 30 ≈ 18,000, plot 50 ≈ 173,000. 1 = flat price.', min: 1, max: 3 },
   },
 };
@@ -375,7 +378,7 @@ class Settings extends EventEmitter {
         seasonDays: config.game.seasonDays ?? 30,
         tradeDailyPoints: config.game.tradeDailyPoints ?? 10000,
       },
-      economy: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, growMultiplier: 1, agilityRefillPerLevel: config.game.agilityRefillPerLevel ?? 0.001, agilityRefillMax: config.game.agilityRefillMax ?? 0.25, agilityShortcutChance: config.game.agilityShortcutChance ?? 0.05, stationXpBonus: config.game.stationXpBonus ?? 1.2, gatherBonusLevels: config.game.gatherBonusLevels ?? 50, plotPriceGrowth: config.game.plotPriceGrowth ?? 1.12, priceSupplyScale: config.game.priceSupplyScale ?? 25000, priceRecoveryHours: config.game.priceRecoveryHours ?? 6, priceFloor: config.game.priceFloor ?? 0.35, petDropMultiplier: config.game.petDropMultiplier ?? 1, marketFee: config.game.marketFee ?? 0.05 },
+      economy: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, growMultiplier: 1, agilityRefillPerLevel: config.game.agilityRefillPerLevel ?? 0.001, agilityRefillMax: config.game.agilityRefillMax ?? 0.25, agilityShortcutChance: config.game.agilityShortcutChance ?? 0.05, stationXpBonus: config.game.stationXpBonus ?? 1.2, gatherBonusLevels: config.game.gatherBonusLevels ?? 50, plotsPerStamina: config.game.plotsPerStamina ?? 25, fireMealsBase: config.game.fireMealsBase ?? 10, fireMealsPerLevels: config.game.fireMealsPerLevels ?? 2, plotPriceGrowth: config.game.plotPriceGrowth ?? 1.12, priceSupplyScale: config.game.priceSupplyScale ?? 25000, priceRecoveryHours: config.game.priceRecoveryHours ?? 6, priceFloor: config.game.priceFloor ?? 0.35, petDropMultiplier: config.game.petDropMultiplier ?? 1, marketFee: config.game.marketFee ?? 0.05 },
       disabledCommands: [],
     };
     for (const [key, t] of Object.entries(TABLES)) {

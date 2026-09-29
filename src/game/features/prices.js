@@ -3,8 +3,14 @@
 // amount sold). The more pressure, the lower the price, down to a floor; pressure fades by half every
 // few hours, so prices recover on their own. One loop (100 plots of carrots, say) can't print points
 // forever. Mixed into GameEngine.prototype by engine.js.
-const { ITEMS } = require('../skills');
+const { ITEMS, SKILLS } = require('../skills');
 const { fmt, findItem } = require('./shared');
+
+// All crops and the food cooked from them share one pool of sell pressure, so switching crops
+// every harvest doesn't dodge the price drop.
+const CROP_IDS = new Set(SKILLS.farming.resources.map((r) => r.item));
+const PRODUCE = new Set([...CROP_IDS, ...SKILLS.cooking.recipes.filter((r) => Object.keys(r.inputs).some((i) => CROP_IDS.has(i))).map((r) => r.item)]);
+const supplyKey = (id) => (PRODUCE.has(id) ? 'produce' : id);
 
 module.exports = {
   // Settings (Settings -> Economy). scale 0 turns supply pricing off.
@@ -21,7 +27,7 @@ module.exports = {
   // Recent sell pressure for an item, faded to now.
   supplyPressure(id, now = this.now()) {
     this.supply ??= this.repo.getSetting('supply') || {};
-    const e = this.supply[id];
+    const e = this.supply[supplyKey(id)];
     if (!e) return 0;
     const [s, at] = e;
     return s * 0.5 ** (Math.max(0, now - at) / this.supplyHalfLifeMs());
@@ -37,7 +43,7 @@ module.exports = {
   addSupply(id, qty, now = this.now()) {
     if (!this.supplyScale() || !(ITEMS[id]?.value > 0)) return;
     this.supply ??= this.repo.getSetting('supply') || {};
-    this.supply[id] = [this.supplyPressure(id, now) + ITEMS[id].value * qty, now];
+    this.supply[supplyKey(id)] = [this.supplyPressure(id, now) + ITEMS[id].value * qty, now];
     this.supplyDirty = true;
   },
 
@@ -45,7 +51,8 @@ module.exports = {
   flushSupply() {
     if (!this.supplyDirty || !this.supply) return;
     const now = this.now();
-    for (const id of Object.keys(this.supply)) if (this.supplyPressure(id, now) < 1) delete this.supply[id];
+    const faded = (key) => this.supply[key][0] * 0.5 ** (Math.max(0, now - this.supply[key][1]) / this.supplyHalfLifeMs()) < 1;
+    for (const key of Object.keys(this.supply)) if (faded(key)) delete this.supply[key];
     this.repo.setSetting('supply', this.supply);
     this.supplyDirty = false;
   },
@@ -72,7 +79,7 @@ module.exports = {
         const base = this.baseSellValue(id, userId);
         const f = this.supplyFactor(id, now);
         const pressure = this.supplyPressure(id, now);
-        return { id, name: it.name, icon: it.icon, base, now: Math.max(it.value > 0 ? 1 : 0, Math.round(base * f)), change: Math.round((f - 1) * 100), recent: Math.round(pressure / it.value) };
+        return { id, name: it.name, icon: it.icon, base, now: Math.max(it.value > 0 ? 1 : 0, Math.round(base * f)), change: Math.round((f - 1) * 100), recent: Math.round(pressure / it.value), group: PRODUCE.has(id) ? 'crops' : null };
       });
   },
 
@@ -100,7 +107,7 @@ module.exports = {
     const have = inv[id] ? ` You have ${fmt(inv[id])} (${fmt(this.saleTotal(id, inv[id], user.id))} pts if you sell them all).` : '';
     const trend =
       x.change < 0
-        ? ` (normally ${fmt(x.base)}, ${x.change}% after ~${fmt(x.recent)} sold lately; it recovers over the next few hours)`
+        ? ` (normally ${fmt(x.base)}, ${x.change}% after ${x.group ? 'lots of crops and crop dishes' : `~${fmt(x.recent)}`} sold lately; it recovers over the next few hours)`
         : ' (full price)';
     return `💹 ${x.icon} ${x.name} sells for ${fmt(mine)} pts each right now${trend}.${have}`;
   },
