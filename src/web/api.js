@@ -147,6 +147,15 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     res.json({ items, recoveryHours: engine.cfg.priceRecoveryHours ?? 6, floor: engine.supplyFloor(), on: engine.supplyScale() > 0 });
   });
 
+  // ---- PvP: heists, ranked arena, guild wars -------------------------------------------------
+  router.get('/pvp', (req, res) => {
+    const me = req.user ? repo.getUser(req.user.id) : null;
+    res.json({ ...engine.pvpPage(me?.id ?? null), points: me ? me.points : null, username: me?.username ?? null });
+  });
+  router.post('/pvp/rob', requireLogin, act((req) => engine.rob(req.user, [String(req.body?.name || '')]) || 'Slow down a little!'));
+  router.post('/pvp/guards', requireLogin, act((req) => engine.guards(req.user, [String(req.body?.guards || '')])));
+  router.post('/pvp/arena', requireLogin, act((req) => engine.arenaFight(req.user, []) || 'Slow down a little!'));
+
   // ---- Player market ----------------------------------------------------------------
   router.get('/market', (req, res) => {
     const me = req.user ? repo.getUser(req.user.id) : null;

@@ -404,26 +404,12 @@ module.exports = {
     const a = this.repo.getUser(ch.from);
     const b = this.repo.getUser(user.id);
     if (ch.bet && (a.points < ch.bet || b.points < ch.bet)) return `the duel is off: both of you need ${fmt(ch.bet)} pts.`;
-    const fighter = (u) => {
-      const pick = this.chooseWeapon(u.id);
-      const level = pick.weapon ? pick.level : this.combatLevel(u.id);
-      const stats = pick.weapon ? this.fightStats(u.id, pick) : { attack: 0, defence: this.combatStats(u.id).defence };
-      const skill = pick.weapon ? SKILLS[pick.skillId].name : 'Fists';
-      return { u, level, stats, hp: this.vitals(u.id).maxHp, label: `${skill} ${level}${pick.weapon ? `, ${ITEMS[pick.weapon].name}` : ''}` };
-    };
-    const fa = fighter(a);
-    const fb = fighter(b);
-    const hit = (att, def) =>
-      Math.max(1, Math.round((att.level + att.stats.attack) * (0.5 + 0.5 * this.rng()) * (1 - def.stats.defence / (def.stats.defence + 100))));
-    let [x, y] = this.rng() < 0.5 ? [fa, fb] : [fb, fa];
-    let rounds = 0;
-    while (fa.hp > 0 && fb.hp > 0 && rounds < 500) {
-      y.hp -= hit(x, y);
-      [x, y] = [y, x];
-      rounds++;
-    }
-    if (fa.hp > 0 && fb.hp > 0) return `⚔️ @${a.username} and @${b.username} fought for ${rounds} rounds and neither fell. It's a draw!`;
-    const [win, lose] = fa.hp > 0 ? [fa, fb] : [fb, fa];
+    const fight = this.pvpFight(a.id, b.id);
+    const [fa, fb, rounds] = [fight.a, fight.b, fight.rounds];
+    if (!fight.winner) return `⚔️ @${a.username} and @${b.username} fought for ${rounds} rounds and neither fell. It's a draw!`;
+    const byId = { [a.id]: a, [b.id]: b };
+    const win = { u: byId[fight.winner.id], hp: fight.winner.hp };
+    const lose = { u: byId[fight.loser.id] };
     if (ch.bet) {
       this.repo.transaction(() => {
         this.repo.addPoints(lose.u.id, -ch.bet);
@@ -433,6 +419,7 @@ module.exports = {
     }
     this.emitActivity(win.u, { kind: 'duel', text: `beat ${lose.u.username} in a duel${ch.bet ? ` and won ${fmt(ch.bet)} pts` : ''}! ⚔️` });
     this.onDuelWon?.(win.u);
+    this.guildWarScore?.(win.u.id, lose.u.id, 1, 'duel');
     return `⚔️ @${a.username} (${fa.label}) vs @${b.username} (${fb.label}): after ${rounds} rounds @${win.u.username} WINS with ${fmt(Math.max(0, win.hp))} HP left${ch.bet ? ` and takes ${fmt(ch.bet)} pts` : ''}! 🏆`;
   },
 
@@ -443,6 +430,9 @@ module.exports = {
     this.communityTick();
     this.socialTick();
     this.flushSupply?.();
+    // Weekly PvP rollovers (arena prizes, guild war winner) happen even if nobody fights.
+    this.arena?.();
+    this.guildWar?.();
     const ev = this.repo.getSetting('random_event');
     if (ev && now > ev.endsAt) {
       this.repo.deleteSetting('random_event');

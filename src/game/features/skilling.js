@@ -481,7 +481,7 @@ module.exports = {
     const skill = SKILLS[skillId];
     // Race perk (e.g. Dwarves +15% Mining XP).
     // Race perk (e.g. Dwarves +15% Mining XP), active pet (+5%) and prestige (+5% each).
-    xpGain = Math.max(1, Math.round(xpGain * this.raceXp(user.id, skillId) * this.petXp(user.id, skillId) * this.prestigeXp(user.id, skillId)));
+    xpGain = Math.max(1, Math.round(xpGain * this.raceXp(user.id, skillId) * this.petXp(user.id, skillId) * this.prestigeXp(user.id, skillId) * (this.guildWarXp?.(user.id) ?? 1)));
     // Bone Brew: +20% XP while it lasts.
     if (this.hasBuff(user.id, 'focus')) xpGain = Math.round(xpGain * 1.2);
     // Well Fed (monster dishes): +5% XP.

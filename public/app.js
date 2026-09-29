@@ -967,6 +967,7 @@
 
   pages.casino = async () => window.MMOCasino($app, { api, toast, esc, fmt, state, route });
   pages.stream = async () => window.MMOStream($app, { api, toast, esc, fmt, state, ago, playerLink });
+  pages.pvp = async () => window.MMOPvp($app, { api, toast, esc, fmt, state, ago, playerLink });
   pages.relics = async (_, query) => window.MMORelics($app, { api, toast, esc, fmt, state, route, ago, playerLink }, query);
   pages.cards = async (_, query) => window.MMOCards($app, { api, toast, esc, fmt, state, route, ago, playerLink }, query);
 
@@ -1580,7 +1581,7 @@
           `You have <b>${g.staminaMax} stamina charges</b>. Every action (skilling, fighting, farming, raid attacks) uses one.`,
           `The bar fills back up to full <b>${g.staminaMinutes} minutes</b> after you use the first charge.`,
           `<b>Cooking on a lit fire is free</b>, and info commands like ${c('stats')} never cost stamina.`,
-          `${c('stamina')} shows your bar. Halflings get an extra charge, and the Wraith Tonic potion refills it twice as fast.`,
+          `${c('stamina')} shows your bar. Training 🏃 Agility (${c('run')}) makes it refill faster, Halflings refill 10% faster, and the Wraith Tonic potion refills it twice as fast.`,
         ]),
       },
       {
@@ -1780,6 +1781,15 @@
         ]),
       },
       {
+        id: 'pvp', tab: 'rewards', icon: '⚔️', title: 'PvP: heists, arena, guild wars', summary: 'Rob the rich, climb the ladder, win the war',
+        body: list([
+          `<b>Heists:</b> ${c('rob @name')} (1 stamina) tries to rob a player richer than you. Pull it off and you take a small share of their points (the fence keeps a cut); get caught and you pay a fine, half of it to them, and lie low for a while. Your 🏃 Agility against theirs sets the odds. ${c('guards 2')} hires guards for 24h (priced by how much you hold) that cut robbers' odds.`,
+          `<b>Ranked arena:</b> ${c('arena')} fights the player closest to your rating with both of your best gear (they don't need to be online). A small entry fee goes into the weekly pot; on Monday the top 3 split it and #1 is the Arena Champion. ${c('arena top')} shows the ladder.`,
+          `<b>Guild wars:</b> guilds score war points each week when members beat other guilds' members (arena win 3, heist 2, duel 1). The winning guild gets bonus XP all next week. ${c('war')} shows the standings.`,
+          'Everything is on the <a href="#/pvp">PvP</a> page.',
+        ]),
+      },
+      {
         id: 'raids', tab: 'events', icon: '🐉', title: 'Raid bosses', summary: 'Everyone fights a giant boss together',
         body: list([`When a ⚔️ raid boss appears, type ${c('attack')} to hit it (each attack uses stamina). ${c('raid')} shows its HP.`, 'Beat it in time and the reward pool is split by damage. The top hitter is MVP and gets extra loot.']),
       },
@@ -1881,6 +1891,9 @@
         ['attack', 'Hit the raid boss (raid shows it)'],
         ['catch / grab', 'Claim a random event'],
         ['duel @name [bet]', 'Challenge a player (accept / decline)'],
+        ['rob @name', 'Heist a richer player (guards to protect yourself)'],
+        ['arena', 'Ranked fight (arena top for the ladder)'],
+        ['war', 'Guild war standings'],
         ['boost', 'Is an XP boost running?'],
         ['goal', 'Channel goal progress'],
       ]],
@@ -2718,6 +2731,7 @@
             ${row('📣 Spent on stream redemptions', f.redeems, 'down')}
             ${row('🏛️ Given to community projects', f.projects, 'down')}
             ${row('🏪 Market fees (removed from the game)', f.fees, 'down')}
+            ${row('🦹 Removed by PvP (heist cuts and fines, guards, arena fees)', f.pvp, 'down')}
             ${row('🤝 Traded between players', f.traded)}
           </tbody></table></div>
         </section>

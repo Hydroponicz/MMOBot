@@ -1037,3 +1037,7 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 @media (max-width: 600px) {
   .project-home { flex-wrap: wrap; }
 }
+
+/* PvP page */
+.pvp-grid { display: grid; gap: 16px; }
+.pvp-grid > .panel { margin: 0; }

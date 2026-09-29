@@ -257,7 +257,7 @@ module.exports = {
     const gamesTook = games.reduce((s, g) => s + Math.max(0, g.net), 0);
     const gamesGave = games.reduce((s, g) => s + Math.max(0, -g.net), 0);
     const earned = sum('chat') + sum('actions') + sum('sold') + sum('rewards') + gamesGave;
-    const spent = sum('shop') + sum('fees') + sum('redeems') + sum('projects') + gamesTook;
+    const spent = sum('shop') + sum('fees') + sum('redeems') + sum('projects') + sum('pvp') + gamesTook;
     const alerts = [];
     const week = { days: days.length, earned, spent, games };
     if (days.length >= 2 && earned > 1000 && earned > spent * 1.5) {
