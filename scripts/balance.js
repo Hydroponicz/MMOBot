@@ -5,6 +5,7 @@
 //   npm run balance -- [--players 40] [--days 28] [--streams 4] [--hours 3] [--seed 1] [--out report.md] [--old-rules]
 //
 // --old-rules turns off the bank limits and the chat points taper, to compare against how things were.
+// --no-rewards turns off stream redemptions and community projects (players never use them).
 //
 // --streams is streams per week, --hours how long each stream lasts. Settings come from your
 // environment variables (same as the server), so you can try e.g. STAMINA_MAX=5 before changing it live.
@@ -27,6 +28,7 @@ const HOURS = Number(arg('hours', 3));
 const SEED = Number(arg('seed', 1));
 const OUT = arg('out', null);
 const OLD_RULES = process.argv.includes('--old-rules');
+const NO_REWARDS = process.argv.includes('--no-rewards');
 
 function mulberry32(seed) {
   return () => {
@@ -81,6 +83,8 @@ const players = Array.from({ length: PLAYERS }, (_, i) => ({
   attendance: 0.6 + rnd() * 0.4,
 }));
 const say = (p, content) => engine.handleChat({ kickUserId: p.kickUserId, username: p.username, content }).reply;
+// Everyone has a character from the start (someone who misses the first streams still shows in the report).
+for (const p of players) repo.upsertUser({ kickUserId: p.kickUserId, username: p.username });
 
 // Things players do between actions: sell when full, buy the basics, upgrade when rich.
 function housekeeping(p) {
@@ -106,6 +110,16 @@ function collect(p) {
     const r = engine.relicOpen(u, pick(['dragonfire', 'frostbite', 'shadowveil']), 1);
     if (r.ok) engine.relicSellBack(u, r.relics.map((x) => x.id));
   }
+}
+
+// Players with points to spare sometimes spend them on the stream: a cheap effect, or a share of what
+// they hold into the community project.
+function streamRewards(p) {
+  if (NO_REWARDS) return;
+  const u = repo.getUserByKickId(p.kickUserId);
+  if (u.points < 8000) return;
+  if (rnd() < 0.5) engine.redeem(u, pick(['fireworks', 'fanfare', 'spotlight', 'fireworks', 'goblin']));
+  else engine.projectFund(u, Math.floor(u.points * (0.05 + rnd() * 0.1)));
 }
 
 const weekly = [];
@@ -141,6 +155,7 @@ for (let d = 0; d < DAYS; d++) {
         say(p, STYLES[p.style](p));
         p.actions++;
         if (p.style === 'collector' && rnd() < 0.3) collect(p);
+        if (rnd() < 0.02) streamRewards(p);
       }
       if (m % 5 === 0) engine.tick();
     }
@@ -162,7 +177,7 @@ const lines = [];
 const out = (s = '') => lines.push(s);
 out(`# Balance simulation`);
 out();
-out(`${PLAYERS} players · ${DAYS} days · ${STREAMS} streams/week of ${HOURS}h · seed ${SEED} · stamina ${game.staminaMax} per ${game.staminaMinutes} min · ${OLD_RULES ? "old rules (no bank limits, no chat taper)" : "current rules"} · ran in ${secs}s`);
+out(`${PLAYERS} players · ${DAYS} days · ${STREAMS} streams/week of ${HOURS}h · seed ${SEED} · stamina ${game.staminaMax} per ${game.staminaMinutes} min · ${OLD_RULES ? "old rules (no bank limits, no chat taper)" : "current rules"}${NO_REWARDS ? ', no stream rewards' : ''} · ran in ${secs}s`);
 out();
 out(`## Progress by play style (end of week)`);
 out();
@@ -205,6 +220,8 @@ for (const [k, label] of [
   ['cardBuyback', 'Bank paid for cards'],
   ['relicCases', 'Spent on relic cases'],
   ['relicBuyback', 'Bank paid for relics'],
+  ['redeems', 'Spent on stream redemptions'],
+  ['projects', 'Given to community projects'],
 ]) out(`| ${label} | ${fmt(econ[k] || 0)} |`);
 // Games of chance count both ways: kept points are spent, extra payouts are earned.
 const games = [
@@ -213,7 +230,7 @@ const games = [
   (econ.relicCases || 0) - (econ.relicBuyback || 0),
 ];
 const earned = (econ.chat || 0) + (econ.actions || 0) + (econ.sold || 0) + (econ.rewards || 0) + games.reduce((s, g) => s + Math.max(0, -g), 0);
-const spent = (econ.shop || 0) + (econ.fees || 0) + games.reduce((s, g) => s + Math.max(0, g), 0);
+const spent = (econ.shop || 0) + (econ.fees || 0) + (econ.redeems || 0) + (econ.projects || 0) + games.reduce((s, g) => s + Math.max(0, g), 0);
 out();
 out(`Earned ${fmt(earned)} vs spent ${fmt(spent)}: ${spent ? `${(earned / spent).toFixed(1)}x` : 'nothing spent'}. ${earned > spent * 1.5 ? 'Points are piling up faster than they are spent.' : 'Roughly balanced.'}`);
 const alerts = engine.economyAlerts().alerts;

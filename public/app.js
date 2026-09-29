@@ -39,7 +39,7 @@
   };
   const skillIcon = (id) => state.site?.skills.find((s) => s.id === id)?.icon || '✨';
   const feedIcon = (a) =>
-    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒', jackpot: '🎰', death: '💀', achievement: '🏆', task: '📋', trade: '🤝', follow: '💚', sub: '⭐', gift: '🎁', raid: '⚔️', duel: '⚔️', event: '📣', pull: '🃏', unbox: '🧰' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
+    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒', jackpot: '🎰', death: '💀', achievement: '🏆', task: '📋', trade: '🤝', follow: '💚', sub: '⭐', gift: '🎁', raid: '⚔️', duel: '⚔️', event: '📣', pull: '🃏', unbox: '🧰', redeem: '📣', fund: '🏛️' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
 
   // ---- live activity (SSE) ----------------------------------------------
   const listeners = new Set();
@@ -720,7 +720,8 @@
   const pages = {};
 
   pages.home = async () => {
-    const [lb, act, guide] = await Promise.all([api('/leaderboard/overall?limit=10'), api('/activity'), api('/guide')]);
+    const [lb, act, guide, sr] = await Promise.all([api('/leaderboard/overall?limit=10'), api('/activity'), api('/guide'), api('/stream').catch(() => null)]);
+    const proj = sr?.projectsEnabled && sr.project;
     const t = state.site.totals;
     const channel = state.site.channel;
     $app.innerHTML = `
@@ -748,6 +749,16 @@
         </div>
       </section>
 
+      ${
+        proj
+          ? `<a class="panel project-home" href="#/stream">
+              <span class="ph-ic">${proj.icon}</span>
+              <span class="ph-main"><b>Community project: ${esc(proj.name)}</b><span class="muted">${esc(proj.text)}</span>
+                <span class="project-bar small"><span style="width:${Math.min(100, (proj.progress / proj.goal) * 100).toFixed(2)}%"></span><b>${fmt(proj.progress)} / ${fmt(proj.goal)} pts</b></span></span>
+              <span class="btn btn-primary btn-sm">Chip in →</span>
+            </a>`
+          : ''
+      }
       <div class="stat-row">
         <div class="stat"><div class="v">${fmt(t.players)}</div><div class="k">Adventurers</div></div>
         <div class="stat"><div class="v">${fmt(t.actions)}</div><div class="k">Actions taken</div></div>
@@ -906,6 +917,7 @@
   };
 
   pages.casino = async () => window.MMOCasino($app, { api, toast, esc, fmt, state, route });
+  pages.stream = async () => window.MMOStream($app, { api, toast, esc, fmt, state, ago, playerLink });
   pages.relics = async (_, query) => window.MMORelics($app, { api, toast, esc, fmt, state, route, ago, playerLink }, query);
   pages.cards = async (_, query) => window.MMOCards($app, { api, toast, esc, fmt, state, route, ago, playerLink }, query);
 
@@ -1591,6 +1603,14 @@
         ]),
       },
       {
+        id: 'stream-rewards', tab: 'events', icon: '📣', title: 'Stream rewards & community projects', summary: 'Spend points on things the whole stream sees',
+        body: list([
+          `On the <a href="#/stream">Stream Rewards</a> page (or ${c('redeem fireworks')} in chat), spend points on redemptions everyone sees on stream: fireworks with your name, a fanfare, your character in the spotlight, a treasure goblin, 10 minutes of double XP for everyone, or a raid boss. Each has a cooldown for the whole channel, and they only work while the stream is live.`,
+          `<b>Community projects</b>: chat pools points toward a shared goal with ${c('fund 500')} (${c('project')} shows progress). Projects take turns: raise a Monument (the top donor's character goes in the Hall of Monuments forever), a Double XP Hour, a Festival of Fortune (double rare finds for an hour) and awakening the World Boss.`,
+          'When a project is finished, the top donor earns the title <b>the Grand Patron</b> and everyone who gave 10% or more earns <b>the Patron</b>.',
+        ]),
+      },
+      {
         id: 'relics', tab: 'rewards', icon: '🧰', title: 'Relic cases', summary: 'Unbox legendary weapons, trade up, SoulTrak™',
         body: list([
           `On the <a href="#/relics">Relic Cases</a> page, spend points to open cases. A reel spins and lands on a relic: a blade, axe, staff, bow, scythe or shield with its own skin. Rarities: Adept (79.9%), Heroic (16%), Mythic (3.2%), Exalted (0.64%) and ★ Legendary Relics (0.26%).`,
@@ -1742,6 +1762,8 @@
         ['market', 'Player market link'],
         ['cards', 'Your trading cards (packs, grading and trades on the website)'],
         ['relics', 'Your relics and showcased SoulTrak™ (cases on the website)'],
+        ['redeem [name]', 'Spend points on a stream effect (fireworks, spotlight, double XP...)'],
+        ['fund <amount>', 'Give points to the community project (project shows it)'],
         ['bounty <item> <points>', 'Post a bounty (bounty cancel)'],
         ['bounties', 'Open bounties'],
         ['guild', 'Your guild (guild create / join / leave / deposit / top)'],
@@ -2016,6 +2038,16 @@
               <a class="btn" id="overlay-open" target="_blank" rel="noopener">Preview ↗</a>
             </div>
             <p class="muted" style="font-size:.85rem;margin-bottom:0">“Send test event” pops a message onto every open overlay (it isn't saved anywhere). If it doesn't appear in OBS, right-click the source → <b>Refresh</b>.</p>
+            <h3 style="margin-top:18px">🎆 Effects overlay (stream redemptions)</h3>
+            <p class="muted" style="font-size:.85rem;margin-top:0">A second Browser Source, <b>full screen (1920×1080)</b>, for fireworks, the spotlight, the fanfare and community project celebrations. Tick <b>Control audio via OBS</b> on it to hear the fanfare. Add <code>?sound=0</code> for no sound.</p>
+            <div class="form-row">
+              <input type="text" id="fx-url" readonly style="max-width:none" aria-label="Effects overlay link" value="${location.origin}/fx.html">
+              <button class="btn" id="fx-copy">Copy</button>
+            </div>
+            <div class="form-row" style="margin-top:10px;flex-wrap:wrap">
+              ${[['fireworks', '🎆 Test fireworks'], ['spotlight', '🔦 Test spotlight'], ['fanfare', '📯 Test fanfare'], ['project', '🏛️ Test project complete']].map(([k, l]) => `<button class="btn btn-sm" data-fx="${k}">${l}</button>`).join('')}
+              <a class="btn btn-sm" href="/fx.html" target="_blank" rel="noopener">Preview ↗</a>
+            </div>
           </section>
         </div>
       </div>`;
@@ -2048,6 +2080,26 @@
         toast('Press Ctrl+C / ⌘C to copy');
       }
     };
+    $app.querySelector('#fx-copy').onclick = async () => {
+      const input = $app.querySelector('#fx-url');
+      try {
+        await navigator.clipboard.writeText(input.value);
+        toast('Effects overlay link copied');
+      } catch {
+        input.select();
+        toast('Press Ctrl+C / ⌘C to copy');
+      }
+    };
+    $app.querySelectorAll('[data-fx]').forEach((b) => {
+      b.onclick = async () => {
+        try {
+          await api('/admin/fx-test', { method: 'POST', body: { kind: b.dataset.fx } });
+          toast('Test effect sent. Check the effects overlay.');
+        } catch (e) {
+          toast(`Failed: ${e.message}`);
+        }
+      };
+    });
     $app.querySelector('#overlay-test').onclick = async () => {
       try {
         await api('/admin/overlay-test', { method: 'POST' });
@@ -2204,7 +2256,16 @@
       <div class="stack" style="margin-top:16px">
         ${Object.keys(d.tables)
           .filter((k) => k !== 'backpack')
-          .map((k) => tableSection(k, `Level needed, price and stats for each tier. Levels must go up from tier to tier; the first tier is free at level 1.`))
+          .map((k) =>
+            tableSection(
+              k,
+              {
+                shop: 'Price of each shop item.',
+                redemptions: 'What each stream redemption costs, and how long the whole channel waits before it can be used again. A price of 0 turns it off.',
+                projects: 'Points needed to finish each community project. Projects run one after another in this order; a goal of 0 skips it.',
+              }[k] || 'Level needed, price and stats for each tier. Levels must go up from tier to tier; the first tier is free at level 1.'
+            )
+          )
           .join('')}
         ${tableSection('backpack', 'Slots and price for each backpack level. Slots must go up from level to level.')}
       </div>`;
@@ -2523,6 +2584,8 @@
             ${row('🧰 Spent on relic cases', f.relicCases)}
             ${row('🧰 Paid for relics sold back to the bank', f.relicBuyback)}
             ${netRow('Relic cases result', relicsNet)}
+            ${row('📣 Spent on stream redemptions', f.redeems, 'down')}
+            ${row('🏛️ Given to community projects', f.projects, 'down')}
             ${row('🏪 Market fees (removed from the game)', f.fees, 'down')}
             ${row('🤝 Traded between players', f.traded)}
           </tbody></table></div>

@@ -400,7 +400,7 @@ test('rod prices saved before the tool rework still apply', () => {
   const settings = new Settings({ config: { ...baseConfig, adminUsers: [], kick: { channel: 's' } }, repo });
   assert.equal(settings.all.rods[1].cost, 7);
   assert.equal(settings.all.rods[1].failChance, 0.2);
-  assert.deepEqual(Object.keys(settings.all).filter((k) => k.endsWith('s') && Array.isArray(settings.all[k])).sort(), ['axes', 'disabledCommands', 'furnaces', 'pickaxes', 'rods', 'shovels']);
+  assert.deepEqual(Object.keys(settings.all).filter((k) => k.endsWith('s') && Array.isArray(settings.all[k])).sort(), ['axes', 'disabledCommands', 'furnaces', 'pickaxes', 'projects', 'redemptions', 'rods', 'shovels']);
 });
 
 // ---- Smithing, shop, gear and combat ------------------------------------------

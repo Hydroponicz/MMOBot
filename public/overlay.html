@@ -14,7 +14,9 @@
          &raid=0          hide the raid boss health bar and channel boost banner at the top
          &scenes=0        plain text rows instead of animated characters doing the action
          &stats=0         hide the rotating "this stream" panel (top XP, last rare find, raid MVP)
-         &goal=0          hide the channel goal bar */
+         &goal=0          hide the channel goal bar
+         &project=0       hide the community project bar
+       Redemption effects (fireworks, spotlight...) play on the separate full-screen overlay: /fx.html */
     html, body { margin: 0; background: transparent; overflow: hidden; }
     body { font-family: Inter, system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; justify-content: flex-end; padding: 12px; box-sizing: border-box; gap: 8px; }
     .ev {
@@ -58,6 +60,14 @@
     .goal .name small { color: #8b98a8; font-weight: 600; }
     .goal .bar span { background: linear-gradient(90deg, #f59e0b, #fde047); }
     .goal.done { border-color: #53fc18; color: #53fc18; text-align: center; }
+    .project { border: 2px solid #c084fc; }
+    .project .name { display: flex; justify-content: space-between; font-size: 15px; }
+    .project .name small { color: #8b98a8; font-weight: 600; }
+    .project .bar span { background: linear-gradient(90deg, #8b5cf6, #f0abfc); }
+    .project .top { margin-top: 6px; font-size: 12px; font-weight: 600; color: #8b98a8; }
+    .project.done { border-color: #ffc940; color: #ffc940; text-align: center; }
+    .ev.redeem, .ev.fund { border-left-color: #c084fc; }
+    .ev.redeem b, .ev.fund b { color: #c084fc; }
     .stats { font-size: 14px; font-weight: 700; min-height: 34px; display: flex; align-items: center; gap: 8px; }
     .stats .lbl { color: #8b98a8; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
     .stats .who { display: inline-flex; align-items: center; gap: 4px; margin-right: 8px; }
@@ -176,8 +186,8 @@
     }
     const face = (a) => (scenes && a.appearance ? `<span class="face">${MMOAvatar.svg(a.appearance, { size: 30, head: true })}</span>` : '');
 
-    const BIG = ['levelup', 'charlevel', 'rare', 'upgrade', 'jackpot', 'follow', 'sub', 'gift', 'raid', 'duel', 'event'];
-    const icons = { levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', buy: '🛒', action: '✨', test: '🧪', jackpot: '🎰', death: '💀', achievement: '🏆', task: '📋', trade: '🤝', follow: '💚', sub: '⭐', gift: '🎁', raid: '⚔️', duel: '⚔️', event: '📣', pull: '🃏', unbox: '🧰' };
+    const BIG = ['levelup', 'charlevel', 'rare', 'upgrade', 'jackpot', 'follow', 'sub', 'gift', 'raid', 'duel', 'event', 'redeem', 'fund'];
+    const icons = { levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', buy: '🛒', action: '✨', test: '🧪', jackpot: '🎰', death: '💀', achievement: '🏆', task: '📋', trade: '🤝', follow: '💚', sub: '⭐', gift: '🎁', raid: '⚔️', duel: '⚔️', event: '📣', pull: '🃏', unbox: '🧰', redeem: '📣', fund: '🏛️' };
     const skillIcons = { fishing: '🎣', mining: '⛏️', woodcutting: '🪓', digging: '🏺', smelting: '🔥', smithing: '⚒️', swords: '🗡️', skinning: '🔪', farming: '🌱' };
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -223,6 +233,9 @@
     let stats = null;
     let slide = 0;
     const showGoal = params.get('goal') !== '0';
+    const showProject = params.get('project') !== '0';
+    let project = null;
+    let projectDone = null;
     const showStats = params.get('stats') !== '0';
     const fmtN = (n) => Number(n).toLocaleString();
     function drawTop() {
@@ -249,6 +262,14 @@
             : `<div class="panel goal"><div class="name"><span>🎯 GOAL: ${esc(goal.label)}</span><small>${fmtN(goal.progress)} / ${fmtN(goal.target)}</small></div><div class="bar"><span style="width:${pct}%"></span></div></div>`
         );
       }
+      if (showProject && projectDone && projectDone.until > Date.now()) {
+        parts.push(`<div class="panel project done">${projectDone.icon} PROJECT COMPLETE: ${esc(projectDone.name)}! Top donor: ${esc(projectDone.top)}</div>`);
+      } else if (showProject && project) {
+        const pct = Math.min(100, Math.round((project.progress / project.goal) * 100));
+        const tops = (project.top || []).slice(0, 3).map((t) => `${esc(t.username)} ${fmtN(t.amount)}`).join(' · ');
+        parts.push(`<div class="panel project"><div class="name"><span>${project.icon} COMMUNITY PROJECT: ${esc(project.name)}</span><small>${fmtN(project.progress)} / ${fmtN(project.goal)}</small></div>
+          <div class="bar"><span style="width:${pct}%"></span></div><div class="top">Type !fund 500 to chip in${tops ? ` · ${tops}` : ''}</div></div>`);
+      }
       if (showStats && stats) {
         const slides = [];
         if (stats.top && stats.top.length) {
@@ -274,6 +295,11 @@
     });
     es.addEventListener('goal', (e) => {
       goal = JSON.parse(e.data);
+      drawTop();
+    });
+    es.addEventListener('project', (e) => {
+      project = JSON.parse(e.data);
+      if (project?.completed) projectDone = { ...project.completed, until: Date.now() + 20_000 };
       drawTop();
     });
     es.addEventListener('streamstats', (e) => {

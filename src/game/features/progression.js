@@ -224,7 +224,7 @@ module.exports = {
   },
 
   titles(userId) {
-    return [...Object.values(this.achievements(userId).unlocked).map((a) => a.title), ...this.questTitles(userId), ...this.cardTitles(userId)].filter(Boolean);
+    return [...Object.values(this.achievements(userId).unlocked).map((a) => a.title), ...this.questTitles(userId), ...this.cardTitles(userId), ...this.patronTitles(userId)].filter(Boolean);
   },
 
   // !title [name|none]

@@ -7,6 +7,7 @@ const { EventEmitter } = require('node:events');
 const { ITEMS, SKILLS, SKILL_IDS, BACKPACK_TIERS, SHOP, COMMAND_TO_SKILL } = require('./game/skills');
 const { isChatCommand } = require('./game/engine');
 const { parseEmoteCommands, formatShortcut } = require('./game/emotes');
+const { REDEMPTIONS, PROJECTS } = require('./game/streamRewards');
 
 // Every command a viewer can type (without the prefix), for enabling/disabling from the admin page.
 const TOOL_SKILLS = SKILL_IDS.filter((id) => SKILLS[id].tool);
@@ -37,6 +38,8 @@ const COMMANDS = [
   'mines',
   'cards',
   'relics',
+  'redeem',
+  'project',
   'raid',
   'boost',
   'season',
@@ -127,6 +130,9 @@ const FIELDS = {
     worldBossDays: { type: 'int', label: 'World boss length (days)', help: 'How long the world boss stays before it escapes. Its HP carries over between streams.', min: 1, max: 60 },
     autoGoalTarget: { type: 'int', label: 'Auto channel goal (actions)', help: 'When the stream goes live, start a goal of this many actions for 2x XP for 30 minutes. 0 = off.', min: 0, max: 1000000 },
     raidRewardPoints: { type: 'int', label: 'Raid reward pool (points)', help: 'Split between everyone who hit the boss, by damage dealt.', min: 0, max: 1e9 },
+    redeemEnabled: { type: 'bool', label: 'Stream redemptions', help: 'Players spend points on fireworks, a spotlight, a fanfare, double XP, a raid boss... (prices in the Stream redemptions table below).' },
+    redeemOnlyLive: { type: 'bool', label: 'Redemptions only while live', help: 'Needs Kick live status; if the stream status is unknown, redemptions work anyway.' },
+    projectsEnabled: { type: 'bool', label: 'Community projects', help: 'Chat pools points toward a shared goal (!fund). Goals in the Community projects table below.' },
     duelsEnabled: { type: 'bool', label: 'Duels', help: '!duel @name [bet]: player vs player fights for points.' },
     tradingEnabled: { type: 'bool', label: 'Trading', help: '!give @name <item> or !give @name 500: players give each other items and points.' },
     tradeMinHours: { type: 'int', label: 'Trading: hours since first chat', help: 'Both players must have been around this long (stops brand-new alt accounts).', min: 0, max: 8760 },
@@ -184,6 +190,22 @@ TABLES.shop = {
   key: 'item',
   columns: { cost: { type: 'int', label: 'Price (points)', min: 0, max: 1e12 } },
   rows: () => SHOP.map((x) => ({ ...x, name: ITEMS[x.item].name, icon: ITEMS[x.item].icon })),
+};
+
+TABLES.redemptions = {
+  label: 'Stream redemptions',
+  key: 'id',
+  columns: {
+    cost: { type: 'int', label: 'Price (points, 0 = off)', min: 0, max: 1e12 },
+    cooldown: { type: 'int', label: 'Cooldown for the channel (minutes)', min: 0, max: 1440 },
+  },
+  rows: () => REDEMPTIONS,
+};
+TABLES.projects = {
+  label: 'Community projects',
+  key: 'id',
+  columns: { goal: { type: 'int', label: 'Goal (points, 0 = skip)', min: 0, max: 1e12 } },
+  rows: () => PROJECTS,
 };
 
 class SettingsError extends Error {}
@@ -291,6 +313,9 @@ class Settings extends EventEmitter {
         worldBossHpMultiplier: config.game.worldBossHpMultiplier ?? 300,
         worldBossDays: config.game.worldBossDays ?? 7,
         autoGoalTarget: config.game.autoGoalTarget ?? 0,
+        redeemEnabled: config.game.redeemEnabled ?? true,
+        redeemOnlyLive: config.game.redeemOnlyLive ?? true,
+        projectsEnabled: config.game.projectsEnabled ?? true,
         duelsEnabled: config.game.duelsEnabled ?? true,
         tradingEnabled: config.game.tradingEnabled ?? true,
         tradeMinHours: config.game.tradeMinHours ?? 24,

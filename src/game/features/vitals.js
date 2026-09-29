@@ -119,9 +119,9 @@ module.exports = {
     this.repo.setSetting(this.buffKey(userId), rest);
   },
 
-  // Grave Luck doubles rare chances.
+  // Grave Luck doubles rare chances, and so does a Festival of Fortune (community project).
   luck(userId) {
-    return (this.hasBuff(userId, 'luck') ? 2 : 1) * this.perks(userId).luck;
+    return (this.hasBuff(userId, 'luck') ? 2 : 1) * (this.fortuneActive() ? 2 : 1) * this.perks(userId).luck;
   },
 
   // ---- Stamina ------------------------------------------------------------------

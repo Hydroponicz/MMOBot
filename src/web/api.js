@@ -223,6 +223,25 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   router.post('/relics/trades/:id/decline', requireLogin, marketAct((req) => engine.relicTradeClose(req.user, req.params.id, 'declined')));
   router.post('/relics/trades/:id/cancel', requireLogin, marketAct((req) => engine.relicTradeClose(req.user, req.params.id, 'cancelled')));
 
+  // ---- Stream rewards: redemptions and community projects ----------------------------------------
+  router.get('/stream', (req, res) => {
+    const me = req.user ? repo.getUser(req.user.id) : null;
+    res.json({
+      redeemEnabled: engine.cfg.redeemEnabled !== false,
+      projectsEnabled: engine.cfg.projectsEnabled !== false,
+      offline: engine.streamOffline(),
+      redemptions: engine.redemptions().filter((r) => r.enabled),
+      project: engine.publicProject(),
+      projects: engine.projectGoals().map(({ id, name, icon, goal, text }) => ({ id, name, icon, goal, text })),
+      monuments: engine.monuments(),
+      history: engine.projectHistory(),
+      points: me ? me.points : null,
+      now: Date.now(),
+    });
+  });
+  router.post('/stream/redeem', requireLogin, marketAct((req) => engine.redeem(req.user, req.body?.id)));
+  router.post('/stream/fund', requireLogin, marketAct((req) => engine.projectFund(req.user, req.body?.amount)));
+
   // ---- Guilds -------------------------------------------------------------------------------
   router.get('/guilds', (req, res) => {
     const mine = req.user ? repo.guildOf(req.user.id) : null;
@@ -332,12 +351,19 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     // Channel goal progress and this stream's top players, for the overlay.
     const sendGoal = (goal) => res.write(`event: goal\ndata: ${JSON.stringify(goal)}\n\n`);
     const sendStats = (stats) => res.write(`event: streamstats\ndata: ${JSON.stringify(stats)}\n\n`);
+    // Stream redemptions (fireworks, spotlight...) and community project progress, for the overlays.
+    const sendRedeem = (r) => res.write(`event: redeem\ndata: ${JSON.stringify(r)}\n\n`);
+    const sendProject = (p) => res.write(`event: project\ndata: ${JSON.stringify(p)}\n\n`);
     const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
     engine.on('activity', send);
     engine.on('raid', sendRaid);
     engine.on('boost', sendBoost);
     engine.on('goal', sendGoal);
     engine.on('streamstats', sendStats);
+    engine.on('redeem', sendRedeem);
+    engine.on('project', sendProject);
+    const project = engine.cfg.projectsEnabled !== false ? engine.publicProject() : null;
+    if (project) sendProject(project);
     const goal = engine.publicGoal();
     if (goal) sendGoal(goal);
     sendStats(engine.publicStreamStats());
@@ -354,6 +380,8 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       engine.off('boost', sendBoost);
       engine.off('goal', sendGoal);
       engine.off('streamstats', sendStats);
+      engine.off('redeem', sendRedeem);
+      engine.off('project', sendProject);
     });
   });
 
@@ -682,6 +710,20 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
 
   // Pops a sample event onto every open overlay (and the live feeds) so OBS setup can be checked.
   // Not saved anywhere.
+  // Plays a redemption effect on the full-screen effects overlay (nothing is charged or saved).
+  router.post('/admin/fx-test', requireAdmin, (req, res) => {
+    const kinds = ['fireworks', 'fanfare', 'spotlight', 'project'];
+    const kind = kinds.includes(req.body?.kind) ? req.body.kind : 'fireworks';
+    const me = req.user;
+    if (kind === 'project') {
+      const p = engine.publicProject() || { name: 'Raise a Monument', icon: '🏛️' };
+      engine.emit('project', { ...p, completed: { id: p.id, name: p.name, icon: p.icon, top: me.username, effect: 'This is a test: nothing happened.', test: true } });
+    } else {
+      const names = { fireworks: '🎆 Fireworks', fanfare: '📯 Fanfare', spotlight: '🔦 Spotlight' };
+      engine.emit('redeem', { id: kind, name: names[kind].slice(2).trim(), icon: names[kind].slice(0, 2), username: me.username, title: repo.getUser(me.id).title || '', level: null, appearance: engine.characterView(me.id), text: `${names[kind]} (test)`, at: Date.now(), test: true });
+    }
+    res.json({ ok: true });
+  });
   router.post('/admin/overlay-test', requireAdmin, (req, res) => {
     engine.emit('activity', {
       id: 0,

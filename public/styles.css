@@ -1003,3 +1003,32 @@ a.badge:hover { text-decoration: none; color: var(--text); }
   .showcase { flex-direction: column; align-items: flex-start; }
   .showcase-art { width: 100%; max-width: 260px; }
 }
+
+/* ---- Stream rewards ---- */
+.project-bar { position: relative; display: block; height: 34px; border-radius: 10px; overflow: hidden; background: var(--panel-2); border: 1px solid var(--border); }
+.project-bar > span { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #7c3aed, #c084fc, #f0abfc); transition: width 0.5s; }
+.project-bar > b { position: relative; display: grid; place-items: center; height: 100%; font-size: 0.95rem; text-shadow: 0 1px 3px #000; }
+.project-bar.small { height: 22px; margin-top: 6px; }
+.project-bar.small > b { font-size: 0.78rem; }
+.project-panel { border-color: #6d28d9; background: radial-gradient(ellipse at 10% 0%, rgba(124, 58, 237, 0.18), transparent 60%), var(--panel); }
+.donors { margin: 0; padding-left: 20px; }
+.donors li { padding: 2px 0; }
+.donors b { color: var(--gold); margin-left: 6px; }
+.upcoming { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 0.92rem; }
+.redeem-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: 12px; }
+.redeem-card { display: flex; flex-direction: column; gap: 4px; padding: 14px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--border); }
+.redeem-card p { margin: 0; font-size: 0.85rem; flex: 1; }
+.redeem-ic { font-size: 2rem; }
+.redeem-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; }
+.monuments { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+.statue { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.statue-fig { filter: grayscale(1) sepia(0.35) brightness(1.1) drop-shadow(0 8px 12px rgba(0, 0, 0, 0.5)); font-size: 4rem; }
+.statue-plinth { width: 100%; padding: 6px; border-radius: 6px; background: linear-gradient(180deg, #d8d2c4, #9c9484); color: #2e2a22; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-home { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; color: var(--text); border-color: #6d28d9; }
+.project-home:hover { text-decoration: none; border-color: #a78bfa; }
+.ph-ic { font-size: 2.2rem; }
+.ph-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.ph-main .muted { font-size: 0.85rem; }
+@media (max-width: 600px) {
+  .project-home { flex-wrap: wrap; }
+}
