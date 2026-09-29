@@ -66,10 +66,13 @@ module.exports = {
             ? this.burn(user, args)
           : skill.type === 'process'
             ? this.process(user, skillId, args)
+          : skill.type === 'course'
+            ? this.runCourse(user, args)
             : this.gather(user, skillId, args);
       if (r.consumed) {
         this.repo.setActionAt(user.id, now);
-        if (!free) this.spendStamina(user, now);
+        // (A lucky Agility shortcut makes the lap free.)
+        if (!free && !r.refund) this.spendStamina(user, now);
       }
       return r;
     });
@@ -176,6 +179,41 @@ module.exports = {
       } else result.reply += ` (no room for the ${ITEMS[drop.meat].name})`;
     }
     return result;
+  },
+
+  // !run [course]: one Agility lap on your best course (or the one you name). No items: XP, action
+  // points and, as you level, faster stamina refills. Falls happen less as you level and still give
+  // a little XP; now and then you find a shortcut and the lap costs no stamina.
+  runCourse(user, args) {
+    const skill = SKILLS.agility;
+    const level = skillLevel('agility', this.repo.getSkills(user.id).agility);
+    const unlocked = skill.resources.filter((r) => r.level <= level);
+    let course = unlocked[unlocked.length - 1];
+    if (args.length) {
+      const q = args.join(' ').toLowerCase();
+      const found = skill.resources.find((r) => r.name.toLowerCase() === q || r.id === q.replace(/\s+/g, '_')) || skill.resources.find((r) => r.name.toLowerCase().includes(q));
+      if (!found) {
+        const shown = skill.resources.filter((r) => r.level <= level || r === skill.resources.find((x) => x.level > level));
+        return { consumed: false, reply: `unknown course. Agility courses: ${shown.map((r) => `${r.name} (${r.level})`).join(', ')}` };
+      }
+      if (found.level > level) return { consumed: false, reply: `you need 🏃 Agility level ${found.level} for ${found.icon} ${found.name} (you are ${level}).` };
+      course = found;
+    }
+    const failChance = Math.max(0.03, 0.15 - level * 0.0015);
+    if (this.rng() < failChance) {
+      const msg = skill.failMessages[Math.floor(this.rng() * skill.failMessages.length)];
+      const gained = this.grantXp(user, 'agility', this.xpFor(Math.max(1, Math.round(course.xp / 4)), null));
+      return { consumed: true, reply: `🏃 ${msg} on the ${course.icon} ${course.name}! ${gained.text}` };
+    }
+    const xpGain = this.xpFor(course.xp, null);
+    this.emitActivity(user, { kind: 'action', skill: 'agility', xp: xpGain, text: `ran the ${course.name}` });
+    const gained = this.grantXp(user, 'agility', xpGain);
+    const shortcut = this.rng() < (this.cfg.agilityShortcutChance ?? 0.05);
+    return {
+      consumed: true,
+      refund: shortcut,
+      reply: `🏃 you ran a lap of the ${course.icon} ${course.name}!${shortcut ? ' 🍀 You found a shortcut: this lap was free!' : ''} ${gained.text}`,
+    };
   },
 
   // "you need a 🔪 Skinning Knife in your backpack to skin! !buy knife (500 pts) or !smith skinning knife (Smithing 20: 1 Steel Alloy)"

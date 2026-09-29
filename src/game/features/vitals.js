@@ -128,9 +128,17 @@ module.exports = {
   // Every game action (skilling, fighting, farming, raid attacks) uses one charge. Using a charge
   // from a full bar starts the refill timer; when it runs out the bar is full again. Wraithwalk
   // halves the refill time.
+  // Agility and Halflings make it refill faster.
   staminaRefillMs(userId, now = this.now()) {
-    const ms = (this.cfg.staminaMinutes ?? 5) * 60_000;
+    const ms = (this.cfg.staminaMinutes ?? 5) * 60_000 * this.agilityRefill(userId) * (this.perks(userId).refill ?? 1);
     return this.activeBuffs(userId, now).haste ? ms / 2 : ms;
+  },
+
+  // Refill-time multiplier from Agility: 0.1% faster per level, up to 25% faster (both settings).
+  // 25% faster refills = a third more actions per hour.
+  agilityRefill(userId) {
+    const level = skillLevel('agility', this.repo.getSkills(userId).agility || 0);
+    return 1 - Math.min(this.cfg.agilityRefillMax ?? 0.25, Math.max(0, level - 1) * (this.cfg.agilityRefillPerLevel ?? 0.001));
   },
 
   // { charges, max, refillAt } (refillAt null = full).
@@ -181,7 +189,8 @@ module.exports = {
   staminaInfo(user) {
     const s = this.stamina(user.id);
     const bar = '⚡'.repeat(s.charges) + '▫️'.repeat(s.max - s.charges);
-    return `stamina ${bar} ${s.charges}/${s.max}${s.refillAt ? ` · full again in ${this.waitText(s.refillAt - this.now())}` : ' · full!'}`;
+    const faster = Math.round((1 - this.agilityRefill(user.id) * (this.perks(user.id).refill ?? 1)) * 100);
+    return `stamina ${bar} ${s.charges}/${s.max}${s.refillAt ? ` · full again in ${this.waitText(s.refillAt - this.now())}` : ' · full!'}${faster > 0 ? ` · refills ${faster}% faster (!run trains Agility)` : ' · !run trains Agility for faster refills'}`;
   },
 
   // "🦴 Bone-Deep Focus 24m · 💀 Deathless 58m"

@@ -15,6 +15,7 @@ const TASKS = {
   cooking: { icon: '🍳', text: (n) => `Cook ${n} meals` },
   smelting: { icon: '🔥', text: (n) => `Smelt ${n} bars` },
   farming: { icon: '🌱', text: (n) => `Harvest ${n} times` },
+  agility: { icon: '🏃', text: (n) => `Run ${n} Agility laps` },
   combat: { icon: '⚔️', text: (n) => `Win ${n} fights` },
 };
 const TASK_REWARD = 150;

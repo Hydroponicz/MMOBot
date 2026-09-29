@@ -63,6 +63,11 @@ class GameEngine extends EventEmitter {
     this.betWarned = new Map();
     this.fightWarned = new Map(); // userId -> { monster, at }: "type it again to fight anyway"
     this.lastChat = new Map(); // userId -> their last message (no points for repeats)
+    // Halflings lost their extra stamina charge (Agility): they get one free race change.
+    if (!repo.getSetting('migrated:halfling_refill')) {
+      repo.resetRaceWaitFor('halfling');
+      repo.setSetting('migrated:halfling_refill', true);
+    }
   }
 
   get cfg() {
@@ -153,8 +158,8 @@ class GameEngine extends EventEmitter {
         for (const p of [n, n.replace(/_/g, ' '), parts[0], parts[parts.length - 1]]) set.add(p);
       };
       for (const r of skill.resources || skill.recipes || []) {
-        add(ITEMS[r.item].name);
-        add(r.item);
+        add(unlockName(r));
+        add(r.item || r.id);
         if (r.group) [r.group, `${r.group}s`].forEach((g) => set.add(g));
       }
       for (const m of skill.monsters || []) {
@@ -418,6 +423,8 @@ class GameEngine extends EventEmitter {
       plotPriceGrowth: this.cfg.plotPriceGrowth ?? 1.12,
       gatherBonusLevels: this.cfg.gatherBonusLevels ?? 50,
       stationXpBonus: this.cfg.stationXpBonus ?? 1.2,
+      agilityRefillPerLevel: this.cfg.agilityRefillPerLevel ?? 0.001,
+      agilityRefillMax: this.cfg.agilityRefillMax ?? 0.25,
       xpMultiplier: this.cfg.xpMultiplier,
       disabledCommands: this.cfg.disabledCommands || [],
       backpack: this.backpackTiers().map((t, i) => ({ level: i + 1, ...t })),

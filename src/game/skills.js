@@ -1147,6 +1147,39 @@ const BACKPACK_TIERS = [
   { name: 'Bag of Holding', icon: '✨', capacity: 100, cost: 20000 },
 ];
 
+// ---- Agility ---------------------------------------------------------------------------------
+// !run laps an obstacle course (your best one, or !run rooftops). Each lap uses a stamina charge like
+// any action and gives XP and action points, no items, so it never fills your backpack. Its reward
+// is stamina itself: every Agility level makes your stamina refill a little faster (see vitals.js).
+SKILLS.agility = {
+  name: 'Agility',
+  icon: '🏃',
+  command: 'run',
+  verb: 'ran',
+  type: 'course',
+  maxLevel: 500,
+  failMessages: ['you slipped on a loose tile', 'you missed the jump', 'you tripped over a crate', 'you ran out of puff halfway'],
+  resources: [
+    { id: 'village_rooftops', name: 'Village Rooftops', icon: '🏘️', level: 1, xp: 11 },
+    { id: 'forest_trail', name: 'Forest Trail', icon: '🌲', level: 10, xp: 28 },
+    { id: 'riverside_rocks', name: 'Riverside Rocks', icon: '🪨', level: 20, xp: 44 },
+    { id: 'market_rooftops', name: 'Market Rooftops', icon: '🏪', level: 30, xp: 60 },
+    { id: 'castle_walls', name: 'Castle Walls', icon: '🏰', level: 45, xp: 90 },
+    { id: 'cliffside_path', name: 'Cliffside Path', icon: '🧗', level: 60, xp: 120 },
+    { id: 'pirate_rigging', name: 'Pirate Rigging', icon: '🏴‍☠️', level: 80, xp: 195 },
+    { id: 'canopy_run', name: 'Canopy Run', icon: '🌳', level: 100, xp: 300 },
+    { id: 'volcano_ridge', name: 'Volcano Ridge', icon: '🌋', level: 130, xp: 420 },
+    { id: 'frozen_peaks', name: 'Frozen Peaks', icon: '🏔️', level: 160, xp: 540 },
+    { id: 'sky_bridges', name: 'Sky Bridges', icon: '🌉', level: 200, xp: 690 },
+    { id: 'wyvern_nest', name: "Wyvern's Nest", icon: '🪺', level: 250, xp: 880 },
+    { id: 'storm_spire', name: 'Storm Spire', icon: '⛈️', level: 300, xp: 1080 },
+    { id: 'shadow_rooftops', name: 'Shadow Rooftops', icon: '🌑', level: 350, xp: 1290 },
+    { id: 'titan_stairs', name: "Titan's Stairs", icon: '🗿', level: 400, xp: 1530 },
+    { id: 'celestial_heights', name: 'Celestial Heights', icon: '✨', level: 450, xp: 1780 },
+    { id: 'astral_ascent', name: 'Astral Ascent', icon: '🌠', level: 500, xp: 2050 },
+  ],
+};
+
 const SKILL_IDS = Object.keys(SKILLS);
 
 // Skills cap at 99 unless they set their own maxLevel (all current skills go to 500).
@@ -1162,6 +1195,7 @@ const TOOL_ALIASES = { rod: 'rod', pole: 'rod', pickaxe: 'pickaxe', pick: 'picka
 // the engine then picks the combat skill from your weapons.
 const COMMAND_TO_SKILL = {};
 for (const id of SKILL_IDS) if (SKILLS[id].type !== 'farm') COMMAND_TO_SKILL[SKILLS[id].command] ??= id; // farming has its own commands
+COMMAND_TO_SKILL.agility ??= 'agility'; // !agility works like !run
 const COMBAT_SKILLS = SKILL_IDS.filter((id) => SKILLS[id].type === 'combat');
 // "sword" -> "swords"
 const WEAPON_SKILL = Object.fromEntries(COMBAT_SKILLS.map((id) => [SKILLS[id].weaponType, id]));

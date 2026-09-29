@@ -607,6 +607,10 @@ function createRepo(db) {
     setLastSeen: (userId, ts) => db.prepare('UPDATE users SET last_seen_at = ? WHERE id = ?').run(ts, userId),
     setStamina: (userId, stamina, at) => db.prepare('UPDATE users SET stamina = ?, stamina_at = ? WHERE id = ?').run(stamina, at, userId),
     // Simple per-player fields (whitelisted, so the column name is never user input).
+    // Lets every player of a race pick a new race right away (used when a race's perks change).
+    resetRaceWaitFor(race) {
+      return db.prepare('UPDATE users SET race_changed_at = 0 WHERE race = ?').run(race).changes;
+    },
     setUserField(userId, field, value) {
       if (!['banned', 'subscriber', 'title'].includes(field)) throw new Error(`can't set users.${field}`);
       db.prepare(`UPDATE users SET ${field} = ? WHERE id = ?`).run(value, userId);

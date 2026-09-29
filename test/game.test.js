@@ -136,7 +136,7 @@ test('profile exposes everything the website needs', () => {
   const { repo, engine, say } = setup();
   say('!fish');
   const p = engine.profile(repo.getUserByName('alice').id);
-  assert.equal(p.skills.length, 16);
+  assert.equal(p.skills.length, 17);
   assert.equal(p.skills[0].id, 'fishing');
   assert.equal(p.skills[0].level, 2);
   assert.equal(p.skills[0].rank, 1);
@@ -1800,10 +1800,12 @@ test('races: everyone starts with a random race and look; perks change XP, HP, s
   assert.match(say('!race'), /you are a 🧔 Dwarf\. ✅ \+15% Mining/);
   assert.match(say('!race elf'), /🧝 Elf: ✅/);
 
-  // Halfling: +1 stamina charge.
+  // Halfling: stamina refills 10% faster (no extra charge).
   t += 30 * 86_400_000;
+  const refillBefore = engine.staminaRefillMs(u.id);
   engine.setAppearance(u, { race: 'halfling' });
-  assert.equal(engine.stamina(u.id).max, 2);
+  assert.equal(engine.stamina(u.id).max, 1);
+  assert.equal(engine.staminaRefillMs(u.id), refillBefore * 0.9);
   assert.ok(engine.vitals(u.id).maxHp < dwarfHp);
 
   // Orc: sells for 10% less.
@@ -1873,7 +1875,7 @@ test('pets: rare drop once per skill, follows you, +5% XP in its skill', () => {
   assert.equal(engine.petXp(u.id, 'fishing'), 1.05);
   assert.equal(engine.petXp(u.id, 'mining'), 1);
   say('!mine');
-  assert.match(say('!pet'), /pets \(2\/16\).*Following you: 🐧 Heron Chick/);
+  assert.match(say('!pet'), /pets \(2\/17\).*Following you: 🐧 Heron Chick/);
   assert.match(say('!pet golem'), /Rock Golem is following you now/);
   assert.equal(engine.characterView(u.id).pet, '🗿');
   assert.equal(engine.backpack(u.id).used, 3, 'pets take no backpack space (just 2 fish and 1 ore)');
@@ -2397,4 +2399,43 @@ test('iron gear sits between bronze and steel and is smithed from iron ingots', 
   const { ITEMS } = require('../src/game/skills');
   assert.ok(ITEMS.bronze_sword.attack < ITEMS.iron_sword.attack && ITEMS.iron_sword.attack < ITEMS.steel_sword.attack);
   assert.equal(ITEMS.iron_platebody.level, 10);
+});
+
+test('agility: !run laps courses for XP (no items), and levels make stamina refill faster', () => {
+  const { repo, say, engine, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  const base = engine.staminaRefillMs(u.id);
+  assert.match(say('!run'), /ran a lap of the 🏘️ Village Rooftops! \+11 XP, \+1 pts/);
+  assert.deepEqual(repo.getInventory(u.id), {}, 'no items');
+  tick();
+  assert.match(say('!run castle walls'), /need 🏃 Agility level 45 for 🏰 Castle Walls/);
+  assert.match(say('!run moon'), /unknown course/);
+
+  repo.addXp(u.id, 'agility', xpForLevel(101));
+  tick(600);
+  assert.match(say('!run'), /Canopy Run/, 'best course by default');
+  assert.equal(engine.staminaRefillMs(u.id), base * 0.9, '10% faster at level 101');
+  assert.match(say('!stamina'), /refills 10% faster/);
+  repo.addXp(u.id, 'agility', xpForLevel(500));
+  assert.equal(engine.staminaRefillMs(u.id), base * 0.75, 'capped at 25%');
+  // !agility works too.
+  tick(600);
+  assert.match(say('!agility rooftops'), /Village Rooftops/);
+});
+
+test('agility shortcuts make a lap free; halflings get a free race change once', () => {
+  const repo = openDb(':memory:');
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Hob' });
+  repo.setAppearance(u.id, 'halfling', {}, 1_000_000);
+  // Rolls: no fall (0.99), shortcut (0.01).
+  const rolls = [0.99, 0.01];
+  const engine = new GameEngine({ repo, config: baseConfig, rng: () => rolls.shift() ?? 0.99, now: () => 2_000_000 });
+  assert.equal(repo.getUser(u.id).race_changed_at, 0, 'halflings can pick again');
+  const before = engine.stamina(u.id).charges;
+  assert.match(engine.handleChat({ kickUserId: '1', username: 'Hob', content: '!run' }).reply, /shortcut: this lap was free/);
+  assert.equal(engine.stamina(u.id).charges, before);
+  // Only once: a halfling who picks again later keeps their wait.
+  repo.setAppearance(u.id, 'halfling', {}, 1_500_000);
+  new GameEngine({ repo, config: baseConfig, now: () => 2_000_000 });
+  assert.equal(repo.getUser(u.id).race_changed_at, 1_500_000);
 });

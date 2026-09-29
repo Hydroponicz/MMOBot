@@ -87,6 +87,10 @@ const config = {
     gatherBonusLevels: int('GATHER_BONUS_LEVELS', 50),
     // !collect (gathering stations) gives this times the XP of gathering by hand, and no items or points.
     stationXpBonus: num('STATION_XP_BONUS', 1.2),
+    // Agility: stamina refills this much faster per level, up to the max; chance a lap is free.
+    agilityRefillPerLevel: num('AGILITY_REFILL_PER_LEVEL', 0.001),
+    agilityRefillMax: num('AGILITY_REFILL_MAX', 0.25),
+    agilityShortcutChance: num('AGILITY_SHORTCUT_CHANCE', 0.05),
     // Sell prices drop as the channel sells an item (0 = fixed prices), recovering by half every few hours.
     priceSupplyScale: int('PRICE_SUPPLY_SCALE', 25000),
     priceRecoveryHours: num('PRICE_RECOVERY_HOURS', 6),

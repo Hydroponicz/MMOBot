@@ -81,6 +81,7 @@ const PETS = [
   ['pet_fox', 'Fox Kit', '🦊', 'skinning'],
   ['pet_bunny', 'Garden Bunny', '🐰', 'farming'],
   ['pet_ember', 'Ember Chick', '🐥', 'firemaking'],
+  ['pet_squirrel', 'Squirrel', '🐿️', 'agility'],
   ['pet_cat', 'Kitchen Cat', '🐈', 'cooking'],
   ['pet_salamander', 'Salamander', '🦎', 'smelting'],
   ['pet_beetle', 'Anvil Beetle', '🪲', 'smithing'],

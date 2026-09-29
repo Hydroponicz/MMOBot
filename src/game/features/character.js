@@ -15,7 +15,7 @@ const materialOf = (id) => MATERIAL[id.split('_')[0]] || (/_(coif|body|chaps)$/.
 const EXTRA_KEYS = [...COSMETIC_SLOTS, 'pet'];
 
 const DAY = 86_400_000;
-const NO_PERKS = { xp: {}, hp: 1, mana: 1, attack: 1, defence: 1, sell: 1, luck: 1, food: 1, stamina: 0 };
+const NO_PERKS = { xp: {}, hp: 1, mana: 1, attack: 1, defence: 1, sell: 1, luck: 1, food: 1, stamina: 0, refill: 1 };
 
 module.exports = {
   // { race, look, custom }: what the player picked, or the random character they started with.

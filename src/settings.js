@@ -152,6 +152,9 @@ const FIELDS = {
     priceSupplyScale: { type: 'int', label: 'Sell prices: supply sensitivity', help: 'How much channel-wide selling it takes to push an item’s price down: after this many points’ worth of one item is sold (at normal prices), it sells at half price. Lower = prices drop faster. 0 = prices never change.', min: 0, max: 1e12 },
     priceRecoveryHours: { type: 'number', label: 'Sell prices: recovery (hours)', help: 'Sell pressure halves every this many hours, so prices recover on their own.', min: 0.1, max: 720 },
     priceFloor: { type: 'number', label: 'Sell prices: lowest (0-1)', help: 'Prices never drop below this share of normal. 0.35 = 35%.', min: 0.01, max: 1 },
+    agilityRefillPerLevel: { type: 'number', label: 'Agility: faster stamina refill per level', help: 'How much faster stamina refills per Agility level. 0.001 = 0.1% per level (10% faster at level 100).', min: 0, max: 0.05 },
+    agilityRefillMax: { type: 'number', label: 'Agility: most refill speed-up', help: 'The cap on the Agility speed-up. 0.25 = refills up to 25% faster (a third more actions per hour), reached at level 250 with the default rate.', min: 0, max: 0.9 },
+    agilityShortcutChance: { type: 'number', label: 'Agility: shortcut chance', help: 'Chance an Agility lap costs no stamina (0.05 = 5%).', min: 0, max: 1 },
     stationXpBonus: { type: 'number', label: 'Gathering station XP multiplier', help: '!collect turns station work into XP only (no items, no points). 1.2 = 20% more XP than gathering the same things by hand.', min: 0, max: 10 },
     gatherBonusLevels: { type: 'int', label: 'Bigger gathering hauls every (levels)', help: 'Fishing, mining, woodcutting, digging and the like give +1 item (and its XP) per action for every this many levels: 2 at level 50, 3 at level 100. 0 turns it off.', min: 0, max: 1000 },
     plotPriceGrowth: { type: 'number', label: 'Farm plot price growth', help: 'Each farm plot costs this many times the one before (the first bought plot costs the shop price). 1.12 = 12% more each: plot 10 ≈ 1,900, plot 20 ≈ 5,800, plot 30 ≈ 18,000, plot 50 ≈ 173,000. 1 = flat price.', min: 1, max: 3 },
@@ -331,7 +334,7 @@ class Settings extends EventEmitter {
         seasonDays: config.game.seasonDays ?? 30,
         tradeDailyPoints: config.game.tradeDailyPoints ?? 10000,
       },
-      economy: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, growMultiplier: 1, stationXpBonus: config.game.stationXpBonus ?? 1.2, gatherBonusLevels: config.game.gatherBonusLevels ?? 50, plotPriceGrowth: config.game.plotPriceGrowth ?? 1.12, priceSupplyScale: config.game.priceSupplyScale ?? 25000, priceRecoveryHours: config.game.priceRecoveryHours ?? 6, priceFloor: config.game.priceFloor ?? 0.35, petDropMultiplier: config.game.petDropMultiplier ?? 1, marketFee: config.game.marketFee ?? 0.05 },
+      economy: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, growMultiplier: 1, agilityRefillPerLevel: config.game.agilityRefillPerLevel ?? 0.001, agilityRefillMax: config.game.agilityRefillMax ?? 0.25, agilityShortcutChance: config.game.agilityShortcutChance ?? 0.05, stationXpBonus: config.game.stationXpBonus ?? 1.2, gatherBonusLevels: config.game.gatherBonusLevels ?? 50, plotPriceGrowth: config.game.plotPriceGrowth ?? 1.12, priceSupplyScale: config.game.priceSupplyScale ?? 25000, priceRecoveryHours: config.game.priceRecoveryHours ?? 6, priceFloor: config.game.priceFloor ?? 0.35, petDropMultiplier: config.game.petDropMultiplier ?? 1, marketFee: config.game.marketFee ?? 0.05 },
       disabledCommands: [],
     };
     for (const [key, t] of Object.entries(TABLES)) {

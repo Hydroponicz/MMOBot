@@ -1543,6 +1543,7 @@
       alchemy: `${c('brew')} potions from crops you farm, e.g. 2 Carrots make a Minor Health Potion. Undead potions come from Ashes plus something dead (see <b>Undead potions</b> in the Combat tab).`,
       swords: `With a sword, ${c('fight')} monsters for Swords XP and loot. ${c('fight goblin')} picks a target; a plain ${c('fight')} picks your best safe match.`,
       archery: `With a bow, a 🧺 quiver and arrows, ${c('shoot')} monsters for Archery XP. Each fight uses one arrow; better arrows hit harder. ${c('quiver')} shows your arrows, ${c('buy arrows 50')} buys more.`,
+      agility: `${c('run')} runs a lap of your best obstacle course (or name one: ${c('run rooftops')}). Laps give XP and points but no items, so they never fill your backpack. The reward is stamina: every level makes your stamina refill ${((g.agilityRefillPerLevel ?? 0.001) * 100).toFixed(1)}% faster, up to ${Math.round((g.agilityRefillMax ?? 0.25) * 100)}% faster. You sometimes slip (a little XP) and now and then find a shortcut that makes the lap free. ${c('stamina')} shows your refill speed.`,
       magic: `With a staff, ${c('cast')} spells for Magic XP. Each cast uses a Magic Rune and 1 mana. Stronger spells unlock as you level. ${c('heal')} also trains Magic.`,
     };
     const skillTopic = (s, tab) => ({

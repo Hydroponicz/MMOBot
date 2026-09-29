@@ -4,7 +4,8 @@ const crypto = require('node:crypto');
 
 // Perks are multipliers (1 = no change) except stamina, which adds charges.
 //   xp: { skillId: multiplier } ("all" applies to every skill), hp, mana, attack, defence,
-//   sell (item sell prices), luck (rare finds), food (HP healed by food), stamina.
+//   sell (item sell prices), luck (rare finds), food (HP healed by food), stamina (extra charges),
+//   refill (stamina refill time, 0.9 = 10% faster).
 const RACES = {
   human: {
     name: 'Human',
@@ -47,8 +48,10 @@ const RACES = {
     plural: 'Halflings',
     icon: '🧒',
     text: 'Small, cheerful and tireless, happiest near water and a warm meal.',
-    perks: { xp: { fishing: 1.15, cooking: 1.15, farming: 1.15 }, stamina: 1, attack: 0.9, hp: 0.9 },
-    pros: ['+1 stamina charge', '+15% Fishing, Cooking and Farming XP'],
+    // Was +1 stamina charge (a third more actions than everyone else); now refills 10% faster, which
+    // stacks with Agility. Farming XP swapped for Agility XP.
+    perks: { xp: { fishing: 1.15, cooking: 1.15, agility: 1.15 }, refill: 0.9, attack: 0.9, hp: 0.9 },
+    pros: ['Stamina refills 10% faster', '+15% Fishing, Cooking and Agility XP'],
     cons: ['-10% attack', '-10% max HP'],
   },
   undead: {

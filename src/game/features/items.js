@@ -15,6 +15,7 @@ function itemIndex() {
   for (const id of SKILL_IDS) {
     const s = SKILLS[id];
     for (const r of s.resources || []) {
+      if (!r.item) continue; // Agility courses give no items
       at(r.item).from.push(`${s.icon} ${s.name} ${r.level}`);
       if (r.meat) at(r.meat).from.push(`${s.icon} ${s.name} ${r.level}`);
     }

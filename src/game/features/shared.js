@@ -142,6 +142,7 @@ const minutesLeft = (ms) => {
 const GATHER_HINT = {};
 for (const id of SKILL_IDS) {
   for (const r of [...(SKILLS[id].resources || []), ...(SKILLS[id].type === 'process' ? SKILLS[id].recipes : [])]) {
+    if (!r.item) continue; // Agility courses give no items
     // Crops use their full name ("!plant lemon balm" vs "!plant lemon"); ores etc. the first word ("!mine copper").
     const word = SKILLS[id].type === 'farm' ? ITEMS[r.item].name.toLowerCase() : ITEMS[r.item].name.split(' ')[0].toLowerCase();
     GATHER_HINT[r.item] ??= `!${SKILLS[id].command} ${word}`;
