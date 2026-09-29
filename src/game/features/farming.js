@@ -232,7 +232,7 @@ module.exports = {
         : ` 🎒 Backpack full — ${leftover} plot${leftover === 1 ? '' : 's'} still waiting!`
       : ' !plant again!';
     const cost = per ? Math.ceil(harvestedPlots / per) : 1;
-    return `🌾 harvested ${harvestedPlots} plot${harvestedPlots === 1 ? '' : 's'}${cost > 1 ? ` (${cost} stamina)` : ''}: ${list}! ${gained.text}${note}${legacyNote}`;
+    return `🌾 harvested ${harvestedPlots} plot${harvestedPlots === 1 ? '' : 's'}${cost > 1 ? ` (${cost} stamina)` : ''}: ${list}!${gained.text ? ` ${gained.text}` : ''}${note}${legacyNote}`;
   },
 
   // !farm: plot overview.
