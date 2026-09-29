@@ -231,6 +231,12 @@
       $app.innerHTML = `<div class="panel empty"><span class="ic">🧰</span>Relic cases are closed right now.</div>`;
       return;
     }
+    const bankNote = (pay) => {
+      const parts = [];
+      if (data.bankLeft != null) parts.push(pay > data.bankLeft ? `The bank can only pay ${fmt(data.bankLeft)} more pts today. List it on the market instead, or try tomorrow.` : `Bank limit: ${fmt(data.bankLeft)} pts left today.`);
+      if (cat.bankFullValue) parts.push(`Value above ${fmt(cat.bankFullValue)} pts is bought at a fifth of the rate.`);
+      return parts.length ? `<p class="muted" style="font-size:.85rem;margin:6px 0 0">${parts.join(' ')}</p>` : '';
+    };
     const pct = (x) => (x >= 0.1 ? `${(x * 100).toFixed(1)}%` : x >= 0.01 ? `${(x * 100).toFixed(2)}%` : `${(x * 100).toFixed(3)}%`);
     const soulTag = (r) => (r.soul ? `<span class="soultrak" title="SoulTrak™: counts monsters you defeat while showcased">☠ ${fmt(r.kills)}</span>` : '');
 
@@ -497,7 +503,7 @@
       let actions = '';
       if (mine && r.status === 'owned') {
         actions = `
-          <div class="cd-act form-row" style="flex-wrap:wrap"><button class="btn" id="ins-show">${isShow ? '✅ Showcased' : '🏅 Showcase'}</button><button class="btn" id="ins-sell">💰 Sell to bank · +${fmt(r.buyback)} pts</button></div>
+          <div class="cd-act form-row" style="flex-wrap:wrap"><button class="btn" id="ins-show">${isShow ? '✅ Showcased' : '🏅 Showcase'}</button><button class="btn" id="ins-sell" ${data.bankLeft != null && r.buyback > data.bankLeft ? 'disabled' : ''}>💰 Sell to bank · +${fmt(r.buyback)} pts</button></div>${bankNote(r.buyback)}
           ${tradeLock('sell relics on the market') || `<div class="cd-act"><form id="ins-list" class="form-row"><input type="number" name="price" min="1" max="${Math.max(1000, r.value * 20)}" value="${Math.max(1, Math.round(r.value * 1.1))}" aria-label="Price"><button class="btn">🏪 List for sale</button></form><p class="muted">Value ${fmt(r.value)} pts · most you can ask: ${fmt(Math.max(1000, r.value * 20))} · you get the price minus ${Math.round(cat.fee * 100)}%.</p></div>`}`;
       } else if (mine && r.status === 'listed') {
         actions = `<div class="cd-act"><p>Listed for <b>${fmt(r.price)}</b> pts.</p><button class="btn" id="ins-unlist">Take it down</button></div>`;
@@ -510,7 +516,7 @@
           <div class="muted">${esc(r.caseName)}${r.origin === 'tradeup' ? ' · from a trade-up contract' : ''}</div>
           <h2 style="margin:4px 0;color:${r.color}">${esc(r.fullName)}</h2>
           <div class="cd-tags"><span class="cchip" style="color:${r.color}">${esc(r.rarityName)}</span><span class="cchip">${r.exterior}</span>${r.pattern ? `<span class="cchip ${r.rarePattern ? 'gold' : ''}">${r.rarePattern ? '✨ ' : ''}${esc(r.pattern)}</span>` : ''}${r.soul ? `<span class="cchip soul">☠ SoulTrak™ ${fmt(r.kills)} kill${r.kills === 1 ? '' : 's'}</span>` : ''}${r.owner ? `<span class="cchip">Owner: <a href="${playerLink(r.owner)}">${esc(r.owner)}</a></span>` : ''}</div>
-          <div class="cd-value"><span class="muted">Value</span><b>${fmt(r.value)}</b><span class="muted">pts</span></div>
+          <div class="cd-value"><span class="muted">Value</span><b>${fmt(r.value)}</b><span class="muted">pts</span>${r.marketFactor !== 1 ? `<span class="cchip ${r.marketFactor > 1 ? 'listed' : ''}" title="Catalog value ${fmt(r.baseValue)} pts, adjusted by recent player sales">📈 market ×${r.marketFactor.toFixed(2)}</span>` : ''}</div>
           <div class="cd-wear"><div class="muted">Float <b>${r.float.toFixed(6)}</b> · this skin rolls ${r.min.toFixed(2)} to ${r.max.toFixed(2)} · lower is better</div><div class="wear-bar">${bands}<em style="left:${r.min * 100}%;width:${(r.max - r.min) * 100}%"></em><i style="left:${r.float * 100}%"></i></div></div>
           <div class="ins-grid">
             <div><small>Pattern seed</small><b>${r.seed}</b></div>
@@ -615,7 +621,7 @@
           <li><b>Pattern seed</b> (0 to 999) changes how the skin looks. Fades roll 80-100% (100% is best); Gem relics come in phases, with Ruby, Sapphire, Black Pearl and Emerald the rarest; 1 in 100 marbles, crystals and rune patterns is a rare pattern.</li>
           <li><b>SoulTrak™</b> (1 in 10, worth ~1.8×): showcase it and it counts every monster you defeat with <code>!fight</code>.</li>
           <li><b>Trade-up contracts</b>: 10 relics of one rarity become 1 of the next (5 Exalted become a ★ relic). The new float is the average of your inputs, so low-float inputs make a low-float result.</li>
-          <li>Sell relics back to the bank for ${Math.round(cat.buyback * 100)}% of their value, or trade them with other players.</li>
+          <li>Sell relics back to the bank for ${Math.round(cat.buyback * 100)}% of their value${cat.bankFullValue ? ` (a fifth of that rate on value above ${fmt(cat.bankFullValue)} pts)` : ''}${cat.bankDailyLimit ? `, up to ${fmt(cat.bankDailyLimit)} pts a day` : ''}. Big relics are better sold on the relic market or traded. A relic's value follows what players actually pay for that skin on the market (between ×0.5 and ×2).</li>
         </ul></section>`;
       $tab().querySelectorAll('[data-case]').forEach((b) => {
         b.onclick = () => {
@@ -707,7 +713,7 @@
       const drawBar = () => {
         $bar.hidden = !selecting;
         const pts = all.filter((r) => sel.has(r.id)).reduce((s, r) => s + r.buyback, 0);
-        $bar.innerHTML = `<span>${sel.size} selected · bank pays <b>${fmt(pts)}</b> pts</span>
+        $bar.innerHTML = `<span>${sel.size} selected · bank pays <b>${fmt(pts)}</b> pts${data.bankLeft != null ? ` <span class="muted">(${fmt(data.bankLeft)} left today)</span>` : ''}</span>
           <button class="btn btn-sm" id="s-blue">Select Adept (non-SoulTrak)</button><button class="btn btn-sm" id="s-none">Clear</button>
           <button class="btn btn-primary btn-sm" id="s-sell" ${sel.size ? '' : 'disabled'}>Sell to bank</button>`;
         $bar.querySelector('#s-blue').onclick = () => {

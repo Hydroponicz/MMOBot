@@ -81,6 +81,8 @@ const config = {
     // Points for chatting: awarded at most once per chatCooldown seconds per user.
     chatPoints: int('CHAT_POINTS', 5),
     chatCooldown: int('CHAT_POINTS_COOLDOWN_SECONDS', 60),
+    // Full chat points for this many awards a day, then half (0 = always full).
+    chatPointsFullPerDay: int('CHAT_POINTS_FULL_PER_DAY', 30),
     // Whether the bot replies in chat to every command.
     replyInChat: bool('REPLY_IN_CHAT', true),
     // Casino (points only). Min/max bet (0 = no max) and seconds between bets per viewer.
@@ -88,6 +90,10 @@ const config = {
     casinoMinBet: int('CASINO_MIN_BET', 10),
     casinoMaxBet: int('CASINO_MAX_BET', 0),
     casinoCooldown: int('CASINO_COOLDOWN_SECONDS', 5),
+    // The bank (card and relic sell-backs): most points per player per day, and the item value up to
+    // which it pays the full buyback rate (a fifth of the rate above). 0 turns either off.
+    bankDailyLimit: int('BANK_DAILY_LIMIT', 25000),
+    bankFullValue: int('BANK_FULL_VALUE', 5000),
     // Emotes that work as commands, "emote=command" (comma separated). Editable on the admin page.
     emoteCommands: env('EMOTE_COMMANDS', 'hydroponiczcobble=mine')
       .split(',')

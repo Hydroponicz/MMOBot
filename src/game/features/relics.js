@@ -15,6 +15,13 @@ const rankOf = (skinId) => R.RARITIES[R.SKINS[skinId].rarity].rank;
 const notable = (row) => rankOf(row.skin) >= 2 || !!R.patternOf(row.skin, row.seed).rare;
 
 module.exports = {
+  // Catalog value of a relic, its value on the market (real sales nudge it) and what the bank pays.
+  relicValues(row) {
+    const base = R.valueOf({ skin: row.skin, float: row.float, seed: row.seed, soul: !!row.soul });
+    const factor = this.marketFactor('relic', row.skin);
+    return { base, factor, value: Math.max(1, Math.round(base * factor)), buyback: this.bankPay(Math.round(base * Math.min(1, factor)), this.cfg.relicBuyback ?? 0.6) };
+  },
+
   relicsClosed() {
     return this.cfg.relicsEnabled === false ? 'relic cases are switched off right now.' : null;
   },
@@ -33,8 +40,7 @@ module.exports = {
     const s = R.SKINS[row.skin];
     if (!s) return null;
     const r = R.RARITIES[s.rarity];
-    const copy = { skin: row.skin, float: row.float, seed: row.seed, soul: !!row.soul };
-    const value = R.valueOf(copy);
+    const { value, base, factor, buyback } = this.relicValues(row);
     const ext = R.exteriorOf(row.float);
     const pattern = R.patternOf(row.skin, row.seed);
     return {
@@ -65,7 +71,9 @@ module.exports = {
       soul: !!row.soul,
       kills: row.kills || 0,
       value,
-      buyback: Math.floor(value * (this.cfg.relicBuyback ?? 0.6)),
+      baseValue: base,
+      marketFactor: factor,
+      buyback,
       status: row.status,
       price: row.price ?? null,
       owner: row.owner,
@@ -82,6 +90,8 @@ module.exports = {
       next: R.NEXT_RARITY,
       soulChance: R.SOUL_CHANCE,
       buyback: this.cfg.relicBuyback ?? 0.6,
+      bankDailyLimit: this.cfg.bankDailyLimit ?? 25000,
+      bankFullValue: this.cfg.bankFullValue ?? 5000,
       fee: this.cfg.marketFee ?? 0.05,
       cases: R.CASES.map((c) => ({
         id: c.id,
@@ -211,24 +221,23 @@ module.exports = {
     if (closed) return { ok: false, error: closed };
     ids = [...new Set((Array.isArray(ids) ? ids : [ids]).map(Number).filter(Boolean))].slice(0, 200);
     if (!ids.length) return { ok: false, error: 'pick some relics to sell.' };
-    const rate = this.cfg.relicBuyback ?? 0.6;
     const showcase = this.relicShowcaseId(user.id);
-    let total = 0;
-    let n = 0;
+    let result = { sold: [], total: 0, skipped: 0 };
     this.repo.transaction(() => {
+      const items = [];
       for (const id of ids) {
         const row = this.repo.relicGet(id);
         if (!row || row.owner_id !== user.id || row.status !== 'owned') continue;
-        total += Math.floor(R.valueOf({ skin: row.skin, float: row.float, seed: row.seed, soul: !!row.soul }) * rate);
-        this.repo.relicUpdate(id, { status: 'bank' });
-        n++;
+        items.push({ id, pay: this.relicValues(row).buyback });
       }
-      if (total) this.repo.addPoints(user.id, total);
+      result = this.bankTake(user.id, items, (id) => this.repo.relicUpdate(id, { status: 'bank' }));
     });
-    if (!n) return { ok: false, error: 'none of those relics can be sold (on the market, or not yours).' };
-    if (showcase && ids.includes(showcase)) this.repo.deleteSetting(`relic_showcase:${user.id}`);
+    const { sold, total, skipped } = result;
+    if (!sold.length) return { ok: false, error: skipped ? this.bankLimitError(user.id, skipped) : 'none of those relics can be sold (on the market, or not yours).' };
+    if (showcase && sold.includes(showcase)) this.repo.deleteSetting(`relic_showcase:${user.id}`);
     this.track('relicBuyback', total);
-    return { ok: true, sold: n, points: total, balance: this.repo.getUser(user.id).points, message: `Sold ${n} relic${n === 1 ? '' : 's'} to the bank for ${fmt(total)} pts.` };
+    const n = sold.length;
+    return { ok: true, sold: n, soldIds: sold, skipped, points: total, balance: this.repo.getUser(user.id).points, message: `Sold ${n} relic${n === 1 ? '' : 's'} to the bank for ${fmt(total)} pts.${this.bankLimitNote(user.id, skipped)}` };
   },
 
   // ---- Relic market -------------------------------------------------------------------------------
@@ -286,6 +295,7 @@ module.exports = {
       return true;
     });
     if (!ok) return { ok: false, error: 'that relic is gone.' };
+    this.recordSale('relic', row.skin, price, view.baseValue, user.id, sellerId);
     if (this.relicShowcaseId(sellerId) === row.id) this.repo.deleteSetting(`relic_showcase:${sellerId}`);
     this.spendGiftAllowance(user.id, excess);
     this.track('traded', price);
@@ -439,7 +449,7 @@ module.exports = {
     const by = new Map();
     for (const r of this.repo.relicsActive()) {
       const e = by.get(r.owner_id) || { username: r.username, value: 0, relics: 0, best: null };
-      const v = R.valueOf({ skin: r.skin, float: r.float, seed: r.seed, soul: !!r.soul });
+      const v = this.relicValues(r).value;
       e.value += v;
       e.relics++;
       if (!e.best || v > e.best.value) e.best = { name: `${r.soul ? 'SoulTrak™ ' : ''}${R.fullName(R.SKINS[r.skin])}`, color: R.RARITIES[R.SKINS[r.skin].rarity].color, value: v };

@@ -161,6 +161,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       blocked: me ? engine.marketBlocked(me.id) : null,
       marketStatus: me ? engine.marketStatus(me.id) : null,
       collection: me ? engine.cardCollection(me.id) : null,
+      bankLeft: me ? (Number.isFinite(engine.bankRoom(me.id)) ? engine.bankRoom(me.id) : null) : null,
       pulls: engine.cardPulls(),
       graded: engine.cardRecentGrades(),
       top: engine.cardTopCollectors(10),
@@ -197,6 +198,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       blocked: me ? engine.marketBlocked(me.id) : null,
       marketStatus: me ? engine.marketStatus(me.id) : null,
       inventory: me ? engine.relicInventory(me.id) : null,
+      bankLeft: me ? (Number.isFinite(engine.bankRoom(me.id)) ? engine.bankRoom(me.id) : null) : null,
       drops: engine.relicDrops(),
       top: engine.relicTop(10),
     });

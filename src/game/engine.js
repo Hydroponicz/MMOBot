@@ -179,9 +179,16 @@ class GameEngine extends EventEmitter {
     if (c.chatPointsNoRepeats !== false && text && text === last) return;
     if (c.chatPointsNewUserMinutes && Date.now() - user.created_at < c.chatPointsNewUserMinutes * 60_000) return;
     if (now - user.last_chat_points_at < c.chatCooldown * 1000) return;
-    const points = Math.round(c.chatPoints * (user.subscriber ? (c.subChatMultiplier ?? 1) : 1) * this.boostMultiplier('points'));
+    // Full points for the first chatPointsFullPerDay awards each day, then half.
+    const day = new Date(now).toISOString().slice(0, 10);
+    const fresh = this.repo.getUser(user.id);
+    const awards = fresh.chat_day === day ? fresh.chat_awards : 0;
+    const full = c.chatPointsFullPerDay ?? 30;
+    const taper = full && awards >= full ? 0.5 : 1;
+    const points = Math.round(c.chatPoints * taper * (user.subscriber ? (c.subChatMultiplier ?? 1) : 1) * this.boostMultiplier('points'));
     this.repo.addPoints(user.id, points);
     this.repo.setChatPointsAt(user.id, now);
+    this.repo.setChatDay(user.id, day, awards + 1);
     this.track('chat', points);
   }
 
@@ -405,6 +412,7 @@ class GameEngine extends EventEmitter {
       racePerks: this.cfg.racePerks !== false,
       chatPoints: this.cfg.chatPoints,
       chatCooldown: this.cfg.chatCooldown,
+      chatPointsFullPerDay: this.cfg.chatPointsFullPerDay ?? 30,
       xpMultiplier: this.cfg.xpMultiplier,
       disabledCommands: this.cfg.disabledCommands || [],
       backpack: this.backpackTiers().map((t, i) => ({ level: i + 1, ...t })),

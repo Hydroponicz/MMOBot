@@ -187,3 +187,57 @@ test('admin reset takes relics away and undo gives them back', () => {
   repo.restorePlayer(a.id, snap);
   assert.equal(engine.relicInventory(a.id).relics.length, 2);
 });
+
+test('the bank: a fifth of the rate above the full-rate value, and a daily limit', () => {
+  const { repo, engine, a } = setup();
+  engine.cfg.bankFullValue = 5000;
+  assert.equal(engine.bankPay(1000, 0.6), 600);
+  assert.equal(engine.bankPay(50_000, 0.6), 8400, '0.6 × (5,000 + 45,000 / 5)');
+  // A ★ Ruby jackpot no longer pays out a million points.
+  const jackpot = give(repo, a, 'dragonfire-fang-gem', 0.004, 12, true);
+  const v = engine.relicView(repo.relicGet(jackpot));
+  assert.ok(v.value > 1_000_000);
+  assert.ok(v.buyback < v.value * 0.15, `buyback ${v.buyback} for value ${v.value}`);
+  // Daily limit: sells what fits, keeps the rest, explains why.
+  engine.cfg.bankDailyLimit = 100;
+  const small = [give(repo, a, 'dragonfire-1', 0.2), give(repo, a, 'dragonfire-2', 0.2), give(repo, a, 'dragonfire-3', 0.2)];
+  const r = engine.relicSellBack(a, small);
+  assert.equal(r.ok, true);
+  assert.ok(r.points <= 100);
+  assert.ok(r.skipped >= 1);
+  assert.match(r.message, /kept: the bank pays out at most 100 pts a day/);
+  assert.match(engine.relicSellBack(a, [jackpot]).error, /the bank can only pay .* more pts today .* List it on the market instead/);
+  assert.equal(repo.relicGet(jackpot).status, 'owned');
+  // Cards share the same daily limit.
+  const card = repo.cardInsert(a.id, { card: 'wildlands-01', finish: 'normal', wear: 0.1, q: [0, 0, 0, 0, 0, 0, 0, 0] }, 'test', 1);
+  const left = engine.bankRoom(a.id);
+  const cr = engine.cardSellBack(a, [card]);
+  if (left >= engine.cardView(repo.cardGet(card)).buyback) assert.equal(cr.ok, true);
+  else assert.match(cr.error, /the bank can only pay/);
+});
+
+test('market values follow real sales, but the bank never pays above catalog value', () => {
+  const { repo, engine } = setup();
+  const users = ['C', 'D', 'E', 'F'].map((n, i) => repo.upsertUser({ kickUserId: String(10 + i), username: n }));
+  const skin = 'frostbite-6';
+  const base = (id) => engine.relicView(repo.relicGet(id)).baseValue;
+  const probe = give(repo, users[0], skin, 0.2);
+  const before = engine.relicView(repo.relicGet(probe));
+  assert.equal(before.marketFactor, 1);
+  // Two sales aren't enough; three by different sellers and buyers are.
+  engine.recordSale('relic', skin, Math.round(base(probe) * 1.5), base(probe), users[1].id, users[2].id);
+  engine.recordSale('relic', skin, Math.round(base(probe) * 1.5), base(probe), users[2].id, users[3].id);
+  assert.equal(engine.relicView(repo.relicGet(probe)).marketFactor, 1);
+  engine.recordSale('relic', skin, Math.round(base(probe) * 1.5), base(probe), users[3].id, users[1].id);
+  const after = engine.relicView(repo.relicGet(probe));
+  assert.equal(after.marketFactor, 1.5);
+  assert.equal(after.value, Math.round(before.baseValue * 1.5));
+  assert.equal(after.buyback, before.buyback, 'pumping the price between friends earns nothing from the bank');
+  // Prices below catalog pull the bank price down too; factors stay between 0.5 and 2.
+  const skin2 = 'frostbite-7';
+  const p2 = give(repo, users[0], skin2, 0.2);
+  for (const [b, s] of [[1, 2], [2, 3], [3, 1]]) engine.recordSale('relic', skin2, 1, base(p2), users[b].id, users[s].id);
+  const cheap = engine.relicView(repo.relicGet(p2));
+  assert.equal(cheap.marketFactor, 0.5);
+  assert.ok(cheap.buyback < engine.bankPay(cheap.baseValue, 0.6));
+});

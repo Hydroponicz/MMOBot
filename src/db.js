@@ -207,6 +207,20 @@ CREATE TABLE IF NOT EXISTS relic_trades (
 CREATE INDEX IF NOT EXISTS idx_relic_trades_to ON relic_trades(to_id, status);
 CREATE INDEX IF NOT EXISTS idx_relic_trades_from ON relic_trades(from_id, status);
 
+-- Player-to-player sales of cards and relics, used to nudge their shown value toward real prices.
+-- ratio = price paid / the item's catalog value.
+CREATE TABLE IF NOT EXISTS item_sales (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  key TEXT NOT NULL,
+  ratio REAL NOT NULL,
+  price INTEGER NOT NULL,
+  buyer_id INTEGER NOT NULL,
+  seller_id INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_item_sales ON item_sales(kind, key, created_at);
+
 CREATE TABLE IF NOT EXISTS logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts INTEGER NOT NULL,
@@ -268,6 +282,9 @@ function migrate(db) {
   if (!cols.includes('race_changed_at')) db.exec('ALTER TABLE users ADD COLUMN race_changed_at INTEGER NOT NULL DEFAULT 0');
   if (!cols.includes('last_seen_at')) db.exec('ALTER TABLE users ADD COLUMN last_seen_at INTEGER NOT NULL DEFAULT 0');
   if (!cols.includes('stamina_at')) db.exec('ALTER TABLE users ADD COLUMN stamina_at INTEGER NOT NULL DEFAULT 0');
+  // Chat points taper: how many chat awards a player got on chat_day (YYYY-MM-DD).
+  if (!cols.includes('chat_day')) db.exec("ALTER TABLE users ADD COLUMN chat_day TEXT NOT NULL DEFAULT ''");
+  if (!cols.includes('chat_awards')) db.exec('ALTER TABLE users ADD COLUMN chat_awards INTEGER NOT NULL DEFAULT 0');
 }
 
 function createRepo(db) {
@@ -573,6 +590,14 @@ function createRepo(db) {
         .all(userId, userId, limit),
     relicTradesOpenFrom: (userId) => db.prepare("SELECT COUNT(*) AS n FROM relic_trades WHERE from_id = ? AND status = 'open'").get(userId).n,
     relicTradesExpire: (before, ts) => db.prepare("UPDATE relic_trades SET status = 'expired', updated_at = ? WHERE status = 'open' AND created_at < ?").run(ts, before).changes,
+
+    // Card and relic sales between players (market values)
+    saleAdd: ({ kind, key, ratio, price, buyerId, sellerId }, ts) =>
+      db.prepare('INSERT INTO item_sales (kind, key, ratio, price, buyer_id, seller_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(kind, key, ratio, price, buyerId, sellerId, ts),
+    salesFor: (kind, key, since, limit = 15) =>
+      db.prepare('SELECT ratio, price, buyer_id, seller_id, created_at FROM item_sales WHERE kind = ? AND key = ? AND created_at >= ? ORDER BY id DESC LIMIT ?').all(kind, key, since, limit),
+    salesPrune: (before) => db.prepare('DELETE FROM item_sales WHERE created_at < ?').run(before),
+    setChatDay: (userId, day, awards) => db.prepare('UPDATE users SET chat_day = ?, chat_awards = ? WHERE id = ?').run(day, awards, userId),
 
     // Notifications
     addNotification: (userId, text, ts) => db.prepare('INSERT INTO notifications (user_id, text, created_at) VALUES (?, ?, ?)').run(userId, text, ts),

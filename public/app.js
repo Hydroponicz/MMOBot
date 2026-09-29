@@ -1492,7 +1492,7 @@
       {
         id: 'points', tab: 'basics', icon: '💰', title: 'Points & selling', summary: 'Earn points by chatting, playing and selling loot',
         body: list([
-          `Chatting earns <b>${g.chatPoints} points</b> (once every ${g.chatCooldown}s). Every action earns a few more.`,
+          `Chatting earns <b>${g.chatPoints} points</b> (once every ${g.chatCooldown}s)${g.chatPointsFullPerDay ? `, half that after ${g.chatPointsFullPerDay} times a day` : ''}. Every action earns a few more.`,
           `${c('sell all')} (or ${c('sellall')}) sells your loot. Gear, tools, seeds and potions are kept; sell those by name: ${c('sell trout 5')}.`,
           `Spend points in the <a href="#/shop">shop</a> (or ${c('buy')} in chat) on tools, seeds, potions and more, or gamble them in the <a href="#/casino">casino</a>.`,
         ]),
@@ -1598,7 +1598,7 @@
           'The <b>pattern seed</b> changes how it looks: fades roll 80-100%, Gem relics come in phases (Ruby, Sapphire, Black Pearl and Emerald are the rarest), and 1 in 100 marbles, crystals and rune patterns is a rare pattern.',
           `1 in 10 relics is <b>SoulTrak™</b>: showcase it and it counts every monster you defeat with ${c('fight')}.`,
           '<b>Trade-up contracts</b> turn 10 relics of one rarity into 1 of the next (5 Exalted become a ★ relic). The new float is the average of your inputs.',
-          `Sell relics back to the bank, list them on the relic market, or trade them with other players. ${c('relics')} in chat shows your inventory.`,
+          `Sell relics back to the bank (up to a daily limit; very valuable relics are bought at a lower rate), list them on the relic market, or trade them with other players. Values follow what players actually pay on the market. ${c('relics')} in chat shows your inventory.`,
         ]),
       },
       {
@@ -1607,7 +1607,7 @@
           `On the <a href="#/cards">Cards</a> page, spend points on packs of fantasy creature cards: Scout packs (3 cards), Boosters (5), Elite packs and the Mythic Vault. Three sets, six rarities from Common to Mythic, and any card can come out Holo (3× value) or Gold Foil (10×).`,
           'Every card has its own <b>wear</b> from 0 (flawless) to 1 (wrecked). Lower is better: it sets the condition (Pristine, Mint, Near Mint, Excellent...) and what the card is worth.',
           '<b>Grading</b> costs a fee and seals the card in a slab with a grade from 1 to 10 plus four subgrades. A GEM MINT 10 is worth 4× a raw card; four perfect subgrades make a PRISTINE 10 black label (10×). Clean cards usually grade well, but the grade is final.',
-          'Sell cards back to the bank for part of their value, list them on the card market, or send trade offers (cards and points both ways) to other players.',
+          'Sell cards back to the bank for part of their value (up to a daily limit; very valuable cards are bought at a lower rate), list them on the card market, or send trade offers (cards and points both ways) to other players. Values follow what players actually pay on the market.',
           `Collect every card in a set for a points reward and a title. ${c('cards')} in chat shows your collection.`,
         ]),
       },

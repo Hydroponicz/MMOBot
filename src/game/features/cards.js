@@ -15,6 +15,13 @@ const notable = (c) => C.RARITIES[C.CARDS[c.card].rarity].rank >= 3 || c.finish 
 const parseQ = (q) => (typeof q === 'string' ? JSON.parse(q) : q);
 
 module.exports = {
+  // Catalog value of a copy, its value on the market (real sales nudge it) and what the bank pays.
+  cardValues(row) {
+    const base = C.valueOf({ card: row.card, finish: row.finish, wear: row.wear, grade: row.grade || null, black: !!row.black });
+    const factor = this.marketFactor('card', row.card);
+    return { base, factor, value: Math.max(1, Math.round(base * factor)), buyback: this.bankPay(Math.round(base * Math.min(1, factor)), this.cfg.cardBuyback ?? 0.6) };
+  },
+
   cardsClosed() {
     return this.cfg.cardsEnabled === false ? 'trading cards are switched off right now.' : null;
   },
@@ -31,7 +38,7 @@ module.exports = {
     const r = C.RARITIES[c.rarity];
     const grade = row.grade || null;
     const copy = { card: row.card, finish: row.finish, wear: row.wear, grade, black: !!row.black };
-    const value = C.valueOf(copy);
+    const { value, base, factor, buyback } = this.cardValues(row);
     const cond = C.conditionOf(row.wear);
     return {
       id: row.id,
@@ -61,7 +68,9 @@ module.exports = {
       gradeLabel: grade ? (row.black ? C.BLACK_LABEL.name : C.GRADES[grade].name) : null,
       sub: row.sub ? JSON.parse(row.sub) : null,
       value,
-      buyback: Math.floor(value * (this.cfg.cardBuyback ?? 0.6)),
+      baseValue: base,
+      marketFactor: factor,
+      buyback,
       gradeFee: grade ? null : C.gradeFee(copy),
       status: row.status,
       price: row.price ?? null,
@@ -83,6 +92,8 @@ module.exports = {
       holoChance: C.HOLO_CHANCE,
       goldChance: C.GOLD_CHANCE,
       buyback: this.cfg.cardBuyback ?? 0.6,
+      bankDailyLimit: this.cfg.bankDailyLimit ?? 25000,
+      bankFullValue: this.cfg.bankFullValue ?? 5000,
       fee: this.cfg.marketFee ?? 0.05,
       sets: C.SETS.map((s) => ({ id: s.id, name: s.name, icon: s.icon, color: s.color, size: s.size, title: s.title, reward: s.reward, cards: s.cards.map((id) => ({ ...C.CARDS[id] })) })),
       packs: C.PACKS.map((p) => {
@@ -227,23 +238,22 @@ module.exports = {
     if (closed) return { ok: false, error: closed };
     ids = [...new Set((Array.isArray(ids) ? ids : [ids]).map(Number).filter(Boolean))].slice(0, 200);
     if (!ids.length) return { ok: false, error: 'pick some cards to sell.' };
-    const rate = this.cfg.cardBuyback ?? 0.6;
-    let total = 0;
-    let n = 0;
+    let result = { sold: [], total: 0, skipped: 0 };
     this.repo.transaction(() => {
+      const items = [];
       for (const id of ids) {
         const row = this.repo.cardGet(id);
         if (!row || row.owner_id !== user.id || row.status !== 'owned') continue;
-        const pay = Math.floor(C.valueOf({ card: row.card, finish: row.finish, wear: row.wear, grade: row.grade, black: !!row.black }) * rate);
-        this.repo.cardUpdate(id, { status: 'bank' });
-        total += pay;
-        n++;
+        items.push({ id, pay: this.cardValues(row).buyback });
       }
-      if (total) this.repo.addPoints(user.id, total);
+      result = this.bankTake(user.id, items, (id) => this.repo.cardUpdate(id, { status: 'bank' }));
     });
-    if (!n) return { ok: false, error: "none of those cards can be sold (on the market, or not yours)." };
+    const { sold, total, skipped } = result;
+    const note = this.bankLimitNote(user.id, skipped);
+    if (!sold.length) return { ok: false, error: skipped ? this.bankLimitError(user.id, skipped) : 'none of those cards can be sold (on the market, or not yours).' };
     this.track('cardBuyback', total);
-    return { ok: true, sold: n, points: total, balance: this.repo.getUser(user.id).points, message: `Sold ${n} card${n === 1 ? '' : 's'} to the bank for ${fmt(total)} pts.` };
+    const n = sold.length;
+    return { ok: true, sold: n, soldIds: sold, skipped, points: total, balance: this.repo.getUser(user.id).points, message: `Sold ${n} card${n === 1 ? '' : 's'} to the bank for ${fmt(total)} pts.${note}` };
   },
 
   // ---- Card market -------------------------------------------------------------------------
@@ -301,6 +311,7 @@ module.exports = {
       return true;
     });
     if (!ok) return { ok: false, error: 'that card is gone.' };
+    this.recordSale('card', row.card, price, view.baseValue, user.id, sellerId);
     this.spendGiftAllowance(user.id, excess);
     this.track('traded', price);
     this.track('fees', fee);
@@ -470,7 +481,7 @@ module.exports = {
     const by = new Map();
     for (const r of this.repo.cardsActive()) {
       const e = by.get(r.owner_id) || { username: r.username, value: 0, cards: 0, best: null };
-      const v = C.valueOf({ card: r.card, finish: r.finish, wear: r.wear, grade: r.grade, black: !!r.black });
+      const v = this.cardValues(r).value;
       e.value += v;
       e.cards++;
       if (!e.best || v > e.best.value) e.best = { name: C.CARDS[r.card].name, icon: C.CARDS[r.card].icon, value: v };

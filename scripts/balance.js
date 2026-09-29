@@ -2,7 +2,9 @@
 // Balance simulator: plays simulated streams with the real game engine and reports how fast players
 // level up, how many points they earn and spend, and how often rare things happen.
 //
-//   npm run balance -- [--players 40] [--days 28] [--streams 4] [--hours 3] [--seed 1] [--out report.md]
+//   npm run balance -- [--players 40] [--days 28] [--streams 4] [--hours 3] [--seed 1] [--out report.md] [--old-rules]
+//
+// --old-rules turns off the bank limits and the chat points taper, to compare against how things were.
 //
 // --streams is streams per week, --hours how long each stream lasts. Settings come from your
 // environment variables (same as the server), so you can try e.g. STAMINA_MAX=5 before changing it live.
@@ -24,6 +26,7 @@ const STREAMS = Number(arg('streams', 4));
 const HOURS = Number(arg('hours', 3));
 const SEED = Number(arg('seed', 1));
 const OUT = arg('out', null);
+const OLD_RULES = process.argv.includes('--old-rules');
 
 function mulberry32(seed) {
   return () => {
@@ -44,11 +47,14 @@ const STYLES = {
   fighter: () => pick(['!fight', '!fight', '!fight', '!chop']),
   farmer: (p) => (p.n % 3 === 0 ? pick(['!harvest', '!plant']) : pick(['!fish', '!chop', '!dig'])),
   gambler: (p) => (p.n % 3 === 0 ? pick(['!slots 5%', '!roulette red 5%', '!crash 5% 2x']) : pick(['!fish', '!mine'])),
+  // Plays like a gatherer in chat; opens card packs and relic cases on the website (see collect()).
+  collector: () => pick(['!fish', '!mine', '!chop', '!dig']),
 };
 // How much they play: chance per minute (while their stamina lasts) to use a charge.
 const ACTIVITY = { casual: 0.08, regular: 0.25, grinder: 1 };
 
-const game = { ...config.game, replyInChat: false };
+const game = { ...config.game, replyInChat: false, relicFeedDelayMs: 0 };
+if (OLD_RULES) Object.assign(game, { bankDailyLimit: 0, bankFullValue: 0, chatPointsFullPerDay: 0 });
 const repo = openDb(':memory:');
 let now = Date.UTC(2026, 0, 5);
 const engine = new GameEngine({ repo, config: { ...config, game }, rng: mulberry32(SEED + 1), petRng: mulberry32(SEED + 2), now: () => now });
@@ -88,6 +94,20 @@ function housekeeping(p) {
   if (rnd() < 0.05) say(p, pick(['!upgrade backpack', '!upgrade rod', '!upgrade pickaxe', '!upgrade axe', '!upgrade shovel']));
 }
 
+// Collectors open a pack or a case when they can afford it, then sell everything back to the bank
+// (the worst case for the economy: nobody keeps or trades anything).
+function collect(p) {
+  const u = repo.getUserByKickId(p.kickUserId);
+  if (u.points < 3000) return;
+  if (rnd() < 0.5) {
+    const r = engine.cardOpenPacks(u, pick(['wildlands-booster', 'emberforge-booster', 'abyssal-booster', 'elite']));
+    if (r.ok) engine.cardSellBack(u, r.packs.flat().map((c) => c.id));
+  } else {
+    const r = engine.relicOpen(u, pick(['dragonfire', 'frostbite', 'shadowveil']), 1);
+    if (r.ok) engine.relicSellBack(u, r.relics.map((x) => x.id));
+  }
+}
+
 const weekly = [];
 const snapshot = (day) => {
   const rows = players.map((p) => {
@@ -120,6 +140,7 @@ for (let d = 0; d < DAYS; d++) {
         p.n++;
         say(p, STYLES[p.style](p));
         p.actions++;
+        if (p.style === 'collector' && rnd() < 0.3) collect(p);
       }
       if (m % 5 === 0) engine.tick();
     }
@@ -141,7 +162,7 @@ const lines = [];
 const out = (s = '') => lines.push(s);
 out(`# Balance simulation`);
 out();
-out(`${PLAYERS} players · ${DAYS} days · ${STREAMS} streams/week of ${HOURS}h · seed ${SEED} · stamina ${game.staminaMax} per ${game.staminaMinutes} min · ran in ${secs}s`);
+out(`${PLAYERS} players · ${DAYS} days · ${STREAMS} streams/week of ${HOURS}h · seed ${SEED} · stamina ${game.staminaMax} per ${game.staminaMinutes} min · ${OLD_RULES ? "old rules (no bank limits, no chat taper)" : "current rules"} · ran in ${secs}s`);
 out();
 out(`## Progress by play style (end of week)`);
 out();
@@ -179,9 +200,20 @@ for (const [k, label] of [
   ['casinoWagered', 'Bet in the casino'],
   ['casinoPaid', 'Paid out by the casino'],
   ['fees', 'Market fees'],
+  ['cardPacks', 'Spent on card packs'],
+  ['cardGrading', 'Spent grading cards'],
+  ['cardBuyback', 'Bank paid for cards'],
+  ['relicCases', 'Spent on relic cases'],
+  ['relicBuyback', 'Bank paid for relics'],
 ]) out(`| ${label} | ${fmt(econ[k] || 0)} |`);
-const earned = (econ.chat || 0) + (econ.actions || 0) + (econ.sold || 0) + (econ.rewards || 0);
-const spent = (econ.shop || 0) + (econ.fees || 0) + Math.max(0, (econ.casinoWagered || 0) - (econ.casinoPaid || 0));
+// Games of chance count both ways: kept points are spent, extra payouts are earned.
+const games = [
+  (econ.casinoWagered || 0) - (econ.casinoPaid || 0),
+  (econ.cardPacks || 0) + (econ.cardGrading || 0) - (econ.cardBuyback || 0),
+  (econ.relicCases || 0) - (econ.relicBuyback || 0),
+];
+const earned = (econ.chat || 0) + (econ.actions || 0) + (econ.sold || 0) + (econ.rewards || 0) + games.reduce((s, g) => s + Math.max(0, -g), 0);
+const spent = (econ.shop || 0) + (econ.fees || 0) + games.reduce((s, g) => s + Math.max(0, g), 0);
 out();
 out(`Earned ${fmt(earned)} vs spent ${fmt(spent)}: ${spent ? `${(earned / spent).toFixed(1)}x` : 'nothing spent'}. ${earned > spent * 1.5 ? 'Points are piling up faster than they are spent.' : 'Roughly balanced.'}`);
 const alerts = engine.economyAlerts().alerts;

@@ -2175,6 +2175,25 @@ test('economy alerts flag points piling up', () => {
   assert.match(alerts[0].title, /Points are piling up/);
 });
 
+test('chat points taper to half after the daily full-rate awards', () => {
+  const repo = openDb(':memory:');
+  let t = Date.UTC(2026, 8, 29, 12);
+  const engine = new GameEngine({ repo, config: { ...baseConfig, game: { ...baseConfig.game, chatPoints: 10, chatCooldown: 60, chatPointsFullPerDay: 2 } }, now: () => t });
+  const chat = (msg) => {
+    engine.handleChat({ kickUserId: '1', username: 'Alice', content: msg });
+    t += 61_000;
+  };
+  chat('hello there');
+  chat('how is everyone');
+  const u = () => repo.getUserByName('alice');
+  assert.equal(u().points, 20);
+  chat('still here');
+  assert.equal(u().points, 25, 'third award of the day is half');
+  t += 86_400_000;
+  chat('new day');
+  assert.equal(u().points, 35, 'full again the next day');
+});
+
 test('economy health counts cards and relic cases, both ways', () => {
   const { engine, repo, u } = extrasSetup();
   engine.track('chat', 1_000);

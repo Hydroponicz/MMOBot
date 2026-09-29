@@ -28,10 +28,20 @@
     [2, 'almost always a 2: not worth grading'],
   ];
   const gradeHint = (wear) => GRADE_HINTS.find(([max]) => wear < max)[1];
+  // Under the Sell to bank button: the bank's daily limit and the reduced rate on big items.
+  let bankState = { left: null, full: 0, rate: 0.6 };
+  const bankNote = (pay) => {
+    const { left, full } = bankState;
+    const parts = [];
+    if (left != null) parts.push(pay > left ? `The bank can only pay ${Number(left).toLocaleString()} more pts today. List it on the market instead, or try tomorrow.` : `Bank limit: ${Number(left).toLocaleString()} pts left today.`);
+    if (full) parts.push(`Value above ${Number(full).toLocaleString()} pts is bought at a fifth of the rate.`);
+    return parts.length ? `<p class="muted">${parts.join(' ')}</p>` : '';
+  };
 
   window.MMOCards = async ($app, { api, toast, esc, fmt, state, route, ago, playerLink }, query) => {
     let data = await api('/cards');
     const cat = data.catalog;
+    bankState = { get left() { return data.bankLeft; }, full: cat.bankFullValue, rate: cat.buyback };
     const loggedIn = data.points !== null;
     const RAR = cat.rarities;
     const EL = cat.elements;
@@ -308,7 +318,7 @@
             <h2>${count > 1 ? `${count} packs opened` : 'Pack opened'}</h2>
             <p class="rip-value ${r.value >= r.cost ? 'win' : ''}">You pulled <b>${fmt(r.value)}</b> pts of cards for ${fmt(r.cost)} pts.</p>
             ${r.sets?.length ? `<p class="cd-good">${r.sets.map(esc).join('<br>')}</p>` : ''}
-            <p class="muted" style="margin:0 0 8px">Tick cards to sell them back to the bank (${Math.round(cat.buyback * 100)}% of value), or keep everything.</p>
+            <p class="muted" style="margin:0 0 8px">Tick cards to sell them back to the bank (${Math.round(cat.buyback * 100)}% of value${data.bankLeft != null ? `, ${fmt(data.bankLeft)} pts left today` : ''}), or keep everything.</p>
             <div class="sum-grid">${all
               .sort((a, b) => b.value - a.value)
               .map((c) => `<label class="sum-card${sel.has(c.id) ? ' sel' : ''}"><input type="checkbox" data-id="${c.id}" ${sel.has(c.id) ? 'checked' : ''}>${cardHtml(c, { size: 110 })}<span>${finishTag(c)} <b>${fmt(c.value)}</b></span></label>`)
@@ -392,7 +402,7 @@
           actions = `
             ${card.grade ? '' : `<div class="cd-act"><button class="btn btn-primary" id="cd-grade" ${data.points < card.gradeFee ? 'disabled title="Not enough points"' : ''}>🔍 Grade it · ${fmt(card.gradeFee)} pts</button><p class="muted">With wear ${card.wear.toFixed(4)}: ${gradeHint(card.wear)}. The grade is final.</p></div>`}
             ${tradeLock('sell cards on the market') || `<div class="cd-act"><form id="cd-list" class="form-row"><input type="number" name="price" min="1" max="${Math.max(1000, card.value * 20)}" value="${Math.max(1, Math.round(card.value * 1.1))}" aria-label="Price"><button class="btn">🏪 List for sale</button></form><p class="muted">Value ${fmt(card.value)} pts · most you can ask: ${fmt(Math.max(1000, card.value * 20))} · you get the price minus ${Math.round(cat.fee * 100)}%.</p></div>`}
-            <div class="cd-act"><button class="btn" id="cd-sell">💰 Sell to bank · +${fmt(card.buyback)} pts</button></div>`;
+            <div class="cd-act"><button class="btn" id="cd-sell" ${data.bankLeft != null && card.buyback > data.bankLeft ? 'disabled' : ''}>💰 Sell to bank · +${fmt(card.buyback)} pts</button>${bankNote(card.buyback)}</div>`;
         } else if (mine && card.status === 'listed') {
           actions = `<div class="cd-act"><p>Listed for <b>${fmt(card.price)}</b> pts.</p><button class="btn" id="cd-unlist">Take it down</button></div>`;
         } else if (card.status === 'listed' && loggedIn) {
@@ -404,7 +414,7 @@
             <div class="muted">${b.setIcon} ${esc(b.setName)} · #${b.num}/${b.setSize}${card.serial ? ` · serial #${card.serial}` : ''}</div>
             <h2 style="margin:4px 0">${b.icon} ${esc(b.name)}</h2>
             <div class="cd-tags"><span class="cchip" style="color:${RAR[b.rarity].color}">${RAR[b.rarity].name}</span>${finishTag(card)}${chip(card)}${card.owner ? `<span class="cchip">Owner: <a href="${playerLink(card.owner)}">${esc(card.owner)}</a></span>` : ''}</div>
-            <div class="cd-value"><span class="muted">Value</span><b>${fmt(card.value)}</b><span class="muted">pts</span></div>
+            <div class="cd-value"><span class="muted">Value</span><b>${fmt(card.value)}</b><span class="muted">pts</span>${card.marketFactor !== 1 ? `<span class="cchip ${card.marketFactor > 1 ? 'listed' : ''}" title="Catalog value ${fmt(card.baseValue)} pts, adjusted by recent player sales">📈 market ×${card.marketFactor.toFixed(2)}</span>` : ''}</div>
             <div class="cd-wear"><div class="muted">Wear <b>${card.wear.toFixed(5)}</b> (${card.condition}) · lower is better</div><div class="wear-bar">${condBands}<i style="left:${card.wear * 100}%"></i></div></div>
             ${sub}
             ${popRow}
@@ -573,7 +583,7 @@
           <li>Every card can come out <b>Holo</b> (${pct(cat.holoChance)}, 3× value) or <b>Gold Foil</b> (${pct(cat.goldChance)}, 10× value).</li>
           <li><b>Wear</b> is a number from 0 (flawless) to 1 (wrecked). Lower wear means a better condition: ${cat.conditions.map((c) => `${c.name} under ${c.max}`).join(', ')}.</li>
           <li><b>Grading</b> costs a fee and seals the card in a slab with a grade from 1 to 10 and four subgrades (centering, corners, edges, surface). A <b>GEM MINT 10</b> is worth 4× a raw card; all four subgrades at 10 make a <b>PRISTINE 10 black label</b> (10×). Low-wear cards usually grade well, but centering and hidden flaws can surprise you.</li>
-          <li>Sell any card back to the bank for ${Math.round(cat.buyback * 100)}% of its value, list it on the card market, or trade it with another player.</li>
+          <li>Sell any card back to the bank for ${Math.round(cat.buyback * 100)}% of its value${cat.bankFullValue ? ` (a fifth of that rate on value above ${fmt(cat.bankFullValue)} pts)` : ''}${cat.bankDailyLimit ? `, up to ${fmt(cat.bankDailyLimit)} pts a day` : ''}. Big cards are better sold on the card market or traded with another player. A card's value follows what players actually pay for it on the market (between ×0.5 and ×2).</li>
           <li>Own every card in a set to earn its reward and title: ${cat.sets.map((s) => `${s.icon} ${esc(s.name)} (${fmt(s.reward)} pts, "${esc(s.title)}")`).join(', ')}.</li>
         </ul></section>`;
       $tab().querySelectorAll('[data-open]').forEach((b) => {
@@ -631,7 +641,7 @@
       const drawBar = () => {
         $bar.hidden = !selecting;
         const pts = all.filter((c) => sel.has(c.id)).reduce((s, c) => s + c.buyback, 0);
-        $bar.innerHTML = `<span>${sel.size} selected · bank pays <b>${fmt(pts)}</b> pts</span>
+        $bar.innerHTML = `<span>${sel.size} selected · bank pays <b>${fmt(pts)}</b> pts${data.bankLeft != null ? ` <span class="muted">(${fmt(data.bankLeft)} left today)</span>` : ''}</span>
           <button class="btn btn-sm" id="sel-commons">Select raw commons</button>
           <button class="btn btn-sm" id="sel-none">Clear</button>
           <button class="btn btn-primary btn-sm" id="sel-sell" ${sel.size ? '' : 'disabled'}>Sell to bank</button>`;

@@ -42,6 +42,93 @@ module.exports = {
     return `new players can't buy, sell or trade with other players yet. To unlock it: ${todo.join(', and ')}.`;
   },
 
+  // ---- The bank: buying cards and relics back ------------------------------------------------------
+  // The buyback rate applies to the first bankFullValue points of an item's value and a fifth of the rate
+  // above that, so one jackpot item can't flood the economy. A player can also only take bankDailyLimit
+  // points a day from the bank: anything bigger goes through the player market instead, which moves
+  // points between players rather than creating them.
+  bankPay(value, rate) {
+    const full = this.cfg.bankFullValue ?? 5000;
+    if (!full) return Math.floor(value * rate);
+    return Math.floor(rate * (Math.min(value, full) + 0.2 * Math.max(0, value - full)));
+  },
+
+  bankRoom(userId) {
+    const cap = this.cfg.bankDailyLimit ?? 25000;
+    if (!cap) return Infinity;
+    return Math.max(0, cap - (this.repo.getSetting(`bank:${userId}:${dayOf(this.now())}`) || 0));
+  },
+
+  bankRecord(userId, amount) {
+    if (!amount) return;
+    const key = `bank:${userId}:${dayOf(this.now())}`;
+    this.repo.setSetting(key, (this.repo.getSetting(key) || 0) + amount);
+  },
+
+  // Sells items to the bank for one player, respecting the daily limit. items: [{ id, pay }].
+  // Returns { sold: [ids], total, skipped } where skipped counts items that didn't fit today.
+  bankTake(userId, items, markSold) {
+    let room = this.bankRoom(userId);
+    const sold = [];
+    let total = 0;
+    let skipped = 0;
+    for (const it of items) {
+      if (it.pay > room) {
+        skipped++;
+        continue;
+      }
+      markSold(it.id);
+      sold.push(it.id);
+      total += it.pay;
+      room -= it.pay;
+    }
+    if (total) {
+      this.repo.addPoints(userId, total);
+      this.bankRecord(userId, total);
+    }
+    return { sold, total, skipped };
+  },
+
+  bankLimitNote(userId, skipped) {
+    if (!skipped) return '';
+    const cap = this.cfg.bankDailyLimit ?? 25000;
+    const left = this.bankRoom(userId);
+    return ` ${skipped} ${skipped === 1 ? 'item was' : 'items were'} kept: the bank pays out at most ${fmt(cap)} pts a day (${fmt(left)} left today). List ${skipped === 1 ? 'it' : 'them'} on the market instead, or try again tomorrow.`;
+  },
+
+  bankLimitError(userId, skipped) {
+    const cap = this.cfg.bankDailyLimit ?? 25000;
+    return `the bank can only pay ${fmt(this.bankRoom(userId))} more pts today (it pays at most ${fmt(cap)} a day), and ${skipped === 1 ? 'that sells' : 'those sell'} for more. List ${skipped === 1 ? 'it' : 'them'} on the market instead, or try again tomorrow.`;
+  },
+
+  // ---- Market values: real sales nudge an item's shown value ----------------------------------------
+  // After at least 3 sales by at least 2 different sellers and 2 different buyers in the last 30 days,
+  // the shown value is the catalog value times the median price/value ratio (between 0.5x and 2x).
+  // The bank only ever uses min(1, factor), so pushing prices up between friends can't create points.
+  recordSale(kind, key, price, baseValue, buyerId, sellerId) {
+    if (!(baseValue > 0)) return;
+    this.repo.saleAdd({ kind, key, ratio: price / baseValue, price, buyerId, sellerId }, this.now());
+    this.marketFactors?.delete(`${kind}:${key}`);
+  },
+
+  marketFactor(kind, key) {
+    this.marketFactors ??= new Map();
+    const k = `${kind}:${key}`;
+    const now = this.now();
+    const hit = this.marketFactors.get(k);
+    if (hit && now - hit.at < 60_000) return hit.factor;
+    const sales = this.repo.salesFor(kind, key, now - 30 * 86_400_000, 15);
+    let factor = 1;
+    if (sales.length >= 3 && new Set(sales.map((x) => x.seller_id)).size >= 2 && new Set(sales.map((x) => x.buyer_id)).size >= 2) {
+      const r = sales.map((x) => x.ratio).sort((a, b) => a - b);
+      const med = r.length % 2 ? r[(r.length - 1) / 2] : (r[r.length / 2 - 1] + r[r.length / 2]) / 2;
+      factor = Math.round(Math.max(0.5, Math.min(2, med)) * 100) / 100;
+    }
+    if (this.marketFactors.size > 5000) this.marketFactors.clear();
+    this.marketFactors.set(k, { at: now, factor });
+    return factor;
+  },
+
   // ---- Daily cap on points passed to other players --------------------------------------------
   // !give, bounties, guild deposits and overpriced market buys share one daily allowance, so points
   // can't be funnelled from alt accounts to a main account.
@@ -215,21 +302,22 @@ module.exports = {
     return { week, alerts };
   },
 
-  // Points that cards and relics could be sold back to the bank for right now (the market value of
-  // everything players hold, times the buyback rate). Cached for a minute.
+  // What players hold in cards and relics: market value, and what the bank would pay for all of it
+  // (ignoring the daily limit, so this is the most that could ever come out). Cached for a minute.
   collectiblesHeld() {
     const now = this.now();
     if (this.heldCache && now - this.heldCache.at < 60_000) return this.heldCache.value;
-    const C = require('../cards');
-    const R = require('../relics');
-    const cards = this.repo.cardsActive();
-    const relics = this.repo.relicsActive();
-    const cardValue = cards.reduce((s, r) => s + C.valueOf({ card: r.card, finish: r.finish, wear: r.wear, grade: r.grade, black: !!r.black }), 0);
-    const relicValue = relics.reduce((s, r) => s + R.valueOf({ skin: r.skin, float: r.float, seed: r.seed, soul: !!r.soul }), 0);
-    const value = {
-      cards: { count: cards.length, value: cardValue, buyback: Math.floor(cardValue * (this.cfg.cardBuyback ?? 0.6)) },
-      relics: { count: relics.length, value: relicValue, buyback: Math.floor(relicValue * (this.cfg.relicBuyback ?? 0.6)) },
-    };
+    const sumUp = (rows, values) =>
+      rows.reduce(
+        (acc, r) => {
+          const v = values(r);
+          acc.value += v.value;
+          acc.buyback += v.buyback;
+          return acc;
+        },
+        { count: rows.length, value: 0, buyback: 0 }
+      );
+    const value = { cards: sumUp(this.repo.cardsActive(), (r) => this.cardValues(r)), relics: sumUp(this.repo.relicsActive(), (r) => this.relicValues(r)) };
     this.heldCache = { at: now, value };
     return value;
   },
