@@ -393,6 +393,7 @@ class GameEngine extends EventEmitter {
       quests: this.publicQuests(userId),
       lastSeen: user.last_seen_at || null,
       guild: (({ id, name, tag } = {}) => (id ? { id, name, tag } : null))(this.repo.guildOf(userId) || {}),
+      house: (({ name, icon, charges } = {}) => (name ? { name, icon, charges } : null))(this.house(userId) || {}),
       streamStreak: this.streamStreak(userId),
     };
   }
@@ -501,7 +502,7 @@ function isChatCommand(word) {
 }
 
 // Feature modules add their methods to the engine.
-for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events', 'museum', 'progression', 'character', 'community', 'market', 'gear', 'social', 'guilds', 'items', 'cards', 'relics', 'stream', 'stations', 'prices', 'pvp']) {
+for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events', 'museum', 'progression', 'character', 'community', 'market', 'gear', 'social', 'guilds', 'items', 'cards', 'relics', 'stream', 'stations', 'prices', 'pvp', 'houses']) {
   Object.assign(GameEngine.prototype, require(`./features/${mod}`));
 }
 

@@ -352,6 +352,7 @@
               ${p.overallRank ? `<span class="badge">🏆 Rank #${fmt(p.overallRank)}</span>` : ''}
               <span class="badge">💬 ${fmt(p.messages)} messages</span>
               ${p.guild ? `<a class="badge" href="#/guilds">🛡️ [${esc(p.guild.tag)}] ${esc(p.guild.name)}</a>` : ''}
+              ${p.house ? `<a class="badge gold" href="#/shop" title="+${p.house.charges} stamina">${p.house.icon} ${esc(p.house.name)}</a>` : ''}
               ${p.streamStreak?.streak > 1 ? `<span class="badge" title="Best: ${p.streamStreak.best}">🔥 ${p.streamStreak.streak} ${esc(p.streamStreak.unit)} in a row</span>` : ''}
               ${p.lastSeen && !isMe ? `<span class="badge">👀 Seen ${ago(p.lastSeen)}</span>` : ''}
             </div>
@@ -828,7 +829,7 @@
 
   let shopShowAllSeeds = false;
   pages.shop = async () => {
-    const { items, points, farmingLevel, plots, plotGrowth, plotNext, stations } = await api('/shop');
+    const { items, points, farmingLevel, plots, plotGrowth, plotNext, stations, houses } = await api('/shop');
     const growPct = Math.round(((plotGrowth ?? 1.12) - 1) * 100);
     const isStation = (i) => i.category === 'stations';
     // Items bought in bulk at a rising price (plots, stations): the total for 1-5 of them.
@@ -887,6 +888,37 @@
           : ''
       }
       <div class="shop-grid">${top.map(card).join('')}</div>
+
+      ${
+        houses?.on
+          ? `<h2 style="margin:28px 0 6px">🏠 Houses</h2>
+      <p class="muted">End-game homes that make your <b>stamina bar bigger</b>: every charge is one more action before you rest. You own one house at a time and move up one step at a time; each needs a character level${loggedIn ? ` (yours: <b>${houses.level}</b>)` : ''}. <code>!house</code> in chat shows yours, <code>!house buy</code> moves up.</p>
+      <div class="shop-grid">${houses.houses
+        .map(
+          (h) => `<section class="panel shop-item${h.owned ? ' owned' : ''}">
+            <div class="shop-icon">${h.icon}</div>
+            <h2>${esc(h.name)}</h2>
+            <p class="muted">${esc(h.text)}</p>
+            <p class="shop-stat">⚡ +${h.charges} stamina charge${h.charges === 1 ? '' : 's'} · needs character level ${h.level}</p>
+            <div class="shop-buy">
+              <span class="shop-price">${h.forSale ? `${fmt(h.cost)} pts` : 'Not for sale'}</span>
+              ${
+                !loggedIn
+                  ? ''
+                  : h.owned
+                    ? '<span class="badge gold">🏠 Your home</span>'
+                    : h.below
+                      ? '<span class="muted">Moved up</span>'
+                      : h.next
+                        ? `<button class="btn btn-primary btn-sm" data-house ${h.canBuy ? '' : 'disabled'} title="${houses.level < h.level ? `Needs character level ${h.level}` : points < h.cost ? 'Not enough points' : ''}">Move in</button>`
+                        : `<span class="muted">After the ${esc(houses.houses[h.tier - 2].name)}</span>`
+              }
+            </div>
+          </section>`
+        )
+        .join('')}</div>`
+          : ''
+      }
 
       <h2 style="margin:28px 0 6px">🏡 Gathering stations</h2>
       <p class="muted">Like farm plots for your other skills: each station works on its own every 20 minutes or so (a bit longer at higher levels), and <code>!collect</code> turns everything that's ready into XP for <b>1 stamina</b>. It's a little more XP than gathering the same things by hand, but stations give <b>no items and no points</b>, so your backpack stays free. Everyone starts with one of each; <code>!stations</code> shows them.</p>
@@ -947,6 +979,21 @@
         if (n === 1) el.innerHTML = `${fmt(next[0])} pts <small>next one</small>`;
         else if (n <= next.length) el.innerHTML = `${fmt(next[n - 1])} pts <small>for ${n}</small>`;
         else el.innerHTML = `${fmt(next[next.length - 1])}+ pts <small>for ${n}</small>`;
+      };
+    }
+    const houseBtn = $app.querySelector('[data-house]');
+    if (houseBtn) {
+      houseBtn.onclick = async () => {
+        const next = houses.houses.find((h) => h.next);
+        if (!confirm(`Move into the ${next.icon} ${next.name} for ${fmt(next.cost)} pts? (+${next.charges} stamina)`)) return;
+        houseBtn.disabled = true;
+        try {
+          toast((await api('/me/house', { method: 'POST', body: {} })).message);
+          route();
+        } catch (err) {
+          toast(err.message);
+          houseBtn.disabled = false;
+        }
       };
     }
     $app.querySelectorAll('[data-buy]').forEach((b) => {
@@ -1581,7 +1628,7 @@
           `You have <b>${g.staminaMax} stamina charges</b>. Every action (skilling, fighting, farming, raid attacks) uses one.`,
           `The bar fills back up to full <b>${g.staminaMinutes} minutes</b> after you use the first charge.`,
           `<b>Cooking on a lit fire is free</b>, and info commands like ${c('stats')} never cost stamina.`,
-          `${c('stamina')} shows your bar. Training 🏃 Agility (${c('run')}) makes it refill faster, Halflings refill 10% faster, and the Wraith Tonic potion refills it twice as fast.`,
+          `${c('stamina')} shows your bar. A 🏠 house (${c('house')}, end game) adds charges to the bar, training 🏃 Agility (${c('run')}) makes it refill faster, Halflings refill 10% faster, and the Wraith Tonic potion refills it twice as fast.`,
         ]),
       },
       {
@@ -1891,6 +1938,7 @@
         ['attack', 'Hit the raid boss (raid shows it)'],
         ['catch / grab', 'Claim a random event'],
         ['duel @name [bet]', 'Challenge a player (accept / decline)'],
+        ['house [buy]', 'Your house; buy the next one for more stamina'],
         ['rob @name', 'Heist a richer player'],
         ['hire [1-3]', 'Hire guards for 24h so robbers fail more'],
         ['arena', 'Ranked fight (arena top for the ladder)'],

@@ -143,7 +143,8 @@ module.exports = {
 
   // { charges, max, refillAt } (refillAt null = full).
   stamina(userId, now = this.now()) {
-    const max = Math.max(1, (this.cfg.staminaMax ?? 3) + this.perks(userId).stamina);
+    // Houses add charges (the end-game stamina upgrade).
+    const max = Math.max(1, (this.cfg.staminaMax ?? 3) + this.perks(userId).stamina + (this.houseCharges?.(userId) || 0));
     const u = this.repo.getUser(userId);
     if (!u || u.stamina === null || u.stamina === undefined) return { charges: max, max, refillAt: null, startedAt: null };
     const refill = this.staminaRefillMs(userId, now);

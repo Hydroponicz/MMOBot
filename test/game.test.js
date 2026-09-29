@@ -419,7 +419,7 @@ test('rod prices saved before the tool rework still apply', () => {
   const settings = new Settings({ config: { ...baseConfig, adminUsers: [], kick: { channel: 's' } }, repo });
   assert.equal(settings.all.rods[1].cost, 7);
   assert.equal(settings.all.rods[1].failChance, 0.2);
-  assert.deepEqual(Object.keys(settings.all).filter((k) => k.endsWith('s') && Array.isArray(settings.all[k])).sort(), ['axes', 'disabledCommands', 'furnaces', 'pickaxes', 'projects', 'redemptions', 'rods', 'shovels']);
+  assert.deepEqual(Object.keys(settings.all).filter((k) => k.endsWith('s') && Array.isArray(settings.all[k])).sort(), ['axes', 'disabledCommands', 'furnaces', 'houses', 'pickaxes', 'projects', 'redemptions', 'rods', 'shovels']);
 });
 
 // ---- Smithing, shop, gear and combat ------------------------------------------
@@ -2493,4 +2493,30 @@ test('all crops and crop dishes share one sell-price drop; other items keep thei
   assert.equal(engine.supplyFactor('shark'), 1, 'fish are separate');
   assert.equal(engine.supplyFactor('cooked_shrimp'), 1, 'and so is cooked fish');
   assert.match(engine.priceCheck(u, ['celery']), /after lots of crops and crop dishes sold lately/);
+});
+
+test('houses: end-game homes add stamina charges, need a character level and go up one step at a time', () => {
+  const { repo, say, engine } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  const base = engine.stamina(u.id).max;
+  assert.match(say('!house'), /don't own a house yet.*Cottage \(\+1 stamina\) for 150,000 pts at character level 25/);
+  repo.addPoints(u.id, 1_000_000);
+  assert.match(say('!house buy'), /Cottage needs character level 25/);
+  const before = repo.getUser(u.id).points;
+  for (const s of ['fishing', 'mining', 'woodcutting', 'digging', 'smelting']) repo.addXp(u.id, s, xpForLevel(45));
+  assert.ok(engine.characterLevel(u.id) >= 40);
+  assert.match(say('!house buy'), /welcome to your 🛖 Cottage! .*\(2 total\)/);
+  assert.equal(engine.stamina(u.id).max, base + 1);
+  assert.ok(before - repo.getUser(u.id).points >= 149_000, 'paid for the cottage');
+  // Next step: the House (+2), not +1 on top of the Cottage.
+  assert.match(say('!house buy'), /welcome to your 🏡 House!/);
+  assert.equal(engine.stamina(u.id).max, base + 2);
+  assert.match(say('!house buy'), /Manor needs character level 60/);
+  assert.equal(engine.profile(u.id).house.name, 'House');
+  // Admins can switch them off (the bonus goes too) or change prices.
+  engine.cfg.housesEnabled = false;
+  assert.equal(engine.stamina(u.id).max, base);
+  engine.cfg.housesEnabled = true;
+  engine.settings.all.houses = [{ id: 'manor', cost: 0 }];
+  assert.equal(engine.houseInfo(u.id).houses[2].forSale, false);
 });

@@ -1041,3 +1041,4 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 /* PvP page */
 .pvp-grid { display: grid; gap: 16px; }
 .pvp-grid > .panel { margin: 0; }
+.shop-item.owned { border-color: var(--gold); }

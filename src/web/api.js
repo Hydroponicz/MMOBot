@@ -107,6 +107,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       plots: me ? engine.plotCount(me.id) : null,
       plotGrowth: engine.cfg.plotPriceGrowth ?? 1.12,
       plotNext: me ? [1, 2, 3, 4, 5].map((n) => engine.plotsPrice(me.id, n)) : null,
+      houses: engine.houseInfo(me?.id ?? null),
       // Gathering stations: how many you own, when they're ready and the total for buying 1-5 more.
       stations: me
         ? Object.fromEntries(engine.allStations(me.id).map((s) => [s.item, { skill: s.skill, count: s.count, ready: s.ready, readyAt: s.readyAt, next: [1, 2, 3, 4, 5].map((n) => engine.stationsPrice(me.id, s.skill, n)) }]))
@@ -126,6 +127,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   }));
   router.post('/me/plant', requireLogin, act((req) => engine.plant(req.user, req.body?.crop ? [String(req.body.crop)] : []) || 'Slow down a little, farmer!'));
   router.post('/me/harvest', requireLogin, act((req) => engine.harvest(req.user) || 'Slow down a little, farmer!'));
+  router.post('/me/house', requireLogin, act((req) => engine.buyHouse(req.user)));
   router.post('/me/collect', requireLogin, act((req) => engine.collectStations(req.user) || 'Slow down a little!'));
   router.post('/me/equip', requireLogin, act((req) => engine.equip(req.user, [String(req.body?.item || '')])));
   router.post('/me/drink', requireLogin, act((req) => engine.drink(req.user, [String(req.body?.item || '')])));

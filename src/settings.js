@@ -8,6 +8,7 @@ const { ITEMS, SKILLS, SKILL_IDS, BACKPACK_TIERS, SHOP, COMMAND_TO_SKILL } = req
 const { isChatCommand } = require('./game/engine');
 const { parseEmoteCommands, formatShortcut } = require('./game/emotes');
 const { REDEMPTIONS, PROJECTS } = require('./game/streamRewards');
+const { HOUSES } = require('./game/houses');
 
 // Every command a viewer can type (without the prefix), for enabling/disabling from the admin page.
 const TOOL_SKILLS = SKILL_IDS.filter((id) => SKILLS[id].tool);
@@ -58,6 +59,7 @@ const COMMANDS = [
   'hall',
   'duel',
   'rob',
+  'house',
   'arena',
   'war',
   'catch',
@@ -139,6 +141,7 @@ const FIELDS = {
     redeemOnlyLive: { type: 'bool', label: 'Redemptions only while live', help: 'Needs Kick live status; if the stream status is unknown, redemptions work anyway.' },
     projectsEnabled: { type: 'bool', label: 'Community projects', help: 'Chat pools points toward a shared goal (!fund). Goals in the Community projects table below.' },
     duelsEnabled: { type: 'bool', label: 'Duels', help: '!duel @name [bet]: player vs player fights for points.' },
+    housesEnabled: { type: 'bool', label: 'Houses', help: '!house: end-game homes that add stamina charges (prices, charges and levels in the Houses table below).' },
     heistsEnabled: { type: 'bool', label: 'Heists', help: '!rob @name: rob players richer than you. !guards protects you.' },
     heistMinTarget: { type: 'int', label: 'Heists: minimum target points', help: 'Only players holding at least this many points can be robbed.', min: 0, max: 1e12 },
     heistStealPct: { type: 'number', label: 'Heists: share taken', help: 'A successful heist takes this share of the victim\'s points (0.03 = 3%).', min: 0, max: 0.5 },
@@ -236,6 +239,16 @@ TABLES.redemptions = {
     cooldown: { type: 'int', label: 'Cooldown for the channel (minutes)', min: 0, max: 1440 },
   },
   rows: () => REDEMPTIONS,
+};
+TABLES.houses = {
+  label: 'Houses',
+  key: 'id',
+  columns: {
+    cost: { type: 'int', label: 'Price (points, 0 = not for sale)', min: 0, max: 1e15 },
+    charges: { type: 'int', label: 'Extra stamina charges', min: 0, max: 100 },
+    level: { type: 'int', label: 'Character level needed', min: 1, max: 120 },
+  },
+  rows: () => HOUSES,
 };
 TABLES.projects = {
   label: 'Community projects',
@@ -353,6 +366,7 @@ class Settings extends EventEmitter {
         redeemOnlyLive: config.game.redeemOnlyLive ?? true,
         projectsEnabled: config.game.projectsEnabled ?? true,
         duelsEnabled: config.game.duelsEnabled ?? true,
+        housesEnabled: config.game.housesEnabled ?? true,
         heistsEnabled: config.game.heistsEnabled ?? true,
         heistMinTarget: config.game.heistMinTarget ?? 5000,
         heistStealPct: config.game.heistStealPct ?? 0.03,
