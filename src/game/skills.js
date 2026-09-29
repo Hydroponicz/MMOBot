@@ -203,6 +203,7 @@ const ITEMS = {
 const METALS = [
   // id, name, alloy used, Smithing level to make, level to wear, sword attack, armor base defence
   ['bronze', 'Bronze', 'bronze_bar', 1, 1, 4, 2],
+  ['iron', 'Iron', 'iron_bar', 15, 10, 7, 3],
   ['steel', 'Steel', 'steel_bar', 30, 20, 10, 4],
   ['mithril', 'Mithril', 'mithril_bar', 55, 40, 18, 7],
   ['adamant', 'Adamant', 'adamantite_bar', 70, 60, 28, 11],
@@ -695,8 +696,9 @@ const MONSTER_LIST = [
   ['lich_king', 'Lich King', '🧙', 450, 1650, ['phylactery', 'soul_gem']],
   ['elder_dragon', 'Elder Dragon', '🐲', 500, 1900, ['elder_heart', 'ancient_scale'], { item: 'dragon_egg', chance: 1 / 200 }],
 ];
-// Gear someone at level L would usually have: the best metal they can wear.
-const metalFor = (level) => [...METALS].reverse().find((m) => m[4] <= level);
+// Gear someone at level L would usually have: the best metal they can wear. (Iron was added later as
+// a stepping stone; monsters are still balanced around bronze until steel, so they don't get harder.)
+const metalFor = (level) => [...METALS].reverse().find((m) => m[4] <= level && m[0] !== 'iron');
 SKILLS.swords.monsters = MONSTER_LIST.map(([id, name, icon, level, xp, loot, rare]) => {
   const m = metalFor(level);
   const fullSetDefence = PIECES.reduce((sum, p) => sum + Math.round(m[6] * p[5]), 0);

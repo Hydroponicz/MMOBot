@@ -2377,3 +2377,17 @@ test('sell prices drop with channel-wide selling and recover over time; !price s
   assert.equal(engine.sellValue('shark', u.id), Math.max(1, Math.round(base * 0.35)));
   assert.match(say('!price rabbit pet'), /no item|can't be sold/);
 });
+
+test('iron gear sits between bronze and steel and is smithed from iron ingots', () => {
+  const { repo, say } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addItem(u.id, 'smithing_hammer', 1);
+  repo.addItem(u.id, 'iron_bar', 2);
+  assert.match(say('!smith iron sword'), /Smithing level 15/);
+  repo.addXp(u.id, 'smithing', xpForLevel(15));
+  assert.match(say('!smith iron sword'), /smithed 🗡️ Iron Sword!/);
+  assert.equal(repo.getInventory(u.id).iron_bar ?? 0, 0);
+  const { ITEMS } = require('../src/game/skills');
+  assert.ok(ITEMS.bronze_sword.attack < ITEMS.iron_sword.attack && ITEMS.iron_sword.attack < ITEMS.steel_sword.attack);
+  assert.equal(ITEMS.iron_platebody.level, 10);
+});

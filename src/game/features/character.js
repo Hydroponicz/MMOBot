@@ -6,7 +6,7 @@ const { skillLevel, fmt } = require('./shared');
 
 // Colors of gear materials, for drawing worn gear on the portrait.
 const MATERIAL = {
-  bronze: '#b87333', steel: '#a9b3bd', mithril: '#6f8fd6', adamant: '#3fa06a', rune: '#3fb6c9',
+  bronze: '#b87333', iron: '#7c7f86', steel: '#a9b3bd', mithril: '#6f8fd6', adamant: '#3fa06a', rune: '#3fb6c9',
   obsidian: '#4a4452', orichalcum: '#d9a441', dragonite: '#c0392b', void: '#5b2d8c', celestial: '#f3e6a0',
   dwarven: '#8d99a6', orcish: '#6b5d4f', knights: '#c9ced6', elven: '#c9e6a0', soul: '#5ff2e6',
 };
