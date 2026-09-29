@@ -5,7 +5,7 @@
 // Economy: heists move points from richer to poorer players and destroy a cut of every heist and
 // fine; guards are a voluntary sink that costs the rich more. Arena rewards come from entry fees
 // (a cut is destroyed). Guild wars pay in XP, not points.
-const { ITEMS, SKILLS, fmt, skillLevel, minutesLeft } = require('./shared');
+const { fmt, skillLevel, minutesLeft } = require('./shared');
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -13,34 +13,6 @@ const DAY = 24 * HOUR;
 const MAX_GUARDS = 3;
 
 module.exports = {
-  // ---- Shared fight ---------------------------------------------------------------------------
-  // Both players fight with their best weapon on a copy of their HP (nobody is hurt or knocked out).
-  pvpFighter(userId) {
-    const pick = this.chooseWeapon(userId);
-    const level = pick.weapon ? pick.level : this.combatLevel(userId);
-    const stats = pick.weapon ? this.fightStats(userId, pick) : { attack: 0, defence: this.combatStats(userId).defence };
-    const skill = pick.weapon ? SKILLS[pick.skillId].name : 'Fists';
-    return { id: userId, level, stats, hp: this.vitals(userId).maxHp, label: `${skill} ${level}${pick.weapon ? `, ${ITEMS[pick.weapon].name}` : ''}` };
-  },
-
-  // { winner, loser, rounds, a, b } (winner null = draw). a and b are the fighters.
-  pvpFight(aId, bId) {
-    const fa = this.pvpFighter(aId);
-    const fb = this.pvpFighter(bId);
-    const hit = (att, def) =>
-      Math.max(1, Math.round((att.level + att.stats.attack) * (0.5 + 0.5 * this.rng()) * (1 - def.stats.defence / (def.stats.defence + 100))));
-    let [x, y] = this.rng() < 0.5 ? [fa, fb] : [fb, fa];
-    let rounds = 0;
-    while (fa.hp > 0 && fb.hp > 0 && rounds < 500) {
-      y.hp -= hit(x, y);
-      [x, y] = [y, x];
-      rounds++;
-    }
-    if (fa.hp > 0 && fb.hp > 0) return { winner: null, loser: null, rounds, a: fa, b: fb };
-    const [winner, loser] = fa.hp > 0 ? [fa, fb] : [fb, fa];
-    return { winner, loser, rounds, a: fa, b: fb };
-  },
-
   pvpState(key, fallback) {
     return this.repo.getSetting(key) || fallback;
   },
@@ -72,7 +44,10 @@ module.exports = {
       fencePct: c.heistFencePct ?? 0.2,
       finePct: c.heistFinePct ?? 0.05,
       maxFine: c.heistMaxFine ?? 10000,
-      baseChance: c.heistBaseChance ?? 0.4,
+      stealthBase: c.heistStealthBase ?? 0.45,
+      stealthPerLevel: c.heistStealthPerLevel ?? 0.004,
+      mugPct: c.heistMugPct ?? 0.5,
+      guardFight: c.heistGuardFightBonus ?? 0.15,
       protectMinutes: c.heistProtectMinutes ?? 60,
       jailMinutes: c.heistJailMinutes ?? 30,
       sameTargetHours: c.heistSameTargetHours ?? 6,
@@ -100,12 +75,23 @@ module.exports = {
     return level * Math.max(500, Math.round(pts * this.heistCfg().guardPct));
   },
 
-  // Chance that robber takes from victim: better Agility than the victim helps, guards hurt.
+  // Stealth: the chance to rob someone without being noticed. Your Agility against theirs decides it
+  // (+0.4% per level you're ahead); each guard they've hired cuts it by 12%. Always 5% to 90%.
   heistChance(robberId, victimId) {
     const hc = this.heistCfg();
     const diff = this.agilityLevel(robberId) - this.agilityLevel(victimId);
-    const chance = hc.baseChance + diff * 0.002 - this.guardLevel(victimId) * 0.12;
-    return Math.min(0.75, Math.max(0.1, chance));
+    const chance = hc.stealthBase + diff * hc.stealthPerLevel - this.guardLevel(victimId) * 0.12;
+    return Math.min(0.9, Math.max(0.05, chance));
+  },
+
+  // The two sides if a heist turns into a fight: the robber on their real HP, the victim fresh (they
+  // may be offline) and backed up by their guards (+15% attack and defence each).
+  heistFighters(robberId, victimId) {
+    const g = 1 + this.guardLevel(victimId) * this.heistCfg().guardFight;
+    return {
+      robber: this.pvpCombatant(robberId, { realHp: true }),
+      victim: this.pvpCombatant(victimId, { bonus: { attack: g, defence: g } }),
+    };
   },
 
   // How much a successful heist on this victim would take (before the fence's cut).
@@ -143,29 +129,51 @@ module.exports = {
     const tired = this.staminaCheck(user, now);
     if (tired !== null) return tired || null;
 
+    const vit = this.vitals(user.id, now);
+    if (vit.ko) return `you're knocked out and can't rob anyone right now. ${this.knockedOutMessage(user.id, vit, now)}`;
+
     const chance = this.heistChance(user.id, target.id);
     const guards = this.guardLevel(target.id, now);
-    const success = this.rng() < chance;
+    const sneaky = this.rng() < chance;
+    // Spotted: robber and victim fight it out (see pvpCombat.js). The victim strikes first.
+    const fight = sneaky ? null : (() => {
+      const f = this.heistFighters(user.id, target.id);
+      return this.pvpCombat(f.robber, f.victim, { firstStrike: 'b', maxRounds: 60 });
+    })();
+    const won = sneaky || fight.winner?.id === user.id;
+    const guardText = guards ? ` and ${guards} guard${guards > 1 ? 's' : ''}` : '';
     let reply;
     this.repo.transaction(() => {
       this.spendStamina(user, now);
       this.repo.setActionAt(user.id, now);
       mine.last = Object.fromEntries(Object.entries({ ...(mine.last || {}), [target.id]: now }).filter(([, at]) => now - at < hc.sameTargetHours * HOUR));
-      if (success) {
-        const take = Math.min(this.heistTake(target.id), hc.dailyLoot ? Math.ceil((hc.dailyLoot - mine.looted) / (1 - hc.fencePct)) : Infinity);
-        mine.looted += take - Math.floor(take * hc.fencePct);
+      // The robber keeps the damage they took (never below 1 HP: a lost fight leaves them beaten up,
+      // not knocked out).
+      if (fight) this.repo.setVitals(user.id, { hp: Math.max(1, fight.a.hp), mana: vit.mana, koUntil: 0 }, now);
+      const fightText = fight ? ` (${fight.a.label} vs ${fight.b.label}${guardText}, ${fight.rounds} rounds, ❤️ ${Math.max(1, Math.ceil(fight.a.hp))}/${fight.a.maxHp} HP left)` : '';
+      if (won) {
+        // Sneaking in takes the full amount; fighting your way out takes mugPct of it.
+        const full = this.heistTake(target.id) * (sneaky ? 1 : hc.mugPct);
+        const take = Math.floor(Math.min(full, hc.dailyLoot ? Math.ceil((hc.dailyLoot - mine.looted) / (1 - hc.fencePct)) : Infinity));
         const fence = Math.floor(take * hc.fencePct);
+        mine.looted += take - fence;
         this.repo.addPoints(target.id, -take);
         this.repo.addPoints(user.id, take - fence);
         this.track('traded', take - fence);
         this.track('pvp', fence);
         theirs.protectedUntil = now + hc.protectMinutes * MIN;
         this.saveHeistInfo(target.id, theirs);
-        this.logHeist({ at: now, robber: user.username, victim: target.username, ok: true, amount: take });
+        this.logHeist({ at: now, robber: user.username, victim: target.username, ok: true, how: sneaky ? 'stealth' : 'fight', amount: take });
         this.guildWarScore(user.id, target.id, 2, 'heist');
-        this.notify(target.id, `🦹 ${user.username} robbed you for ${fmt(take)} pts! Hire ${p}guards to make it harder.`);
-        this.emitActivity(user, { kind: 'heist', text: `pulled off a heist on ${target.username} for ${fmt(take - fence)} pts! 🦹` });
-        reply = `🦹 heist on @${target.username} succeeded${guards ? ` (past ${guards} guard${guards > 1 ? 's' : ''})` : ''}! You got away with ${fmt(take - fence)} pts (the fence kept ${fmt(fence)}). Balance: ${fmt(this.repo.getUser(user.id).points)}`;
+        this.notify(target.id, sneaky ? `🦹 ${user.username} snuck in and robbed you for ${fmt(take)} pts! Train 🏃 Agility or ${p}hire guards.` : `🦹 ${user.username} fought past you${guardText} and took ${fmt(take)} pts! Better gear, levels or ${p}hire guards help.`);
+        this.emitActivity(user, { kind: 'heist', text: sneaky ? `snuck into ${target.username}'s vault and took ${fmt(take - fence)} pts! 🦹` : `beat ${target.username} in a fight and made off with ${fmt(take - fence)} pts! 🦹` });
+        reply = sneaky
+          ? `🦹 you slipped past @${target.username}${guards ? ` and ${guards} guard${guards > 1 ? 's' : ''}` : ''} unseen and got away with ${fmt(take - fence)} pts (the fence kept ${fmt(fence)}). Balance: ${fmt(this.repo.getUser(user.id).points)}`
+          : `⚔️ @${target.username} spotted you, but you won the fight${fightText} and grabbed ${fmt(take - fence)} pts (the fence kept ${fmt(fence)}). Balance: ${fmt(this.repo.getUser(user.id).points)}`;
+      } else if (!fight.winner) {
+        this.logHeist({ at: now, robber: user.username, victim: target.username, ok: false, how: 'escaped', amount: 0 });
+        this.notify(target.id, `🛡️ ${user.username} tried to rob you, but you fought them off.`);
+        reply = `⚔️ @${target.username} spotted you and neither of you could land the finishing blow${fightText}. You got away empty-handed.`;
       } else {
         const fine = Math.min(hc.maxFine, Math.max(100, Math.floor(me.points * hc.finePct)), me.points);
         const toVictim = Math.floor(fine / 2);
@@ -173,10 +181,11 @@ module.exports = {
         this.repo.addPoints(target.id, toVictim);
         this.track('pvp', fine - toVictim);
         mine.jailUntil = now + hc.jailMinutes * MIN;
-        this.logHeist({ at: now, robber: user.username, victim: target.username, ok: false, amount: fine });
-        this.notify(target.id, `🛡️ ${user.username} tried to rob you and got caught. You got ${fmt(toVictim)} pts of their fine.`);
-        this.emitActivity(user, { kind: 'heist', text: `got caught trying to rob ${target.username} 🚔` });
-        reply = `🚔 caught robbing @${target.username}${guards ? ` by their ${guards} guard${guards > 1 ? 's' : ''}` : ''}! Fined ${fmt(fine)} pts (half goes to them) and you're lying low for ${hc.jailMinutes}m. Your odds were ${Math.round(chance * 100)}%.`;
+        this.logHeist({ at: now, robber: user.username, victim: target.username, ok: false, how: 'caught', amount: fine });
+        this.guildWarScore(target.id, user.id, 1, 'defence');
+        this.notify(target.id, `🛡️ ${user.username} tried to rob you and lost the fight${guardText}. You got ${fmt(toVictim)} pts of their fine.`);
+        this.emitActivity(user, { kind: 'heist', text: `got beaten up trying to rob ${target.username} 🚔` });
+        reply = `🚔 @${target.username} caught you and won the fight${fightText}! Fined ${fmt(fine)} pts (half to them) and you're lying low for ${hc.jailMinutes}m. Stealth odds were ${Math.round(chance * 100)}%.`;
       }
       this.saveHeistInfo(user.id, mine);
     });
@@ -201,7 +210,7 @@ module.exports = {
     const want = Number.parseInt(args[0], 10);
     if (!want) {
       const prices = [1, 2, 3].map((n) => `${n}: ${fmt(this.guardPrice(user.id, n))}`).join(', ');
-      return `🛡️ ${have ? `${have} guard${have > 1 ? 's' : ''} on duty for ${minutesLeft(info.guardsUntil - now)}` : 'no guards on duty'}. Each guard cuts robbers' odds by 12% for 24h. ${p}hire <1-3> hires them (pts: ${prices}).`;
+      return `🛡️ ${have ? `${have} guard${have > 1 ? 's' : ''} on duty for ${minutesLeft(info.guardsUntil - now)}` : 'no guards on duty'}. Each guard cuts robbers' stealth by 12% and fights beside you (+15% attack and defence) for 24h. ${p}hire <1-3> hires them (pts: ${prices}).`;
     }
     if (want < 1 || want > MAX_GUARDS) return `you can hire 1 to ${MAX_GUARDS} guards.`;
     const cost = this.guardPrice(user.id, want);
@@ -213,7 +222,7 @@ module.exports = {
       this.saveHeistInfo(user.id, { ...info, guards: want, guardsUntil: now + DAY });
       return null;
     });
-    return refused || `🛡️ hired ${want} guard${want > 1 ? 's' : ''} for 24h (${fmt(cost)} pts). Robbers' odds against you: -${want * 12}%.`;
+    return refused || `🛡️ hired ${want} guard${want > 1 ? 's' : ''} for 24h (${fmt(cost)} pts). Robbers' stealth -${want * 12}%, and they'll fight beside you.`;
   },
 
   // The richest players, their guards and whether they can be robbed right now (website).
@@ -233,6 +242,7 @@ module.exports = {
           guards: this.guardLevel(u.id, now),
           protectedFor: h.protectedUntil > now ? h.protectedUntil - now : 0,
           chance: viewerId && viewerId !== u.id ? Math.round(this.heistChance(viewerId, u.id) * 100) : null,
+          fight: viewerId && viewerId !== u.id ? (({ robber, victim }) => this.pvpOutlook(robber, victim))(this.heistFighters(viewerId, u.id)) : null,
         };
       });
   },
@@ -456,7 +466,7 @@ module.exports = {
         me: viewerId
           ? { guards: this.guardLevel(viewerId, now), guardsUntil: h.guardsUntil, jailFor: h.jailUntil > now ? h.jailUntil - now : 0, guardPrices: [1, 2, 3].map((n) => this.guardPrice(viewerId, n)) }
           : null,
-        cfg: (({ stealPct, maxSteal, fencePct, finePct, protectMinutes, jailMinutes, minTarget }) => ({ stealPct, maxSteal, fencePct, finePct, protectMinutes, jailMinutes, minTarget }))(this.heistCfg()),
+        cfg: (({ stealPct, maxSteal, fencePct, finePct, protectMinutes, jailMinutes, minTarget, mugPct, guardFight, stealthBase }) => ({ stealPct, maxSteal, fencePct, finePct, protectMinutes, jailMinutes, minTarget, mugPct, guardFight, stealthBase }))(this.heistCfg()),
       },
       arena: { on: this.arenaCfg().on, pot: a.pot, fee: this.arenaCfg().fee, perDay: this.arenaCfg().perDay, ladder: this.arenaLadder(20), last: this.pvpState('arena_last', null), me: me ? { rating: me.r, wins: me.w, losses: me.l } : null },
       war: { on: this.cfg.guildWarsEnabled !== false, standings: this.guildWarStandings(), last: this.pvpState('guildwar_last', null), bonus: this.cfg.guildWarXpBonus ?? 0.05 },

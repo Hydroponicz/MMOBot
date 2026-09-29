@@ -1830,7 +1830,7 @@
       {
         id: 'pvp', tab: 'rewards', icon: '⚔️', title: 'PvP: heists, arena, guild wars', summary: 'Rob the rich, climb the ladder, win the war',
         body: list([
-          `<b>Heists:</b> ${c('rob @name')} (1 stamina) tries to rob a player richer than you. Pull it off and you take a small share of their points (the fence keeps a cut); get caught and you pay a fine, half of it to them, and lie low for a while. Your 🏃 Agility against theirs sets the odds. ${c('hire 2')} hires guards for 24h (priced by how much you hold) that cut robbers' odds.`,
+          `<b>Heists:</b> ${c('rob @name')} (1 stamina) tries to rob a player richer than you. First a 🥷 stealth check, your 🏃 Agility against theirs: pass it and you take a small share of their points. Fail and you ⚔️ fight them (combat level, weapon skill and gear on both sides, you on your current HP): win and you grab half as much, lose and you're left on 1 HP, fined (half to them) and lying low for a while. The fence keeps a cut of every haul. ${c('hire 2')} hires guards for 24h (priced by how much you hold) that cut robbers' odds.`,
           `<b>Ranked arena:</b> ${c('arena')} fights the player closest to your rating with both of your best gear (they don't need to be online). A small entry fee goes into the weekly pot; on Monday the top 3 split it and #1 is the Arena Champion. ${c('arena top')} shows the ladder.`,
           `<b>Guild wars:</b> guilds score war points each week when members beat other guilds' members (arena win 3, heist 2, duel 1). The winning guild gets bonus XP all next week. ${c('war')} shows the standings.`,
           'Everything is on the <a href="#/pvp">PvP</a> page.',

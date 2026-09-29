@@ -26,48 +26,99 @@ function setup({ rolls = [], game = {} } = {}) {
   return { repo, engine, say, user, tick, queue, now: () => t };
 }
 
-test('heists: rob richer players; the fence takes a cut; the victim is safe for a while', () => {
-  const s = setup({ rolls: [0.01] }); // success
+test('heists: a successful stealth check robs without a fight; the fence takes a cut; the victim is safe for a while', () => {
+  const s = setup({ rolls: [0.01] }); // stealth succeeds
   const rich = s.user('Rich', 100_000);
   const thief = s.user('Thief', 1_000);
   assert.match(s.say('!rob @Nobody', 'Thief'), /no adventurer/);
   assert.match(s.say('!rob @Thief', 'Rich'), /only rob players richer than you/);
   const reply = s.say('!rob @Rich', 'Thief');
   // 3% of 100,000 = 3,000; the fence keeps 20% (600).
-  assert.match(reply, /heist on @Rich succeeded! You got away with 2,400 pts \(the fence kept 600\)/);
+  assert.match(reply, /slipped past @Rich unseen and got away with 2,400 pts \(the fence kept 600\)/);
   assert.equal(s.repo.getUser(rich.id).points, 97_000);
   assert.equal(s.repo.getUser(thief.id).points, 3_400);
-  const other = s.user('Other', 10);
+  assert.equal(s.engine.vitals(thief.id).hp, s.engine.vitals(thief.id).maxHp, 'no fight, no damage');
+  s.user('Other', 10);
   assert.match(s.say('!rob @Rich', 'Other'), /was robbed recently and is on guard/);
   s.tick(61 * 60_000);
   assert.match(s.say('!rob @Rich', 'Thief'), /robbed @Rich not long ago/);
-  assert.equal(s.engine.pvpPage().heists.log[0].robber, 'Thief');
-  assert.match(s.repo.notifications?.(rich.id)?.[0]?.text ?? 'robbed you', /robbed you/);
-  void other;
+  assert.equal(s.engine.pvpPage().heists.log[0].how, 'stealth');
 });
 
-test('heists: getting caught costs a fine (half to the victim) and a cool-off; guards lower the odds', () => {
-  const s = setup({ rolls: [0.99] }); // caught
+test('heists: stealth is Agility against Agility, minus guards', () => {
+  const s = setup();
   const rich = s.user('Rich', 200_000);
   const thief = s.user('Thief', 10_000);
-  assert.equal(s.engine.heistChance(thief.id, rich.id), 0.4);
-  const reply = s.say('!rob @Rich', 'Thief');
-  // Fine: 5% of 10,000 = 500; 250 to Rich, 250 removed.
-  assert.match(reply, /caught robbing @Rich! Fined 500 pts .* lying low for 30m/);
-  assert.equal(s.repo.getUser(thief.id).points, 9_500);
-  assert.equal(s.repo.getUser(rich.id).points, 200_250);
-  assert.match(s.say('!rob @Rich', 'Thief'), /lying low after a failed heist/);
-
-  // Guards: 0.5% of what you hold per guard per day (min 500).
-  assert.match(s.say('!guards', 'Rich'), /no guards on duty.*1: 1,001, 2: 2,002, 3: 3,003/);
+  assert.equal(s.engine.heistChance(thief.id, rich.id), 0.45);
+  s.repo.addXp(thief.id, 'agility', xpForLevel(51));
+  assert.equal(Math.round(s.engine.heistChance(thief.id, rich.id) * 100), 65, '+0.4% per level ahead');
+  s.repo.addXp(rich.id, 'agility', xpForLevel(51));
+  assert.equal(s.engine.heistChance(thief.id, rich.id), 0.45, 'even again');
+  // Guards: 0.5% of what you hold per guard per day (min 500); -12% stealth each.
+  assert.match(s.say('!guards', 'Rich'), /no guards on duty.*1: 1,000, 2: 2,000, 3: 3,000/);
   assert.match(s.say('!hire', 'Rich'), /no guards on duty.*!hire <1-3> hires them/);
-  assert.match(s.say('!hire 2 guards', 'Rich'), /hired 2 guards for 24h \(2,002 pts\)/);
-  assert.equal(Math.round(s.engine.heistChance(thief.id, rich.id) * 100), 16);
-  // Agility helps robbers: +0.2% per level above the victim.
-  s.repo.addXp(thief.id, 'agility', xpForLevel(101));
-  assert.equal(Math.round(s.engine.heistChance(thief.id, rich.id) * 100), 36);
+  assert.match(s.say('!hire 2 guards', 'Rich'), /hired 2 guards for 24h \(2,000 pts\)/);
+  assert.equal(Math.round(s.engine.heistChance(thief.id, rich.id) * 100), 21);
   s.tick(DAY + 1);
   assert.equal(s.engine.guardLevel(rich.id), 0, 'guards leave after 24h');
+});
+
+test('heists: spotted robbers fight the victim; winning takes half, losing costs a fine and HP', () => {
+  // Stealth fails (0.99); every swing after that hits hard (0.99).
+  const s = setup({ rolls: [0.99] });
+  const rich = s.user('Rich', 100_000);
+  const thief = s.user('Thief', 10_000);
+  s.repo.addXp(thief.id, 'swords', xpForLevel(40));
+  s.repo.addItem(thief.id, 'steel_sword', 1);
+  const reply = s.say('!rob @Rich', 'Thief');
+  // Half of 3,000 = 1,500; the fence keeps 300.
+  assert.match(reply, /@Rich spotted you, but you won the fight \(Swords 40, Steel Sword vs Fists 1, \d+ rounds, ❤️ \d+\/\d+ HP left\) and grabbed 1,200 pts \(the fence kept 300\)/);
+  assert.equal(s.repo.getUser(rich.id).points, 98_500);
+  assert.ok(s.engine.vitals(thief.id).hp < s.engine.vitals(thief.id).maxHp, 'the robber keeps their wounds');
+  assert.equal(s.engine.pvpPage().heists.log[0].how, 'fight');
+
+  // A weak robber against a strong victim: caught, fined, beaten up (1 HP, not knocked out).
+  const s2 = setup({ rolls: [0.99] });
+  const boss = s2.user('Boss', 200_000);
+  const kid = s2.user('Kid', 10_000);
+  s2.repo.addXp(boss.id, 'swords', xpForLevel(60));
+  s2.repo.addItem(boss.id, 'mithril_sword', 1);
+  assert.equal(s2.engine.pvpPage(kid.id).heists.mostWanted[0].fight, 'hopeless');
+  const lost = s2.say('!rob @Boss', 'Kid');
+  // Fine: 5% of 10,000 = 500; 250 to Boss, 250 removed.
+  assert.match(lost, /@Boss caught you and won the fight .*Fined 500 pts \(half to them\) and you're lying low for 30m/);
+  assert.equal(s2.repo.getUser(kid.id).points, 9_500);
+  assert.equal(s2.repo.getUser(boss.id).points, 200_250);
+  const v = s2.engine.vitals(kid.id);
+  assert.equal(v.hp, 1);
+  assert.equal(v.ko, false);
+  assert.equal(s2.engine.vitals(boss.id).hp, s2.engine.vitals(boss.id).maxHp, "the victim isn't hurt (they may be offline)");
+  assert.match(s2.say('!rob @Boss', 'Kid'), /lying low after a failed heist/);
+});
+
+test('pvp combat core: combat level sets accuracy, weapon skill and gear set damage, guards back up victims', () => {
+  const s = setup();
+  const a = s.user('Ann');
+  const b = s.user('Bob');
+  const ca = s.engine.pvpCombatant(a.id);
+  const cb = s.engine.pvpCombatant(b.id);
+  assert.equal(s.engine.pvpAccuracy(ca, cb), 0.75);
+  s.repo.addXp(a.id, 'swords', xpForLevel(51));
+  s.repo.addItem(a.id, 'bronze_sword', 1);
+  const strong = s.engine.pvpCombatant(a.id);
+  assert.equal(strong.combatLevel, 51);
+  assert.equal(strong.skillLevel, 51);
+  assert.ok(strong.attack > 0);
+  assert.equal(s.engine.pvpAccuracy(strong, cb), 0.95);
+  assert.equal(s.engine.pvpAccuracy(cb, strong), 0.55);
+  assert.equal(s.engine.pvpOutlook(strong, cb), 'favoured');
+  assert.equal(s.engine.pvpOutlook(cb, strong), 'hopeless');
+  // Guards make a victim tougher in a heist fight.
+  s.repo.addPoints(b.id, 100_000);
+  const before = s.engine.heistFighters(a.id, b.id).victim;
+  s.say('!hire 3', 'Bob');
+  const after = s.engine.heistFighters(a.id, b.id).victim;
+  assert.ok(after.maxHp === before.maxHp && after.defence >= before.defence);
 });
 
 test('heists respect the trading rules for new players and can be switched off', () => {
@@ -114,7 +165,7 @@ test('guild wars: PvP wins against other guilds score; the winner gets bonus XP 
   const b = s.user('Bob', 200_000);
   s.engine.guildCreate(s.repo.getUser(a.id), 'Iron Wolves', 'IW');
   s.engine.guildCreate(s.repo.getUser(b.id), 'Gold Crows', 'GC');
-  assert.match(s.say('!rob @Bob', 'Ann'), /succeeded/);
+  assert.match(s.say('!rob @Bob', 'Ann'), /slipped past @Bob unseen/);
   assert.match(s.say('!war', 'Ann'), /1\. \[IW\] 2/);
   const iw = s.repo.guildOf(a.id);
   assert.equal(s.engine.guildWarXp(a.id), 1);

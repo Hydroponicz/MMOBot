@@ -9,6 +9,7 @@
       return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
     };
     const pct = (x) => `${Math.round(x * 100)}%`;
+    const FIGHT = { favoured: '<span style="color:var(--accent)">favoured</span>', even: 'even', risky: '<span style="color:var(--gold)">risky</span>', hopeless: '<span style="color:var(--danger)">hopeless</span>' };
 
     const post = async (path, body) => {
       try {
@@ -35,7 +36,7 @@
             <td class="num">${fmt(w.points)}</td>
             <td class="num">${fmt(w.take)}</td>
             <td>${w.guards ? '🛡️'.repeat(w.guards) : '<span class="muted">none</span>'}</td>
-            <td>${w.protectedFor ? `<span class="muted">on guard ${mins(w.protectedFor)}</span>` : me ? '<span class="muted">you</span>' : w.chance !== null ? `${w.chance}%` : ''}</td>
+            <td>${w.protectedFor ? `<span class="muted">on guard ${mins(w.protectedFor)}</span>` : me ? '<span class="muted">you</span>' : w.chance !== null ? `🥷 ${w.chance}% · ⚔️ ${FIGHT[w.fight] || ''}` : ''}</td>
             <td>${canTry ? `<button class="btn btn-sm btn-primary" data-rob="${esc(w.username)}">Rob</button>` : ''}</td>
           </tr>`;
         })
@@ -43,7 +44,7 @@
       const mine = h.me;
       return `<section class="panel">
         <div class="panel-head"><h2>🦹 Heists</h2>${loggedIn ? `<span class="badge gold">💰 ${fmt(d.points)} pts</span>` : ''}</div>
-        <p class="muted" style="margin-top:0">Rob players richer than you with <code>!rob @name</code> (1 stamina). Pull it off and you take ${pct(c.stealPct)} of their points (up to ${fmt(c.maxSteal)}); the fence keeps ${pct(c.fencePct)} of it. Get caught and you pay a fine of ${pct(c.finePct)} of your own points (half to them) and lie low for ${c.jailMinutes}m. A robbed player is safe for ${c.protectMinutes}m. Your 🏃 Agility against theirs sets the odds, and each guard they hire cuts them by 12%.</p>
+        <p class="muted" style="margin-top:0">Rob players richer than you with <code>!rob @name</code> (1 stamina). First a <b>🥷 stealth check</b>: your 🏃 Agility against theirs (each guard they hire cuts it by 12%). Slip in unseen and you take ${pct(c.stealPct)} of their points (up to ${fmt(c.maxSteal)}). If they spot you, you <b>⚔️ fight</b>: combat level, weapon skill and gear on both sides, you on your current HP, them backed up by their guards (+${pct(c.guardFight)} attack and defence each). Win and you grab ${pct(c.mugPct)} of the haul; lose and you're left on 1 HP, pay a fine of ${pct(c.finePct)} of your points (half to them) and lie low for ${c.jailMinutes}m. The fence keeps ${pct(c.fencePct)} of every haul. A robbed player is safe for ${c.protectMinutes}m.</p>
         ${
           mine
             ? `<div class="form-row" style="flex-wrap:wrap;align-items:center;margin-bottom:12px">
@@ -56,14 +57,23 @@
         <h3 style="margin:8px 0">Most wanted</h3>
         ${
           rows
-            ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Player</th><th class="num">Points</th><th class="num">A heist takes</th><th>Guards</th><th>${loggedIn ? 'Your odds' : ''}</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+            ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Player</th><th class="num">Points</th><th class="num">A heist takes</th><th>Guards</th><th>${loggedIn ? 'Stealth · if it comes to a fight' : ''}</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
             : `<div class="empty"><span class="ic">🦹</span>Nobody holds ${fmt(c.minTarget)}+ points yet.</div>`
         }
         <h3 style="margin:16px 0 8px">Recent heists</h3>
         ${
           h.log.length
             ? `<ul class="hall-list">${h.log
-                .map((l) => `<li>${l.ok ? '🦹' : '🚔'} <b>${esc(l.robber)}</b> ${l.ok ? `robbed <b>${esc(l.victim)}</b> for ${fmt(l.amount)} pts` : `got caught robbing <b>${esc(l.victim)}</b> (fined ${fmt(l.amount)})`} <span class="muted">${ago(l.at)}</span></li>`)
+                .map((l) => {
+                  const what = l.ok
+                    ? l.how === 'fight'
+                      ? `fought past <b>${esc(l.victim)}</b> and took ${fmt(l.amount)} pts`
+                      : `snuck in and robbed <b>${esc(l.victim)}</b> for ${fmt(l.amount)} pts`
+                    : l.how === 'escaped'
+                      ? `was fought off by <b>${esc(l.victim)}</b> and fled empty-handed`
+                      : `lost a fight robbing <b>${esc(l.victim)}</b> (fined ${fmt(l.amount)})`;
+                  return `<li>${l.ok ? (l.how === 'fight' ? '⚔️' : '🥷') : '🚔'} <b>${esc(l.robber)}</b> ${what} <span class="muted">${ago(l.at)}</span></li>`;
+                })
                 .join('')}</ul>`
             : '<p class="muted">No heists yet.</p>'
         }
