@@ -1,6 +1,6 @@
 // GameEngine methods: gathering stations (crab pots, ore drills, tree saplings, dig sites). The
-// farming loop for the other gathering skills: stations work on their own, and !collect gathers
-// what every ready station found for one stamina charge. Mixed into GameEngine.prototype by engine.js.
+// farming loop for the other gathering skills: stations work on their own, and !collect turns
+// what every ready station did into XP (no items or points) for one stamina charge. Mixed into GameEngine.prototype by engine.js.
 const { SKILLS } = require('../skills');
 const { STATIONS, MAX_STATIONS, STARTER_STATIONS } = require('../stations');
 const { fmt, skillLevel, minutesLeft } = require('./shared');
