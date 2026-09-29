@@ -1783,7 +1783,7 @@
       {
         id: 'pvp', tab: 'rewards', icon: '⚔️', title: 'PvP: heists, arena, guild wars', summary: 'Rob the rich, climb the ladder, win the war',
         body: list([
-          `<b>Heists:</b> ${c('rob @name')} (1 stamina) tries to rob a player richer than you. Pull it off and you take a small share of their points (the fence keeps a cut); get caught and you pay a fine, half of it to them, and lie low for a while. Your 🏃 Agility against theirs sets the odds. ${c('guards 2')} hires guards for 24h (priced by how much you hold) that cut robbers' odds.`,
+          `<b>Heists:</b> ${c('rob @name')} (1 stamina) tries to rob a player richer than you. Pull it off and you take a small share of their points (the fence keeps a cut); get caught and you pay a fine, half of it to them, and lie low for a while. Your 🏃 Agility against theirs sets the odds. ${c('hire 2')} hires guards for 24h (priced by how much you hold) that cut robbers' odds.`,
           `<b>Ranked arena:</b> ${c('arena')} fights the player closest to your rating with both of your best gear (they don't need to be online). A small entry fee goes into the weekly pot; on Monday the top 3 split it and #1 is the Arena Champion. ${c('arena top')} shows the ladder.`,
           `<b>Guild wars:</b> guilds score war points each week when members beat other guilds' members (arena win 3, heist 2, duel 1). The winning guild gets bonus XP all next week. ${c('war')} shows the standings.`,
           'Everything is on the <a href="#/pvp">PvP</a> page.',
@@ -1891,7 +1891,8 @@
         ['attack', 'Hit the raid boss (raid shows it)'],
         ['catch / grab', 'Claim a random event'],
         ['duel @name [bet]', 'Challenge a player (accept / decline)'],
-        ['rob @name', 'Heist a richer player (guards to protect yourself)'],
+        ['rob @name', 'Heist a richer player'],
+        ['hire [1-3]', 'Hire guards for 24h so robbers fail more'],
         ['arena', 'Ranked fight (arena top for the ladder)'],
         ['war', 'Guild war standings'],
         ['boost', 'Is an XP boost running?'],

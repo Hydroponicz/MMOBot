@@ -74,7 +74,7 @@ const INFO_COMMANDS = {
   catch: ['eventCatch', 'catch'], grab: ['eventCatch', 'catch'],
   raid: ['raidInfo', 'raid'], boss: ['raidInfo', 'raid'], attack: ['raidAttack', 'raid'],
   duel: ['duel', 'duel'], accept: ['duelAccept', 'duel'], decline: ['duelDecline', 'duel'],
-  rob: ['rob', 'rob'], heist: ['rob', 'rob'], guards: ['guards', 'rob'], guard: ['guards', 'rob'],
+  rob: ['rob', 'rob'], heist: ['rob', 'rob'], guards: ['guards', 'rob'], guard: ['guards', 'rob'], hire: ['guards', 'rob'],
   arena: ['arenaFight', 'arena'], ranked: ['arenaFight', 'arena'],
   war: ['guildWarInfo', 'war'], guildwar: ['guildWarInfo', 'war'], wars: ['guildWarInfo', 'war'],
   boost: ['boostInfo', 'boost'],

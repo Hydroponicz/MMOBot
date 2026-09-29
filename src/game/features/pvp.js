@@ -189,8 +189,9 @@ module.exports = {
     this.repo.setSetting('heist_log', log.slice(0, 30));
   },
 
-  // !guards [1-3]: shows your guards, or hires that many for 24 hours.
+  // !guards [1-3] (or !hire 2 / !hire 2 guards): shows your guards, or hires that many for 24 hours.
   guards(user, args = []) {
+    args = args.filter((a) => !/^guards?$/i.test(a));
     const hc = this.heistCfg();
     const p = this.cfg.prefix;
     if (!hc.on) return 'heists are switched off right now.';
@@ -200,7 +201,7 @@ module.exports = {
     const want = Number.parseInt(args[0], 10);
     if (!want) {
       const prices = [1, 2, 3].map((n) => `${n}: ${fmt(this.guardPrice(user.id, n))}`).join(', ');
-      return `🛡️ ${have ? `${have} guard${have > 1 ? 's' : ''} on duty for ${minutesLeft(info.guardsUntil - now)}` : 'no guards on duty'}. Each guard cuts robbers' odds by 12% for 24h. ${p}guards <1-3> hires them (pts: ${prices}).`;
+      return `🛡️ ${have ? `${have} guard${have > 1 ? 's' : ''} on duty for ${minutesLeft(info.guardsUntil - now)}` : 'no guards on duty'}. Each guard cuts robbers' odds by 12% for 24h. ${p}hire <1-3> hires them (pts: ${prices}).`;
     }
     if (want < 1 || want > MAX_GUARDS) return `you can hire 1 to ${MAX_GUARDS} guards.`;
     const cost = this.guardPrice(user.id, want);

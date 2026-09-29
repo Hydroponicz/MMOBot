@@ -60,7 +60,8 @@ test('heists: getting caught costs a fine (half to the victim) and a cool-off; g
 
   // Guards: 0.5% of what you hold per guard per day (min 500).
   assert.match(s.say('!guards', 'Rich'), /no guards on duty.*1: 1,001, 2: 2,002, 3: 3,003/);
-  assert.match(s.say('!guards 2', 'Rich'), /hired 2 guards for 24h \(2,002 pts\)/);
+  assert.match(s.say('!hire', 'Rich'), /no guards on duty.*!hire <1-3> hires them/);
+  assert.match(s.say('!hire 2 guards', 'Rich'), /hired 2 guards for 24h \(2,002 pts\)/);
   assert.equal(Math.round(s.engine.heistChance(thief.id, rich.id) * 100), 16);
   // Agility helps robbers: +0.2% per level above the victim.
   s.repo.addXp(thief.id, 'agility', xpForLevel(101));
