@@ -134,11 +134,14 @@ module.exports = {
     return this.activeBuffs(userId, now).haste ? ms / 2 : ms;
   },
 
-  // Refill-time multiplier from Agility: 0.1% faster per level, up to 25% faster (both settings).
-  // 25% faster refills = a third more actions per hour.
+  // Refill-time multiplier from Agility: 0.1% faster per level, up to half the time at the top (both
+  // settings): level 100 = 10% faster, 250 = 25%, 500 = 50% (twice the actions per hour).
   agilityRefill(userId) {
     const level = skillLevel('agility', this.repo.getSkills(userId).agility || 0);
-    return 1 - Math.min(this.cfg.agilityRefillMax ?? 0.25, Math.max(0, level - 1) * (this.cfg.agilityRefillPerLevel ?? 0.001));
+    const cap = this.cfg.agilityRefillMax ?? 0.5;
+    // (Level 500 gets the whole cap, not 49.9%.)
+    if (level >= (SKILLS.agility.maxLevel || 500)) return 1 - cap;
+    return 1 - Math.min(cap, Math.max(0, level - 1) * (this.cfg.agilityRefillPerLevel ?? 0.001));
   },
 
   // { charges, max, refillAt } (refillAt null = full).
@@ -191,7 +194,7 @@ module.exports = {
     const s = this.stamina(user.id);
     const bar = '⚡'.repeat(s.charges) + '▫️'.repeat(s.max - s.charges);
     const faster = Math.round((1 - this.agilityRefill(user.id) * (this.perks(user.id).refill ?? 1)) * 100);
-    return `stamina ${bar} ${s.charges}/${s.max}${s.refillAt ? ` · full again in ${this.waitText(s.refillAt - this.now())}` : ' · full!'}${faster > 0 ? ` · refills ${faster}% faster (!run trains Agility)` : ' · !run trains Agility for faster refills'}`;
+    return `stamina ${bar} ${s.charges}/${s.max}${s.refillAt ? ` · full again in ${this.waitText(s.refillAt - this.now())}` : ' · full!'}${faster > 0 ? ` · refills ${faster}% faster: a full bar in ${this.waitText(this.staminaRefillMs(user.id))} instead of ${this.waitText((this.cfg.staminaMinutes ?? 5) * 60_000)}` : ' · !run trains Agility for faster refills'}`;
   },
 
   // "🦴 Bone-Deep Focus 24m · 💀 Deathless 58m"

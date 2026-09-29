@@ -181,7 +181,7 @@ const FIELDS = {
     priceRecoveryHours: { type: 'number', label: 'Sell prices: recovery (hours)', help: 'Sell pressure halves every this many hours, so prices recover on their own.', min: 0.1, max: 720 },
     priceFloor: { type: 'number', label: 'Sell prices: lowest (0-1)', help: 'Prices never drop below this share of normal. 0.35 = 35%.', min: 0.01, max: 1 },
     agilityRefillPerLevel: { type: 'number', label: 'Agility: faster stamina refill per level', help: 'How much faster stamina refills per Agility level. 0.001 = 0.1% per level (10% faster at level 100).', min: 0, max: 0.05 },
-    agilityRefillMax: { type: 'number', label: 'Agility: most refill speed-up', help: 'The cap on the Agility speed-up. 0.25 = refills up to 25% faster (a third more actions per hour), reached at level 250 with the default rate.', min: 0, max: 0.9 },
+    agilityRefillMax: { type: 'number', label: 'Agility: most refill speed-up', help: 'The cap on the Agility speed-up. 0.5 = stamina refills in half the time (twice the actions per hour) at the top, reached at level 500 with the default rate.', min: 0, max: 0.9 },
     agilityShortcutChance: { type: 'number', label: 'Agility: shortcut chance', help: 'Chance an Agility lap costs no stamina (0.05 = 5%).', min: 0, max: 1 },
     stationXpBonus: { type: 'number', label: 'Gathering station XP multiplier', help: '!collect turns station work into XP only (no items, no points). 1.2 = 20% more XP than gathering the same things by hand.', min: 0, max: 10 },
     gatherBonusLevels: { type: 'int', label: 'Bigger gathering hauls every (levels)', help: 'Fishing, mining, woodcutting, digging and the like give +1 item (and its XP) per action for every this many levels: 2 at level 50, 3 at level 100. 0 turns it off.', min: 0, max: 1000 },
@@ -398,7 +398,7 @@ class Settings extends EventEmitter {
         seasonDays: config.game.seasonDays ?? 30,
         tradeDailyPoints: config.game.tradeDailyPoints ?? 10000,
       },
-      economy: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, growMultiplier: 1, agilityRefillPerLevel: config.game.agilityRefillPerLevel ?? 0.001, agilityRefillMax: config.game.agilityRefillMax ?? 0.25, agilityShortcutChance: config.game.agilityShortcutChance ?? 0.05, stationXpBonus: config.game.stationXpBonus ?? 1.2, gatherBonusLevels: config.game.gatherBonusLevels ?? 50, plotsPerStamina: config.game.plotsPerStamina ?? 25, fireMealsBase: config.game.fireMealsBase ?? 10, fireMealsPerLevels: config.game.fireMealsPerLevels ?? 2, plotPriceGrowth: config.game.plotPriceGrowth ?? 1.12, priceSupplyScale: config.game.priceSupplyScale ?? 25000, priceRecoveryHours: config.game.priceRecoveryHours ?? 6, priceFloor: config.game.priceFloor ?? 0.35, petDropMultiplier: config.game.petDropMultiplier ?? 1, marketFee: config.game.marketFee ?? 0.05 },
+      economy: { xpMultiplier: 1, pointsMultiplier: 1, sellMultiplier: 1, growMultiplier: 1, agilityRefillPerLevel: config.game.agilityRefillPerLevel ?? 0.001, agilityRefillMax: config.game.agilityRefillMax ?? 0.5, agilityShortcutChance: config.game.agilityShortcutChance ?? 0.05, stationXpBonus: config.game.stationXpBonus ?? 1.2, gatherBonusLevels: config.game.gatherBonusLevels ?? 50, plotsPerStamina: config.game.plotsPerStamina ?? 25, fireMealsBase: config.game.fireMealsBase ?? 10, fireMealsPerLevels: config.game.fireMealsPerLevels ?? 2, plotPriceGrowth: config.game.plotPriceGrowth ?? 1.12, priceSupplyScale: config.game.priceSupplyScale ?? 25000, priceRecoveryHours: config.game.priceRecoveryHours ?? 6, priceFloor: config.game.priceFloor ?? 0.35, petDropMultiplier: config.game.petDropMultiplier ?? 1, marketFee: config.game.marketFee ?? 0.05 },
       disabledCommands: [],
     };
     for (const [key, t] of Object.entries(TABLES)) {
@@ -407,6 +407,14 @@ class Settings extends EventEmitter {
         ...Object.fromEntries(Object.keys(t.columns).map((c) => [c, row[c]])),
       }));
     }
+    // The Agility refill cap went from 25% to 50% (high Agility halves the refill time). Economy
+    // settings saved while the old default was in place still hold 0.25: move them up once.
+    const saved = this.repo.getSetting('config_overrides');
+    if (saved?.economy?.agilityRefillMax === 0.25 && !this.repo.getSetting('migrated:agility_cap')) {
+      saved.economy.agilityRefillMax = 0.5;
+      this.repo.setSetting('config_overrides', saved);
+    }
+    if (!this.repo.getSetting('migrated:agility_cap')) this.repo.setSetting('migrated:agility_cap', true);
     this.reload();
   }
 

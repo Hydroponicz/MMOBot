@@ -2459,7 +2459,7 @@ test('agility: !run laps courses for XP (no items), and levels make stamina refi
   assert.equal(engine.staminaRefillMs(u.id), base * 0.9, '10% faster at level 101');
   assert.match(say('!stamina'), /refills 10% faster/);
   repo.addXp(u.id, 'agility', xpForLevel(500));
-  assert.equal(engine.staminaRefillMs(u.id), base * 0.75, 'capped at 25%');
+  assert.equal(engine.staminaRefillMs(u.id), base * 0.5, 'half the time at 500');
   // !agility works too.
   tick(600);
   assert.match(say('!agility rooftops'), /Village Rooftops/);
@@ -2519,4 +2519,17 @@ test('houses: end-game homes add stamina charges, need a character level and go 
   engine.cfg.housesEnabled = true;
   engine.settings.all.houses = [{ id: 'manor', cost: 0 }];
   assert.equal(engine.houseInfo(u.id).houses[2].forSale, false);
+});
+
+test('agility XP is saved for players from before the skill existed; top Agility halves the refill time', () => {
+  const { repo, engine } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  // Simulate a player whose skill rows predate Agility.
+  repo.addXp(u.id, 'agility', 0);
+  const before = repo.getSkills(u.id).agility;
+  repo.addXp(u.id, 'agility', 500);
+  assert.equal(repo.getSkills(u.id).agility, before + 500);
+  const base = (engine.cfg.staminaMinutes ?? 5) * 60_000;
+  repo.addXp(u.id, 'agility', xpForLevel(500));
+  assert.equal(engine.staminaRefillMs(u.id), base * 0.5, 'half the time at the top');
 });

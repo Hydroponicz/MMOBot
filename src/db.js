@@ -258,6 +258,10 @@ function openDb(dbPath) {
 
 // Columns added after the first release. Safe to run on every start.
 function migrate(db) {
+  // Every player needs a row per skill, or XP for skills added later (Agility) isn't saved until
+  // their next chat message creates it.
+  const addSkill = db.prepare('INSERT OR IGNORE INTO skills (user_id, skill, xp) SELECT id, ?, 0 FROM users');
+  for (const skill of SKILL_IDS) addSkill.run(skill);
   const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
   if (!cols.includes('last_farm_at')) db.exec('ALTER TABLE users ADD COLUMN last_farm_at INTEGER NOT NULL DEFAULT 0');
   // Health and mana: NULL means full. *_at is when the value was last written (regen counts from there).
@@ -301,7 +305,8 @@ function createRepo(db) {
     ),
     insertSkill: db.prepare('INSERT OR IGNORE INTO skills (user_id, skill, xp) VALUES (?, ?, 0)'),
     skills: db.prepare('SELECT skill, xp FROM skills WHERE user_id = ?'),
-    addXp: db.prepare('UPDATE skills SET xp = xp + ? WHERE user_id = ? AND skill = ?'),
+    // An upsert, so XP is never lost if a player's row for a newer skill doesn't exist yet.
+    addXp: db.prepare('INSERT INTO skills (user_id, skill, xp) VALUES (?2, ?3, ?1) ON CONFLICT(user_id, skill) DO UPDATE SET xp = xp + excluded.xp'),
     inventory: db.prepare('SELECT item, qty FROM inventory WHERE user_id = ? AND qty > 0 ORDER BY item'),
     itemQty: db.prepare('SELECT qty FROM inventory WHERE user_id = ? AND item = ?'),
     addItem: db.prepare(

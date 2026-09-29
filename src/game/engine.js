@@ -428,7 +428,7 @@ class GameEngine extends EventEmitter {
       fireMealsPerLevels: this.cfg.fireMealsPerLevels ?? 2,
       stationXpBonus: this.cfg.stationXpBonus ?? 1.2,
       agilityRefillPerLevel: this.cfg.agilityRefillPerLevel ?? 0.001,
-      agilityRefillMax: this.cfg.agilityRefillMax ?? 0.25,
+      agilityRefillMax: this.cfg.agilityRefillMax ?? 0.5,
       xpMultiplier: this.cfg.xpMultiplier,
       disabledCommands: this.cfg.disabledCommands || [],
       backpack: this.backpackTiers().map((t, i) => ({ level: i + 1, ...t })),
