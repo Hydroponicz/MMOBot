@@ -217,6 +217,7 @@ class GameEngine extends EventEmitter {
     this.econTimer = null;
     if (this.econDirty && this.econ) this.repo.setSetting('economy_stats', this.econ);
     this.econDirty = false;
+    this.flushSupply?.();
   }
 
   // Channel-wide boosts (e.g. double XP after gifted subs). kind: 'xp' or 'points'.
@@ -338,6 +339,7 @@ class GameEngine extends EventEmitter {
       farm: {
         max: MAX_PLOTS,
         plotCost: this.plotPrice(userId),
+        stations: this.allStations(userId).map((s) => ({ item: s.item, skill: s.skill, name: s.name, icon: s.icon, count: s.count, ready: s.ready, readyAt: s.readyAt, owed: s.owed, price: s.price })),
         plots: this.farmPlots(userId).map((p) => ({
           ...p,
           crop: p.crop ? { id: p.crop, name: ITEMS[p.crop].name, icon: ITEMS[p.crop].icon } : null,
@@ -414,6 +416,7 @@ class GameEngine extends EventEmitter {
       chatCooldown: this.cfg.chatCooldown,
       chatPointsFullPerDay: this.cfg.chatPointsFullPerDay ?? 30,
       plotPriceGrowth: this.cfg.plotPriceGrowth ?? 1.12,
+      gatherBonusLevels: this.cfg.gatherBonusLevels ?? 50,
       xpMultiplier: this.cfg.xpMultiplier,
       disabledCommands: this.cfg.disabledCommands || [],
       backpack: this.backpackTiers().map((t, i) => ({ level: i + 1, ...t })),
@@ -487,7 +490,7 @@ function isChatCommand(word) {
 }
 
 // Feature modules add their methods to the engine.
-for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events', 'museum', 'progression', 'character', 'community', 'market', 'gear', 'social', 'guilds', 'items', 'cards', 'relics', 'stream']) {
+for (const mod of ['skilling', 'combat', 'vitals', 'shop', 'farming', 'info', 'casinoGames', 'events', 'museum', 'progression', 'character', 'community', 'market', 'gear', 'social', 'guilds', 'items', 'cards', 'relics', 'stream', 'stations', 'prices']) {
   Object.assign(GameEngine.prototype, require(`./features/${mod}`));
 }
 

@@ -351,6 +351,10 @@ details[open] > summary.panel-head h2::before { content: '▾ '; }
 
 /* ---- Farm ---- */
 .plot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); gap: 6px; margin-bottom: 12px; }
+.station-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.station { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.station.ready { border-color: var(--accent); }
+.station-ic { font-size: 1.6rem; }
 .plot {
   position: relative; height: 58px; border-radius: 10px; border: 1px solid var(--border); overflow: hidden;
   display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 1.4rem;

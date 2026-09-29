@@ -203,8 +203,9 @@ test('the rod sets the snap chance and boosts fishing XP', () => {
   repo.setEquipment(u.id, 'rod', 1); // Oak Rod: 15% snap, +10% XP
   tick();
   const before = repo.getSkills(u.id).fishing;
-  assert.match(say('!fish sardine', 'Alice'), /\+20 XP/, '18 base XP * 1.1');
-  assert.equal(repo.getSkills(u.id).fishing - before, 20);
+  // Level 50 hauls 2 at a time.
+  assert.match(say('!fish sardine', 'Alice'), /2x.*Sardine.*\+40 XP/, '2 x 18 base XP * 1.1');
+  assert.equal(repo.getSkills(u.id).fishing - before, 40);
 });
 
 test('reaching a rod level announces the upgrade', () => {
@@ -363,7 +364,25 @@ test('the pickaxe sets the mining miss chance', () => {
   repo.addXp(u.id, 'mining', xpForLevel(50));
   repo.setEquipment(u.id, 'pickaxe', 1); // Iron Pickaxe: 15%, +10% XP
   tick();
-  assert.match(say('!mine tin'), /\+11 XP/, '10 base XP * 1.1');
+  assert.match(say('!mine tin'), /\+22 XP/, '2 x 10 base XP * 1.1');
+});
+
+test('gathering gives +1 item per 50 levels, limited by backpack room; rares stay single', () => {
+  const { repo, say, engine, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addXp(u.id, 'woodcutting', xpForLevel(120));
+  assert.match(say('!chop logs'), /3x/);
+  assert.equal(repo.getInventory(u.id).logs, 3);
+  const bag = engine.backpack(u.id);
+  repo.addItem(u.id, 'copper_ore', bag.capacity - bag.used - 1);
+  tick(600);
+  say('!chop logs');
+  assert.equal(repo.getInventory(u.id).logs, 4, 'only one slot left');
+  engine.cfg.gatherBonusLevels = 0;
+  repo.removeItem(u.id, 'copper_ore', repo.getInventory(u.id).copper_ore);
+  tick(600);
+  say('!chop logs');
+  assert.equal(repo.getInventory(u.id).logs, 5, 'turned off: one at a time');
 });
 
 test('woodcutting has birch, pine and spruce between the classic woods, up to level 500', () => {
@@ -408,7 +427,7 @@ test('rod prices saved before the tool rework still apply', () => {
 test('the shop sells a smithing hammer (500) and a sword (1,000) via !buy', () => {
   const { repo, say } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
-  assert.match(say('!shop'), /🔨 Smithing Hammer 500, 🗡️ Bronze Sword 1,000, 🔪 Skinning Knife 500, 🟫 Farm Plot 750, 🏹 Oak Shortbow 500, 🧺 Quiver 250, 🪄 Oak Staff 500, 🪨 Flint and Steel 50 pts, potions from 150 \(!buy minor health potion\), arrows from 6 each \(!buy arrows 50\), plus seeds/);
+  assert.match(say('!shop'), /🔨 Smithing Hammer 500, 🗡️ Bronze Sword 1,000, 🔪 Skinning Knife 500, 🟫 Farm Plot 750, 🏹 Oak Shortbow 500, 🧺 Quiver 250, 🪄 Oak Staff 500, 🪨 Flint and Steel 50 pts, gathering stations 🦀⚙️🌳🏺 from 750 \(!stations\), potions from 150 \(!buy minor health potion\), arrows from 6 each \(!buy arrows 50\), plus seeds/);
   assert.match(say('!buy hammer'), /Smithing Hammer costs 500 pts, you have 5/);
   repo.addPoints(u.id, 2000);
   assert.match(say('!buy hammer'), /bought 🔨 Smithing Hammer for 500 pts! Now try !smith bronze sword/);
@@ -2277,4 +2296,84 @@ test('regression: bounties, guild deposits and overpriced market buys share the 
   repo.addItem(bob.id, 'copper_ore', 1);
   const l = engine.marketSell(bob, { item: 'copper_ore', qty: 1, price: 400 });
   assert.match(engine.marketBuy(u, l.id).error, /daily limit/);
+});
+
+test('gathering stations: free first haul, !collect for one stamina, exponential prices, full bag leaves some owed', () => {
+  const { repo, say, engine, tick } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  assert.match(say('!stations'), /🦀 1 Crab Pot ✅ ready.*⚙️ 1 Ore Drill ✅ ready/);
+  const staminaBefore = engine.stamina(u.id).charges;
+  const reply = say('!collect');
+  assert.match(reply, /📦 collected 🦀 .*⚙️ .*🌳 .*🏺 /);
+  assert.equal(engine.stamina(u.id).charges, staminaBefore - 1, 'one charge for everything');
+  assert.ok(repo.getSkills(u.id).fishing > 0 && repo.getSkills(u.id).mining > 0);
+  assert.match(say('!collect'), /still working\. Next: .* in 20m/);
+
+  repo.addPoints(u.id, 10_000);
+  assert.match(say('!buy crab pot'), /bought a Crab Pot for 750 pts! You now have 2\..*Next one: 840 pts/);
+  assert.match(say('!buy ore drill 2'), /bought 2 Ore Drills for 1,590 pts/);
+  assert.equal(engine.stationCount(u.id, 'mining'), 3);
+  // Prices are per station type.
+  assert.equal(engine.stationPrice(u.id, 'woodcutting'), 750);
+
+  // Nearly full bag: collect what fits, the rest is owed and ready right away.
+  tick(21 * 60);
+  const bag = engine.backpack(u.id);
+  repo.addItem(u.id, 'copper_ore', bag.capacity - bag.used - 2);
+  assert.match(say('!collect'), /Backpack full: \d+ more waiting/);
+  assert.equal(engine.backpack(u.id).used, engine.backpack(u.id).capacity);
+  const owed = engine.allStations(u.id).filter((s) => s.owed > 0);
+  assert.ok(owed.length && owed.every((s) => s.ready));
+  assert.match(say('!collect'), /backpack is full/);
+  say('!sell all');
+  tick(60);
+  assert.match(say('!collect'), /📦 collected/);
+  assert.equal(engine.allStations(u.id).reduce((s, x) => s + x.owed, 0), 0);
+});
+
+test('sell prices drop with channel-wide selling and recover over time; !price shows them', () => {
+  const { repo, say, engine, tick } = setup();
+  const { ITEMS } = require('../src/game/skills');
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  const base = engine.sellValue('shark', u.id);
+  assert.match(say('!price shark'), new RegExp(`Shark sells for ${base} pts each right now \\(full price\\)`));
+  assert.match(say('!price'), /Everything sells at full price/);
+
+  // A small sale is (almost) full price.
+  repo.addItem(u.id, 'shark', 1);
+  assert.match(say('!sell shark'), new RegExp(`for ${base} pts`));
+
+  // A huge sale slides: the average is lower than the starting price, but above the floor.
+  const qty = Math.ceil(50_000 / ITEMS.shark.value);
+  const expected = engine.saleTotal('shark', qty, u.id);
+  assert.ok(expected < base * qty && expected > base * qty * 0.35);
+  repo.addItem(u.id, 'shark', qty);
+  const pts = repo.getUser(u.id).points;
+  say('!sell shark all');
+  assert.equal(repo.getUser(u.id).points - pts, expected);
+  const low = engine.sellValue('shark', u.id);
+  assert.ok(low < base * 0.5, `${low} < half of ${base}`);
+  assert.match(say('!price shark'), /normally .* -\d+% after ~[\d,]+ sold lately/);
+  assert.match(say('!price'), /Cheapest right now .*Shark -\d+%/);
+  // Other items are untouched.
+  assert.equal(engine.priceList().find((x) => x.id === 'logs').change, 0);
+
+  // Six hours later the pressure has halved; a day later it's nearly back.
+  tick(6 * 3600);
+  const mid = engine.sellValue('shark', u.id);
+  assert.ok(mid > low && mid < base, `${low} < ${mid} < ${base}`);
+  tick(24 * 3600);
+  assert.ok(engine.sellValue('shark', u.id) >= base * 0.9);
+
+  // Saved and reloaded.
+  engine.flushSupply();
+  assert.ok(repo.getSetting('supply').shark);
+
+  // The floor holds, and scale 0 turns it off.
+  engine.cfg.priceSupplyScale = 0;
+  assert.equal(engine.sellValue('shark', u.id), base);
+  engine.cfg.priceSupplyScale = 100;
+  engine.addSupply('shark', 1e6);
+  assert.equal(engine.sellValue('shark', u.id), Math.max(1, Math.round(base * 0.35)));
+  assert.match(say('!price rabbit pet'), /no item|can't be sold/);
 });

@@ -4,7 +4,8 @@
 //
 //   npm run balance -- [--players 40] [--days 28] [--streams 4] [--hours 3] [--seed 1] [--out report.md] [--old-rules]
 //
-// --old-rules turns off the bank limits and the chat points taper, to compare against how things were.
+// --old-rules turns off the bank limits, the chat points taper, bigger gathering hauls, gathering
+// stations and supply-based sell prices, to compare against how things were.
 // --no-rewards turns off stream redemptions and community projects (players never use them).
 //
 // --streams is streams per week, --hours how long each stream lasts. Settings come from your
@@ -44,19 +45,19 @@ const pick = (list) => list[Math.floor(rnd() * list.length)];
 
 // How the simulated viewers play.
 const STYLES = {
-  gatherer: () => pick(['!fish', '!mine', '!chop', '!dig', '!fish', '!mine']),
+  gatherer: (p) => (!OLD_RULES && p.n % 4 === 0 ? '!collect' : pick(['!fish', '!mine', '!chop', '!dig', '!fish', '!mine'])),
   crafter: (p) => (p.n % 4 === 3 ? pick(['!smelt', '!smith bronze sword', '!smith', '!fletch arrows']) : pick(['!mine copper', '!mine tin', '!mine', '!chop'])),
   fighter: () => pick(['!fight', '!fight', '!fight', '!chop']),
   farmer: (p) => (p.n % 3 === 0 ? pick(['!harvest', '!plant']) : pick(['!fish', '!chop', '!dig'])),
   gambler: (p) => (p.n % 3 === 0 ? pick(['!slots 5%', '!roulette red 5%', '!crash 5% 2x']) : pick(['!fish', '!mine'])),
   // Plays like a gatherer in chat; opens card packs and relic cases on the website (see collect()).
-  collector: () => pick(['!fish', '!mine', '!chop', '!dig']),
+  collector: (p) => (!OLD_RULES && p.n % 5 === 0 ? '!collect' : pick(['!fish', '!mine', '!chop', '!dig'])),
 };
 // How much they play: chance per minute (while their stamina lasts) to use a charge.
 const ACTIVITY = { casual: 0.08, regular: 0.25, grinder: 1 };
 
 const game = { ...config.game, replyInChat: false, relicFeedDelayMs: 0 };
-if (OLD_RULES) Object.assign(game, { bankDailyLimit: 0, bankFullValue: 0, chatPointsFullPerDay: 0 });
+if (OLD_RULES) Object.assign(game, { bankDailyLimit: 0, bankFullValue: 0, chatPointsFullPerDay: 0, gatherBonusLevels: 0, priceSupplyScale: 0 });
 const repo = openDb(':memory:');
 let now = Date.UTC(2026, 0, 5);
 const engine = new GameEngine({ repo, config: { ...config, game }, rng: mulberry32(SEED + 1), petRng: mulberry32(SEED + 2), now: () => now });
@@ -177,7 +178,7 @@ const lines = [];
 const out = (s = '') => lines.push(s);
 out(`# Balance simulation`);
 out();
-out(`${PLAYERS} players · ${DAYS} days · ${STREAMS} streams/week of ${HOURS}h · seed ${SEED} · stamina ${game.staminaMax} per ${game.staminaMinutes} min · ${OLD_RULES ? "old rules (no bank limits, no chat taper)" : "current rules"}${NO_REWARDS ? ', no stream rewards' : ''} · ran in ${secs}s`);
+out(`${PLAYERS} players · ${DAYS} days · ${STREAMS} streams/week of ${HOURS}h · seed ${SEED} · stamina ${game.staminaMax} per ${game.staminaMinutes} min · ${OLD_RULES ? "old rules (no bank limits, chat taper, stations, bigger hauls or supply prices)" : "current rules"}${NO_REWARDS ? ', no stream rewards' : ''} · ran in ${secs}s`);
 out();
 out(`## Progress by play style (end of week)`);
 out();

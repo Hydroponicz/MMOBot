@@ -160,13 +160,19 @@ module.exports = {
     }
     if (!drop) drop = target || this.pickResource(unlocked);
 
-    const result = this.reward(user, skillId, drop.item, drop.xp, { rare });
+    // Bigger hauls as you level: +1 item (and its XP) every gatherBonusLevels levels, if there's room.
+    // Rares stay single.
+    const every = this.cfg.gatherBonusLevels ?? 50;
+    const extra = !rare && every > 0 ? Math.floor(level / every) : 0;
+    const qty = Math.max(1, Math.min(1 + extra, bag.capacity - bag.used));
+    const result = this.reward(user, skillId, drop.item, drop.xp * qty, { rare, qty });
     // Skinned animals also give their meat, if there's room for it.
     if (drop.meat) {
       const bag = this.backpack(user.id);
       if (bag.used < bag.capacity) {
-        this.repo.addItem(user.id, drop.meat, 1);
-        result.reply = result.reply.replace(/!/, ` and ${itemLabel(drop.meat)}!`);
+        const meat = Math.min(qty, bag.capacity - bag.used);
+        this.repo.addItem(user.id, drop.meat, meat);
+        result.reply = result.reply.replace(/!/, ` and ${itemLabel(drop.meat, meat)}!`);
       } else result.reply += ` (no room for the ${ITEMS[drop.meat].name})`;
     }
     return result;

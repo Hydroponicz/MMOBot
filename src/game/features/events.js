@@ -442,6 +442,7 @@ module.exports = {
     const c = this.cfg;
     this.communityTick();
     this.socialTick();
+    this.flushSupply?.();
     const ev = this.repo.getSetting('random_event');
     if (ev && now > ev.endsAt) {
       this.repo.deleteSetting('random_event');

@@ -201,7 +201,7 @@ module.exports = {
       if (bag.used + l.qty > bag.capacity) return { ok: false, error: `no room in your backpack (${bag.used}/${bag.capacity}).` };
     }
     // Paying far over the shop value counts as passing points to the seller.
-    const excess = Math.max(0, l.price - 2 * this.sellValue(l.item) * l.qty);
+    const excess = Math.max(0, l.price - 2 * this.baseSellValue(l.item) * l.qty);
     const capped = this.giftAllowanceError(user.id, excess);
     if (capped) return { ok: false, error: `this listing costs much more than the item is worth, and ${capped}` };
     const fee = Math.floor(l.price * (this.cfg.marketFee ?? 0.05));

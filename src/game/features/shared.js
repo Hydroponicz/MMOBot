@@ -52,6 +52,10 @@ const INFO_COMMANDS = {
   plant: ['plant', 'plant'], sow: ['plant', 'plant'],
   harvest: ['harvest', 'harvest'], reap: ['harvest', 'harvest'],
   farm: ['farmInfo', 'farm'], plots: ['farmInfo', 'farm'], garden: ['farmInfo', 'farm'],
+  // Gathering stations (crab pots, ore drills, saplings, dig sites) and the price checker.
+  collect: ['collectStations', 'collect'], haul: ['collectStations', 'collect'],
+  stations: ['stationsInfo', 'collect'], station: ['stationsInfo', 'collect'],
+  price: ['priceCheck', 'price'], prices: ['priceCheck', 'price'], pc: ['priceCheck', 'price'],
   // Casino (points only). Has its own short cooldown.
   slots: ['chatSlots', 'slots'], slot: ['chatSlots', 'slots'], spin: ['chatSlots', 'slots'],
   roulette: ['chatRoulette', 'roulette'], rl: ['chatRoulette', 'roulette'],

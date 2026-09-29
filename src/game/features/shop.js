@@ -54,13 +54,15 @@ module.exports = {
   },
 
   shopList() {
-    const main = this.shopItems().filter((x) => !x.category || x.category === 'farming');
+    const main = this.shopItems().filter((x) => (!x.category || x.category === 'farming') && !this.isStationItem(x.item));
+    const st = this.shopItems().filter((x) => this.isStationItem(x.item));
+    const stations = st.length ? `, gathering stations ${st.map((x) => x.icon).join('')} from ${fmt(Math.min(...st.map((x) => x.cost)))} (!stations)` : '';
     const list = main.map((x) => `${x.icon} ${x.name} ${fmt(x.cost)}`).join(', ');
     const potion = this.shopItems().find((x) => x.category === 'potions');
     const potions = potion ? `, potions from ${fmt(potion.cost)} (!buy ${potion.name.toLowerCase()})` : '';
     const arrows = this.shopItems().find((x) => x.category === 'arrows');
     const arrowText = arrows ? `, arrows from ${fmt(arrows.cost)} each (!buy arrows 50)` : '';
-    return `🛒 Shop: ${list} pts${potions}${arrowText}, plus seeds (e.g. !buy carrot seeds 5) — ${this.siteUrl}/#/shop`;
+    return `🛒 Shop: ${list} pts${stations}${potions}${arrowText}, plus seeds (e.g. !buy carrot seeds 5) — ${this.siteUrl}/#/shop`;
   },
 
   // Shared by "!buy" and the website shop. Returns the reply text.
@@ -84,6 +86,7 @@ module.exports = {
     // Arrows come 10 at a time unless you say how many.
     qty ??= found.ammo ? 10 : 1;
     if (found.item === 'farm_plot') return this.buyPlots(user, qty, found);
+    if (this.isStationItem(found.item)) return this.buyStations(user, qty, found);
 
     const inv = this.repo.getInventory(user.id);
     const isTool = found.keep && !found.gear && !found.seedFor && !found.potion && !found.ammo;
@@ -182,8 +185,15 @@ module.exports = {
     };
   },
 
-  // With a userId, the player's race perk applies (e.g. Orcs sell for 10% less).
+  // What one sells for right now: the normal price, lowered by recent channel-wide selling (see
+  // prices.js). With a userId, the player's race perk applies (e.g. Orcs sell for 10% less).
   sellValue(itemId, userId = null) {
+    const base = this.baseSellValue(itemId, userId);
+    return base > 0 ? Math.max(1, Math.round(base * this.supplyFactor(itemId))) : 0;
+  },
+
+  // The normal price, ignoring supply.
+  baseSellValue(itemId, userId = null) {
     const race = userId ? this.perks(userId).sell : 1;
     return Math.round(ITEMS[itemId].value * this.cfg.sellMultiplier * race);
   },

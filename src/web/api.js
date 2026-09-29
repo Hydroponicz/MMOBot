@@ -97,6 +97,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     if (me) {
       const plot = items.find((x) => x.item === 'farm_plot');
       if (plot) plot.cost = engine.plotPrice(me.id);
+      for (const x of items) if (engine.isStationItem(x.item)) x.cost = engine.stationPrice(me.id, engine.allStations(me.id).find((s) => s.item === x.item).skill);
     }
     res.json({
       items,
@@ -105,6 +106,10 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       plots: me ? engine.plotCount(me.id) : null,
       plotGrowth: engine.cfg.plotPriceGrowth ?? 1.12,
       plotNext: me ? [1, 2, 3, 4, 5].map((n) => engine.plotsPrice(me.id, n)) : null,
+      // Gathering stations: how many you own, when they're ready and the total for buying 1-5 more.
+      stations: me
+        ? Object.fromEntries(engine.allStations(me.id).map((s) => [s.item, { skill: s.skill, count: s.count, ready: s.ready, readyAt: s.readyAt, next: [1, 2, 3, 4, 5].map((n) => engine.stationsPrice(me.id, s.skill, n)) }]))
+        : null,
     });
   });
 
@@ -120,6 +125,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   }));
   router.post('/me/plant', requireLogin, act((req) => engine.plant(req.user, req.body?.crop ? [String(req.body.crop)] : []) || 'Slow down a little, farmer!'));
   router.post('/me/harvest', requireLogin, act((req) => engine.harvest(req.user) || 'Slow down a little, farmer!'));
+  router.post('/me/collect', requireLogin, act((req) => engine.collectStations(req.user) || 'Slow down a little!'));
   router.post('/me/equip', requireLogin, act((req) => engine.equip(req.user, [String(req.body?.item || '')])));
   router.post('/me/drink', requireLogin, act((req) => engine.drink(req.user, [String(req.body?.item || '')])));
   router.post('/me/quest/start', requireLogin, act((req) => { const r = engine.questStart(req.user, String(req.body?.quest || '')); return r.ok ? r.message : r.error; }));
@@ -131,6 +137,14 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     const qty = req.body?.qty === 'all' ? 'all' : String(Math.max(1, Number.parseInt(req.body?.qty, 10) || 1));
     return engine.sell(req.user, [String(req.body?.item || ''), qty]);
   }));
+
+  // Price checker: every sellable item's normal and current shop price (prices drop after lots of
+  // selling across the channel and recover over a few hours).
+  router.get('/prices', (req, res) => {
+    const inv = req.user ? repo.getInventory(req.user.id) : {};
+    const items = engine.priceList(req.user?.id).map((x) => ({ ...x, mine: x.now, have: inv[x.id] || 0 }));
+    res.json({ items, recoveryHours: engine.cfg.priceRecoveryHours ?? 6, floor: engine.supplyFloor(), on: engine.supplyScale() > 0 });
+  });
 
   // ---- Player market ----------------------------------------------------------------
   router.get('/market', (req, res) => {

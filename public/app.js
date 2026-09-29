@@ -371,6 +371,7 @@
 
       ${equipmentPanel(p.combat, isMe)}
       ${farmPanel(p.farm, isMe)}
+      ${stationsPanel(p.farm.stations, isMe)}
       ${museumPanel(p.museum)}
       ${questsPanel(p.quests, isMe)}
       ${progressPanels(p.progression, isMe)}
@@ -679,6 +680,29 @@
     </section>`;
   }
 
+  // Gathering stations (crab pots, ore drills, saplings, dig sites): !collect brings in everything ready.
+  function stationsPanel(list, isMe) {
+    if (!list?.length) return '';
+    const now = Date.now();
+    const ready = list.filter((s) => s.ready).length;
+    const mins = (ms) => (ms < 60_000 ? '<1m' : `${Math.ceil(ms / 60_000)}m`);
+    return `<section class="panel" style="margin-top:16px">
+      <div class="panel-head">
+        <h2>🏡 Gathering stations</h2>
+        ${isMe && ready ? `<button class="btn btn-primary btn-sm" data-act="collect">Collect ${ready === list.length ? 'all' : ready}</button>` : ''}
+      </div>
+      <div class="station-grid">${list
+        .map(
+          (s) => `<div class="station${s.ready ? ' ready' : ''}">
+            <span class="station-ic">${s.icon}</span>
+            <div><b>${s.count}× ${esc(s.name)}</b><br><small class="muted">${s.ready ? (s.owed ? `✅ ${s.owed} waiting` : '✅ ready') : `${mins(s.readyAt - now)} left`}</small></div>
+          </div>`
+        )
+        .join('')}</div>
+      <p class="muted" style="margin-bottom:0;font-size:.85rem"><code>!collect</code> gathers what every ready station found (1 stamina for all of them, with the XP). <code>!stations</code> shows this in chat. Buy more in the <a href="#/shop">shop</a>: each costs more than the last.</p>
+    </section>`;
+  }
+
   // Equip / unequip / sell buttons on your own character page.
   function bindSheetActions() {
     const sheet = document.getElementById('sheet');
@@ -691,7 +715,7 @@
       if (act === 'sell') {
         if (!confirm(`Sell 1 ${name} for ${fmt(value)} points?`)) return;
         body = { item, qty: 1 };
-      } else if (act === 'plant' || act === 'harvest' || act === 'heal') body = {};
+      } else if (act === 'plant' || act === 'harvest' || act === 'collect' || act === 'heal') body = {};
       else if (act.startsWith('quest-')) body = { quest: item };
       else body = act === 'unequip' ? { slot } : { item };
       b.disabled = true;
@@ -804,7 +828,12 @@
 
   let shopShowAllSeeds = false;
   pages.shop = async () => {
-    const { items, points, farmingLevel, plots, plotGrowth, plotNext } = await api('/shop');
+    const { items, points, farmingLevel, plots, plotGrowth, plotNext, stations } = await api('/shop');
+    const growPct = Math.round(((plotGrowth ?? 1.12) - 1) * 100);
+    const isStation = (i) => i.category === 'stations';
+    // Items bought in bulk at a rising price (plots, stations): the total for 1-5 of them.
+    const multiNext = { farm_plot: plotNext, ...Object.fromEntries(Object.entries(stations || {}).map(([k, v]) => [k, v.next])) };
+    const rising = (i) => i.item === 'farm_plot' || isStation(i);
     const loggedIn = points !== null;
     const buyBtn = (i, locked) =>
       loggedIn ? `<button class="btn btn-primary btn-sm" data-buy="${esc(i.item)}" ${locked ? 'disabled' : ''}>Buy</button>` : '';
@@ -817,13 +846,15 @@
             <p class="muted">${esc(i.description || '')}</p>
             ${i.attack ? `<p class="shop-stat">⚔️ +${i.attack} attack · needs ${esc(i.wieldSkill || 'Swords')} ${i.level}</p>` : ''}
             ${i.item === 'farm_plot' && loggedIn ? `<p class="shop-stat">You own ${plots}/100 plots · each plot costs ${Math.round(((plotGrowth ?? 1.12) - 1) * 100)}% more than the last</p>` : ''}
-            ${i.item === 'farm_plot' && !loggedIn ? `<p class="shop-stat">Each plot costs ${Math.round(((plotGrowth ?? 1.12) - 1) * 100)}% more than the last</p>` : ''}
+            ${i.item === 'farm_plot' && !loggedIn ? `<p class="shop-stat">Each plot costs ${growPct}% more than the last</p>` : ''}
+            ${isStation(i) && loggedIn ? `<p class="shop-stat">You own ${stations[i.item].count} · ${stations[i.item].ready ? '✅ ready to <code>!collect</code>' : `next haul in ${Math.max(1, Math.ceil((stations[i.item].readyAt - Date.now()) / 60000))} min`} · each costs ${growPct}% more than the last</p>` : ''}
+            ${isStation(i) && !loggedIn ? `<p class="shop-stat">Everyone starts with 1 · each extra costs ${growPct}% more than the last</p>` : ''}
             <div class="shop-buy">
-              <span class="shop-price"${i.item === 'farm_plot' ? ' id="plot-price"' : ''}>${fmt(i.cost)} pts${i.category === 'arrows' ? ' <small>each</small>' : i.item === 'farm_plot' && loggedIn ? ' <small>next plot</small>' : ''}</span>
-              ${(i.item === 'farm_plot' || i.category === 'potions' || i.category === 'arrows') && loggedIn ? `<input type="number" class="qty" id="qty-${esc(i.item)}" value="${i.category === 'arrows' ? 50 : 1}" min="1" max="${i.category === 'arrows' ? 500 : 100}" aria-label="How many">` : ''}
+              <span class="shop-price"${rising(i) ? ` id="price-${esc(i.item)}"` : ''}>${fmt(i.cost)} pts${i.category === 'arrows' ? ' <small>each</small>' : rising(i) && loggedIn ? ' <small>next one</small>' : ''}</span>
+              ${(rising(i) || i.category === 'potions' || i.category === 'arrows') && loggedIn ? `<input type="number" class="qty" id="qty-${esc(i.item)}" value="${i.category === 'arrows' ? 50 : 1}" min="1" max="${i.category === 'arrows' ? 500 : 100}" aria-label="How many">` : ''}
               ${buyBtn(i, i.item === 'farm_plot' && plots >= 100)}
             </div>
-            <p class="muted" style="font-size:.8rem;margin:8px 0 0">In chat: <code>!buy ${esc(i.item === 'farm_plot' ? 'plot' : i.item === 'flint_and_steel' ? 'flint' : i.category === 'potions' ? i.name.toLowerCase() : i.category === 'arrows' ? `${i.name.toLowerCase()} 50` : i.cosmetic ? i.name.toLowerCase() : i.name.split(' ').pop().toLowerCase())}</code></p>
+            <p class="muted" style="font-size:.8rem;margin:8px 0 0">In chat: <code>!buy ${esc(i.item === 'farm_plot' ? 'plot' : isStation(i) ? i.name.toLowerCase() : i.item === 'flint_and_steel' ? 'flint' : i.category === 'potions' ? i.name.toLowerCase() : i.category === 'arrows' ? `${i.name.toLowerCase()} 50` : i.cosmetic ? i.name.toLowerCase() : i.name.split(' ').pop().toLowerCase())}</code></p>
           </section>`;
     const allSeeds = items.filter((i) => i.category === 'seeds');
     // Show what you can plant now plus the next few unlocks; "Show all" reveals the rest.
@@ -831,6 +862,7 @@
     const locked = allSeeds.filter((i) => i.level > cap);
     const seeds = shopShowAllSeeds ? allSeeds : [...allSeeds.filter((i) => i.level <= cap), ...locked.slice(0, 5)];
     const top = items.filter((i) => !i.category || i.category === 'farming');
+    const stationItems = items.filter(isStation);
     const potions = items.filter((i) => i.category === 'potions');
     const arrows = items.filter((i) => i.category === 'arrows');
     const cosmetics = items.filter((i) => i.category === 'cosmetics');
@@ -855,6 +887,10 @@
           : ''
       }
       <div class="shop-grid">${top.map(card).join('')}</div>
+
+      <h2 style="margin:28px 0 6px">🏡 Gathering stations</h2>
+      <p class="muted">Like farm plots for your other skills: each station gathers on its own every 20 minutes or so (a bit longer at higher levels), and <code>!collect</code> brings in everything that's ready for <b>1 stamina</b>, with the XP. You get the best things your level can gather. Everyone starts with one of each; <code>!stations</code> shows them.</p>
+      <div class="shop-grid">${stationItems.map(card).join('')}</div>
 
       <h2 style="margin:28px 0 6px">🎩 Cosmetics</h2>
       <p class="muted">Hats, capes and auras for your character. Looks only, no stats. They show on your portrait, the leaderboards and the stream overlay, and don't take backpack space. Wear them on the <a href="#/customize">Customize</a> page.</p>
@@ -901,15 +937,16 @@
         }</section>`;
     const showAll = $app.querySelector('#show-all-seeds');
     if (showAll) showAll.onclick = () => ((shopShowAllSeeds = true), route());
-    // Buying several plots: show the total (each one costs more than the last).
-    const plotQty = document.getElementById('qty-farm_plot');
-    if (plotQty && plotNext) {
-      plotQty.oninput = () => {
-        const n = Math.max(1, Math.floor(Number(plotQty.value) || 1));
-        const el = document.getElementById('plot-price');
-        if (n === 1) el.innerHTML = `${fmt(plotNext[0])} pts <small>next plot</small>`;
-        else if (n <= plotNext.length) el.innerHTML = `${fmt(plotNext[n - 1])} pts <small>for ${n} plots</small>`;
-        else el.innerHTML = `${fmt(plotNext[plotNext.length - 1])}+ pts <small>for ${n} plots</small>`;
+    // Buying several plots or stations: show the total (each one costs more than the last).
+    for (const [item, next] of Object.entries(multiNext)) {
+      const qty = document.getElementById(`qty-${item}`);
+      const el = document.getElementById(`price-${item}`);
+      if (!qty || !el || !next) continue;
+      qty.oninput = () => {
+        const n = Math.max(1, Math.floor(Number(qty.value) || 1));
+        if (n === 1) el.innerHTML = `${fmt(next[0])} pts <small>next one</small>`;
+        else if (n <= next.length) el.innerHTML = `${fmt(next[n - 1])} pts <small>for ${n}</small>`;
+        else el.innerHTML = `${fmt(next[next.length - 1])}+ pts <small>for ${n}</small>`;
       };
     }
     $app.querySelectorAll('[data-buy]').forEach((b) => {
@@ -1105,7 +1142,7 @@
 
   // ---- Player market ------------------------------------------------------------------------
   pages.market = async (_, query) => {
-    const [d, bq] = await Promise.all([api('/market'), api('/bounties')]);
+    const [d, bq, pr] = await Promise.all([api('/market'), api('/bounties'), api('/prices')]);
     const loggedIn = d.points !== null;
     let q = (query?.get('q') || '').toLowerCase();
     const mine = (l) => state.me && l.seller === state.me.username;
@@ -1151,6 +1188,18 @@
               </section>`
           : ''
       }
+      <section class="panel" style="margin-top:16px" id="prices">
+        <div class="panel-head"><h2>💹 Price checker</h2><input type="search" id="price-q" class="guide-search" placeholder="Search items, e.g. carrot" style="max-width:260px"></div>
+        <p class="muted" style="margin-top:0">What the shop pays right now (<code>!sell</code>). ${
+          pr.on
+            ? `When lots of one item is sold across the channel its price drops (to ${Math.round(pr.floor * 100)}% at most), then recovers by half every ${pr.recoveryHours} hours. Selling a big pile slides the price as you go. Spread your selling out, or list it on the market below.`
+            : 'Prices are fixed right now.'
+        } In chat: <code>!price carrot</code>.</p>
+        <div class="form-row" style="margin-bottom:10px;flex-wrap:wrap">
+          <select id="price-sort" aria-label="Sort by"><option value="drop">Biggest drops first</option><option value="value">Highest price first</option><option value="name">Name</option>${loggedIn ? '<option value="mine">What I have</option>' : ''}</select>
+        </div>
+        <div id="price-rows"></div>
+      </section>
       <section class="panel" style="margin-top:16px">
         <div class="panel-head"><h2>🎯 Bounties</h2><span class="muted">${bq.bounties.length}/10</span></div>
         ${
@@ -1166,6 +1215,33 @@
         <div class="panel-head"><h2>For sale</h2><input type="search" id="market-q" class="guide-search" placeholder="Search items or sellers" value="${esc(q)}" style="max-width:260px"></div>
         <div id="market-rows">${rows()}</div>
       </section>`;
+    const $prices = document.getElementById('price-rows');
+    const $pq = document.getElementById('price-q');
+    const $psort = document.getElementById('price-sort');
+    const priceRows = () => {
+      const pq = $pq.value.trim().toLowerCase();
+      const sort = $psort.value;
+      let list = pr.items.filter((x) => !pq || x.name.toLowerCase().includes(pq));
+      if (sort === 'mine') list = list.filter((x) => x.have > 0);
+      list.sort((a, b) =>
+        sort === 'name' ? a.name.localeCompare(b.name) : sort === 'value' ? b.mine - a.mine : sort === 'mine' ? b.mine * b.have - a.mine * a.have : a.change - b.change || b.mine - a.mine
+      );
+      const total = list.length;
+      list = list.slice(0, pq ? 60 : 25);
+      if (!list.length) return `<div class="empty"><span class="ic">💹</span>${sort === 'mine' ? 'Nothing in your backpack to sell.' : 'No sellable item matches.'}</div>`;
+      return `<div class="table-wrap"><table>
+        <thead><tr><th>Item</th><th class="num">Normally</th><th class="num">Right now</th><th class="num">Change</th><th class="num">Sold lately</th>${loggedIn ? '<th class="num">You have</th>' : ''}</tr></thead>
+        <tbody>${list
+          .map(
+            (x) => `<tr><td>${x.icon} ${esc(x.name)}</td><td class="num muted">${fmt(x.base)}</td><td class="num"><b>${fmt(x.mine)}</b> pts</td>
+              <td class="num" style="color:${x.change < 0 ? 'var(--danger)' : 'var(--muted)'}">${x.change < 0 ? `${x.change}%` : 'full price'}</td>
+              <td class="num muted">${x.recent ? `~${fmt(x.recent)}` : '—'}</td>
+              ${loggedIn ? `<td class="num">${x.have ? `${fmt(x.have)} <span class="muted">(${fmt(x.have * x.mine)} pts)</span>` : '<span class="muted">—</span>'}</td>` : ''}</tr>`
+          )
+          .join('')}</tbody></table></div>${total > list.length ? `<p class="muted" style="margin:8px 0 0;font-size:.85rem">Showing ${list.length} of ${total}. Search to find more.</p>` : ''}`;
+    };
+    $prices.innerHTML = priceRows();
+    $pq.oninput = $psort.onchange = () => ($prices.innerHTML = priceRows());
     const $rows = document.getElementById('market-rows');
     document.getElementById('market-q').oninput = (e) => {
       q = e.target.value.trim().toLowerCase();
@@ -1450,11 +1526,12 @@
           .join('')}</tbody></table></div>`;
 
     // What each skill is about, shown above its unlock table.
+    const bigger = (what) => (g.gatherBonusLevels ?? 50) ? ` Every ${g.gatherBonusLevels ?? 50} levels you get one more ${what}.` : '';
     const SKILL_INTRO = {
-      fishing: `${c('fish')} catches fish. Higher levels unlock better fish; aim for one with ${c('fish trout')}. Fish sell for points, or ${c('cook')} them into food.`,
-      mining: `${c('mine')} digs ore. Pick an ore with ${c('mine iron')}. ${c('smelt')} ores into ingots and alloys.`,
-      woodcutting: `${c('chop')} cuts logs (${c('chop oak')} for a specific tree). Logs are used for fires, bows, arrows and staffs.`,
-      digging: `${c('dig')} unearths coins, relics and fossils. ${c('donate')} them to the museum for 3× their value.`,
+      fishing: `${c('fish')} catches fish. Higher levels unlock better fish; aim for one with ${c('fish trout')}. Fish sell for points, or ${c('cook')} them into food.${bigger('fish per cast')} 🦀 Crab Pots fish for you: ${c('collect')}.`,
+      mining: `${c('mine')} digs ore. Pick an ore with ${c('mine iron')}. ${c('smelt')} ores into ingots and alloys.${bigger('ore per swing')} ⚙️ Ore Drills mine for you: ${c('collect')}.`,
+      woodcutting: `${c('chop')} cuts logs (${c('chop oak')} for a specific tree). Logs are used for fires, bows, arrows and staffs.${bigger('log per chop')} 🌳 Tree Saplings grow logs for you: ${c('collect')}.`,
+      digging: `${c('dig')} unearths coins, relics and fossils. ${c('donate')} them to the museum for 3× their value.${bigger('find per dig')} 🏺 Dig Sites dig for you: ${c('collect')}.`,
       skinning: `Needs a 🔪 Skinning Knife in your backpack (shop, or smith one at Smithing 20). ${c('skin')} animals for hides and raw meat. ${c('craft')} hides into leather armor.`,
       farming: `Everyone gets a free 🟫 plot; buy more in the <a href="#/shop">shop</a> (the first costs ${shopCost('farm_plot')} pts and each one after costs ${Math.round(((g.plotPriceGrowth ?? 1.12) - 1) * 100)}% more, up to 100). Buy seeds, ${c('plant carrot')}, then ${c('harvest')} when it's grown (1 crop per plot). ${c('farm')} shows your plots. Planting and harvesting each use a stamina charge.`,
       firemaking: `Buy a 🪨 Flint and Steel (${shopCost('flint_and_steel')} pts, 250 fires), then ${c('lightfire')} burns your best log (or ${c('lightfire oak')}). Better logs give more XP, and every fire leaves 🌫️ Ashes. If it doesn't catch, nothing is used up. ${c('fire')} shows how long it burns.`,
@@ -1740,6 +1817,8 @@
         ['plant [crop]', 'Plant seeds in empty plots'],
         ['harvest', 'Collect grown crops'],
         ['farm', 'Your plots'],
+        ['collect', 'Bring in what your gathering stations found (1 stamina)'],
+        ['stations', 'Your crab pots, ore drills, saplings and dig sites'],
         ['lightfire [log]', 'Light a fire (needs flint and steel)'],
         ['cook [food]', 'Cook on your fire, no stamina needed'],
         ['cook all', 'Cook everything while the fire lasts'],
@@ -1764,6 +1843,7 @@
       ['Points & items', [
         ['sell all', 'Sell your loot (also !sellall)'],
         ['sell trout 5', 'Sell a specific item'],
+        ['price <item>', 'What an item sells for right now (e.g. !price carrot)'],
         ['buy <item>', 'Buy from the shop (shop lists items)'],
         ['buy arrows 50', 'Buy arrows'],
         ['inv', 'Your backpack'],

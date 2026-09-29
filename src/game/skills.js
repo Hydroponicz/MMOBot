@@ -1208,3 +1208,5 @@ module.exports = {
 
 // Cosmetics, pets, race-only items and quests add themselves to ITEMS, SHOP and the recipes.
 require('./content');
+// Gathering stations (crab pots, ore drills...) add themselves to ITEMS and SHOP.
+require('./stations');
