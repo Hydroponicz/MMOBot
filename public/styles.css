@@ -1045,3 +1045,28 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 
 .swatch.dye-locked { position: relative; opacity: .55; }
 .swatch.dye-locked::after { content: '🌸'; position: absolute; right: -4px; bottom: -4px; font-size: .7rem; }
+
+/* Shop: seeds grouped by crop */
+.seed-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.seed-card { margin: 0; display: flex; flex-direction: column; }
+.seed-head { display: flex; gap: 12px; align-items: center; }
+.seed-head h3 { margin: 0 0 4px; font-size: 1.05rem; }
+.seed-icon { font-size: 2rem; }
+.seed-use { margin: 8px 0 10px; font-size: .9rem; }
+.seed-tiers { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.seed-tiers li { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; padding: 6px 8px; border-radius: 8px; background: var(--bg); }
+.seed-tiers li .form-row { grid-column: 2; grid-row: 1 / span 2; }
+.seed-tiers li .qty { max-width: 64px; }
+.seed-tiers li.locked { opacity: .55; }
+.seed-name { font-weight: 600; font-size: .92rem; }
+.seed-meta { font-size: .8rem; grid-column: 1; }
+/* Guide: crops */
+.crop-steps { margin: 6px 0 14px; padding-left: 20px; }
+.crop-steps li { margin: 4px 0; }
+.crop-guide { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin: 10px 0 14px; }
+.crop-guide .crop-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--bg); }
+.crop-card h4 { margin: 0 0 2px; font-size: .98rem; }
+.crop-card p { margin: 4px 0 6px; font-size: .85rem; }
+.crop-tier-pills { display: flex; flex-wrap: wrap; gap: 4px; }
+.crop-tier-pills span { font-size: .75rem; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+.skill-intro { margin: 0 0 1em; line-height: 1.55; }

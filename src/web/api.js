@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const express = require('express');
-const { ITEMS, SKILLS, SKILL_IDS, maxLevel, findItem } = require('../game/skills');
+const { ITEMS, SKILLS, SKILL_IDS, maxLevel, findItem, PLANT_LINES } = require('../game/skills');
 const { levelForXp, progress, CHARACTER_MAX_LEVEL, CHARACTER_SKILL_COUNT } = require('../game/xp');
 const { makeIsAdmin } = require('./auth');
 const { SettingsError } = require('../settings');
@@ -91,7 +91,8 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       const crop = crops[x.item];
       if (!crop) return x;
       const it = ITEMS[crop.item];
-      return { ...x, crop: { name: it.name, icon: it.icon, kind: crop.kind, use: crop.use, tier: crop.tier, value: engine.sellValue(crop.item), grow: Math.max(1, Math.round(crop.grow * (engine.cfg.growMultiplier ?? 1))) } };
+      const line = PLANT_LINES.find((l) => l.id === crop.line);
+      return { ...x, crop: { name: it.name, icon: it.icon, kind: crop.kind, use: crop.use, tier: crop.tier, line: crop.line, lineName: line ? ITEMS[line.tiers[0][0]].name : it.name, skill: SKILLS[line?.skill]?.name || '', value: engine.sellValue(crop.item), grow: Math.max(1, Math.round(crop.grow * (engine.cfg.growMultiplier ?? 1))) } };
     });
     const me = req.user ? repo.getUser(req.user.id) : null;
     // Plots get pricier with each one bought, so a logged-in player sees the price of their next plot.

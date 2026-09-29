@@ -828,7 +828,6 @@
         .join('')}</tbody></table></div>`;
   }
 
-  let shopShowAllSeeds = false;
   pages.shop = async () => {
     const { items, points, farmingLevel, plots, plotGrowth, plotNext, stations, houses } = await api('/shop');
     const growPct = Math.round(((plotGrowth ?? 1.12) - 1) * 100);
@@ -858,11 +857,14 @@
             </div>
             <p class="muted" style="font-size:.8rem;margin:8px 0 0">In chat: <code>!buy ${esc(i.item === 'farm_plot' ? 'plot' : isStation(i) ? i.name.toLowerCase() : i.item === 'flint_and_steel' ? 'flint' : i.category === 'potions' ? i.name.toLowerCase() : i.category === 'arrows' ? `${i.name.toLowerCase()} 50` : i.cosmetic ? i.name.toLowerCase() : i.name.split(' ').pop().toLowerCase())}</code></p>
           </section>`;
-    const allSeeds = items.filter((i) => i.category === 'seeds');
-    // Show what you can plant now plus the next few unlocks; "Show all" reveals the rest.
-    const cap = loggedIn ? farmingLevel : 1;
-    const locked = allSeeds.filter((i) => i.level > cap);
-    const seeds = shopShowAllSeeds ? allSeeds : [...allSeeds.filter((i) => i.level <= cap), ...locked.slice(0, 5)];
+    // Seeds grouped by crop: one card per crop with its tiers, in the order they unlock.
+    const seedLines = [];
+    for (const i of items.filter((x) => x.category === 'seeds').sort((a, b) => a.level - b.level)) {
+      let line = seedLines.find((l) => l.id === i.crop.line);
+      if (!line) seedLines.push((line = { id: i.crop.line, name: i.crop.lineName, skill: i.crop.skill, tiers: [] }));
+      line.tiers.push(i);
+    }
+    for (const l of seedLines) l.tiers.sort((a, b) => a.crop.tier - b.crop.tier);
     const top = items.filter((i) => !i.category || i.category === 'farming');
     const stationItems = items.filter(isStation);
     const potions = items.filter((i) => i.category === 'potions');
@@ -938,38 +940,29 @@
       <div class="shop-grid">${arrows.map(card).join('')}</div>
 
       <h2 style="margin:28px 0 6px">🌱 Seeds</h2>
-      <p class="muted">One seed per plot: <code>!plant carrot</code>, then <code>!harvest</code> when it's grown (1 crop per plot). Seeds don't take backpack space. <b>Every crop feeds another skill</b> (food, potions, bowstrings, robes, runes, bait, flux, dyes...), and better tiers unlock with Farming level. Crops sell for little: use them, or sell them to players who need them on the <a href="#/market">Market</a>. ☕ Coffee seeds only come from gifting subs.${loggedIn ? ` Your Farming level: <b>${farmingLevel}</b>.` : ''}</p>
-      <section class="panel"><div class="table-wrap"><table>
-        <thead><tr><th>Level</th><th>Seed</th><th>Used for</th><th class="num">Ready in</th><th class="num">Crop sells for</th><th class="num">Price</th>${loggedIn ? '<th>Buy</th>' : ''}</tr></thead>
-        <tbody>${seeds
-          .map((i) => {
-            const locked = loggedIn && farmingLevel < i.level;
-            return `<tr class="${locked ? 'locked' : ''}">
-              <td><b>${i.level}</b></td>
-              <td>🌱 ${esc(i.crop.name)} seeds</td>
-              <td style="max-width:340px;white-space:normal">${i.crop.icon} <span class="muted">${esc(i.crop.use || i.crop.kind)}</span></td>
-              <td class="num">${i.crop.grow} min</td>
-              <td class="num">${fmt(i.crop.value)} pts</td>
-              <td class="num">${fmt(i.cost)} pts</td>
-              ${
-                loggedIn
-                  ? `<td>${
-                      locked
-                        ? `<span class="muted">Farming ${i.level}</span>`
-                        : `<div class="form-row"><input type="number" class="qty" id="qty-${esc(i.item)}" value="${Math.max(1, plots || 1)}" min="1" max="1000" aria-label="How many"> ${buyBtn(i, false)}</div>`
-                    }</td>`
-                  : ''
-              }
-            </tr>`;
-          })
-          .join('')}</tbody></table></div>
-        ${
-          seeds.length < allSeeds.length
-            ? `<button class="btn" id="show-all-seeds" style="margin-top:12px">Show all ${allSeeds.length} seeds</button>`
-            : ''
-        }</section>`;
-    const showAll = $app.querySelector('#show-all-seeds');
-    if (showAll) showAll.onclick = () => ((shopShowAllSeeds = true), route());
+      <p class="muted">Each crop is used by another skill. Plant with <code>!plant carrot</code>, harvest with <code>!harvest</code> when it's grown, one crop per plot. Better versions of a crop unlock as your Farming level goes up.${loggedIn ? ` Your Farming level: <b>${farmingLevel}</b>.` : ''} ☕ Coffee seeds only come from gifting subs.</p>
+      <div class="seed-grid">${seedLines
+        .map(
+          (line) => `<section class="panel seed-card">
+            <div class="seed-head"><span class="seed-icon">${line.tiers[0].crop.icon}</span><div><h3>${esc(line.name)}</h3><span class="badge">${esc(line.skill)}</span></div></div>
+            <p class="muted seed-use">${esc(line.tiers[0].crop.use)}</p>
+            <ul class="seed-tiers">${line.tiers
+              .map((i) => {
+                const locked = loggedIn && farmingLevel < i.level;
+                return `<li class="${locked ? 'locked' : ''}">
+                  <span class="seed-name">${esc(i.crop.name)}${i.crop.tier > 1 ? ` <span class="muted">(tier ${i.crop.tier})</span>` : ''}</span>
+                  <span class="seed-meta muted">${locked ? `🔒 Farming ${i.level}` : `${i.level > 1 ? `Farming ${i.level} · ` : ''}${i.crop.grow} min · ${fmt(i.cost)} pts`}</span>
+                  ${
+                    loggedIn && !locked
+                      ? `<span class="form-row"><input type="number" class="qty" id="qty-${esc(i.item)}" value="${Math.max(1, plots || 1)}" min="1" max="1000" aria-label="How many ${esc(i.crop.name)} seeds"> ${buyBtn(i, false)}</span>`
+                      : ''
+                  }
+                </li>`;
+              })
+              .join('')}</ul>
+          </section>`
+        )
+        .join('')}</div>`;
     // Buying several plots or stations: show the total (each one costs more than the last).
     for (const [item, next] of Object.entries(multiNext)) {
       const qty = document.getElementById(`qty-${item}`);
@@ -1496,12 +1489,12 @@
     const tierTable = (s) => {
       if (s.type === 'farm') {
         return `
-      <details><summary class="btn btn-sm" style="margin-bottom:12px">Show all ${s.tiers.length} crops</summary>
+      <details><summary class="btn btn-sm" style="margin-bottom:12px">Full crop list with numbers (${s.tiers.length} crops)</summary>
       <div class="table-wrap"><table>
-        <thead><tr><th>Level</th><th>Crop</th><th>Type</th><th class="num">Seed</th><th class="num">Ready in</th><th class="num">XP</th><th class="num">Sells for</th></tr></thead>
+        <thead><tr><th>Needs Farming</th><th>Crop</th><th class="num">Seed</th><th class="num">Ready in</th><th class="num">XP</th><th class="num">Sells for</th></tr></thead>
         <tbody>${s.tiers
           .map(
-            (t) => `<tr><td><b>${t.level}</b></td><td>${t.icon} ${esc(t.item)}</td><td><span class="kind kind-${t.kind === 'herb' ? 'herb' : 'veg'}">${esc(t.kind)}</span></td>
+            (t) => `<tr><td><b>${t.level}</b></td><td>${t.icon} ${esc(t.item)}</td>
             <td class="num">${fmt(t.seedCost)} pts</td><td class="num">${t.grow} min</td><td class="num">${t.xp}</td><td class="num">${fmt(t.value)} pts</td></tr>`
           )
           .join('')}</tbody></table></div></details>`;
@@ -1582,9 +1575,23 @@
       woodcutting: `${c('chop')} cuts logs (${c('chop oak')} for a specific tree). Logs are used for fires, bows, arrows and staffs.${bigger('log per chop')} 🌳 Tree Saplings train it for you: ${c('collect')}.`,
       digging: `${c('dig')} unearths coins, relics and fossils. ${c('donate')} them to the museum for 3× their value.${bigger('find per dig')} 🏺 Dig Sites train it for you: ${c('collect')}.`,
       skinning: `Needs a 🔪 Skinning Knife in your backpack (shop, or smith one at Smithing 20). ${c('skin')} animals for hides and raw meat. ${c('craft')} hides into leather armor.`,
-      farming: `Everyone gets a free 🟫 plot; buy more in the <a href="#/shop">shop</a> (the first costs ${shopCost('farm_plot')} pts and each one after costs ${Math.round(((g.plotPriceGrowth ?? 1.12) - 1) * 100)}% more, up to 100). Buy seeds, ${c('plant carrot')}, then ${c('harvest')} when it's grown (1 crop per plot). ${c('farm')} shows your plots. Planting and harvesting each use a stamina charge per ${g.plotsPerStamina ?? 25} plots (70 plots = 3 charges); with too few charges, the rest wait. <b>Every crop feeds another skill</b>, and each line has better tiers as you level (crops sell for little, so use them or trade them):<ul>${(g.plantLines || [])
-        .map((l) => `<li>${l.tiers[0].icon} <b>${esc(l.tiers.map((t) => t.name).join(' → '))}</b> <span class="muted">(${esc(l.skill)}, Farming ${l.tiers.map((t) => t.level).join('/')})</span>: ${esc(l.text)}</li>`)
-        .join('')}</ul>`,
+      farming: `<b>How farming works</b>
+        <ol class="crop-steps">
+          <li><b>Plots:</b> everyone gets 1 free 🟫 plot. Buy more in the <a href="#/shop">shop</a> (${shopCost('farm_plot')} pts for the first, each one a bit more, up to 100).</li>
+          <li><b>Plant:</b> buy seeds, then ${c('plant carrot')}. One seed goes in each empty plot.</li>
+          <li><b>Harvest:</b> after 20+ minutes, ${c('harvest')} collects one crop per plot. ${c('farm')} shows your plots.</li>
+          <li><b>Use it:</b> every crop is an ingredient for another skill (see below). Crops sell for little, so use them or trade them.</li>
+        </ol>
+        <p class="muted" style="margin:0 0 8px">Planting and harvesting cost 1 stamina per ${g.plotsPerStamina ?? 25} plots. Each crop has better versions (tiers) that unlock at higher Farming levels.</p>
+        <b>What each crop is for</b>
+        <div class="crop-guide">${(g.plantLines || [])
+          .map(
+            (l) => `<div class="crop-card"><h4>${l.tiers[0].icon} ${esc(l.tiers[0].name)} <span class="badge">${esc(l.skill)}</span></h4>
+              <p>${esc(l.text)}</p>
+              ${l.tiers.length > 1 ? `<div class="crop-tier-pills">${l.tiers.map((t) => `<span>${esc(t.name)} · Farming ${t.level}</span>`).join('')}</div>` : `<div class="crop-tier-pills"><span>Farming ${l.tiers[0].level}</span></div>`}
+            </div>`
+          )
+          .join('')}</div>`,
       firemaking: `Buy a 🪨 Flint and Steel (${shopCost('flint_and_steel')} pts, 250 fires), then ${c('lightfire')} burns your best log (or ${c('lightfire oak')}). Better logs give more XP, and every fire leaves 🌫️ Ashes. If it doesn't catch, nothing is used up. ${c('fire')} shows how long it burns.`,
       cooking: `While your fire burns (5 minutes, longer with better logs), ${c('cook')} your best raw food or name it: ${c('cook trout')}. <b>Cooking uses no stamina</b>, but each fire can cook only so many meals: ${g.fireMealsBase ?? 10}, plus 1 per ${g.fireMealsPerLevels ?? 2} Firemaking levels. ${c('cook all')} cooks as much as the fire allows; light another fire for more. Food sometimes burns (less as you level). ${c('eat')} cooked food to heal.`,
       smelting: `${c('smelt')} ores from your backpack into ingots (one ore) and alloys (mixed ores, e.g. copper + tin = bronze). Better furnaces can smelt two at once.`,
@@ -1603,7 +1610,7 @@
       icon: s.icon,
       title: s.name,
       summary: `${s.command} · max level ${s.maxLevel}`,
-      body: `<p>${SKILL_INTRO[s.id] || `${c(s.command.replace(/^\W/, ''))} trains ${esc(s.name)}.`}</p>${tierTable(s)}${s.tool ? toolTable(s.tool, s) : ''}`,
+      body: `<div class="skill-intro">${SKILL_INTRO[s.id] || `${c(s.command.replace(/^\W/, ''))} trains ${esc(s.name)}.`}</div>${tierTable(s)}${s.tool ? toolTable(s.tool, s) : ''}`,
     });
 
     const TABS = [
