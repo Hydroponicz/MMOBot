@@ -438,7 +438,8 @@ module.exports = {
   },
 
   // Adds XP and action points; returns "+X XP, +Y pts" plus level-up / progress text for the reply.
-  grantXp(user, skillId, xpGain) {
+  // { points: false } gives XP only (gathering stations).
+  grantXp(user, skillId, xpGain, { points: withPoints = true } = {}) {
     const skill = SKILLS[skillId];
     // Race perk (e.g. Dwarves +15% Mining XP).
     // Race perk (e.g. Dwarves +15% Mining XP), active pet (+5%) and prestige (+5% each).
@@ -450,7 +451,7 @@ module.exports = {
     const before = this.repo.getSkills(user.id);
     const levelBefore = skillLevel(skillId, before[skillId]);
     const charBefore = characterProgress(SKILL_IDS.map((id) => before[id])).level;
-    const points = Math.round(Math.max(1, xpGain / 10) * this.cfg.pointsMultiplier);
+    const points = withPoints ? Math.round(Math.max(1, xpGain / 10) * this.cfg.pointsMultiplier) : 0;
     this.repo.addXp(user.id, skillId, xpGain);
     this.repo.addSeasonXp(user.id, xpGain);
     if (points > 0) this.repo.addPoints(user.id, points);
@@ -462,7 +463,7 @@ module.exports = {
     this.checkLevelAchievements(user);
     const charAfter = characterProgress(SKILL_IDS.map((id) => before[id] + (id === skillId ? xpGain : 0))).level;
 
-    let text = `+${xpGain} XP, +${points} pts`;
+    let text = withPoints ? `+${xpGain} XP, +${points} pts` : `+${xpGain} XP`;
     if (levelAfter > levelBefore) {
       text += ` 🎉 ${skill.name} level ${levelAfter}!`;
       const unlocks = (skill.resources || skill.recipes || skill.monsters).filter((r) => r.level > levelBefore && r.level <= levelAfter);

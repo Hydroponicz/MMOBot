@@ -695,11 +695,11 @@
         .map(
           (s) => `<div class="station${s.ready ? ' ready' : ''}">
             <span class="station-ic">${s.icon}</span>
-            <div><b>${s.count}× ${esc(s.name)}</b><br><small class="muted">${s.ready ? (s.owed ? `✅ ${s.owed} waiting` : '✅ ready') : `${mins(s.readyAt - now)} left`}</small></div>
+            <div><b>${s.count}× ${esc(s.name)}</b><br><small class="muted">${s.ready ? '✅ ready' : `${mins(s.readyAt - now)} left`}</small></div>
           </div>`
         )
         .join('')}</div>
-      <p class="muted" style="margin-bottom:0;font-size:.85rem"><code>!collect</code> gathers what every ready station found (1 stamina for all of them, with the XP). <code>!stations</code> shows this in chat. Buy more in the <a href="#/shop">shop</a>: each costs more than the last.</p>
+      <p class="muted" style="margin-bottom:0;font-size:.85rem"><code>!collect</code> turns every ready station's work into XP: 1 stamina for all of them, a bit more XP than gathering by hand, but no items or points. <code>!stations</code> shows this in chat. Buy more in the <a href="#/shop">shop</a>: each costs more than the last.</p>
     </section>`;
   }
 
@@ -889,7 +889,7 @@
       <div class="shop-grid">${top.map(card).join('')}</div>
 
       <h2 style="margin:28px 0 6px">🏡 Gathering stations</h2>
-      <p class="muted">Like farm plots for your other skills: each station gathers on its own every 20 minutes or so (a bit longer at higher levels), and <code>!collect</code> brings in everything that's ready for <b>1 stamina</b>, with the XP. You get the best things your level can gather. Everyone starts with one of each; <code>!stations</code> shows them.</p>
+      <p class="muted">Like farm plots for your other skills: each station works on its own every 20 minutes or so (a bit longer at higher levels), and <code>!collect</code> turns everything that's ready into XP for <b>1 stamina</b>. It's a little more XP than gathering the same things by hand, but stations give <b>no items and no points</b>, so your backpack stays free. Everyone starts with one of each; <code>!stations</code> shows them.</p>
       <div class="shop-grid">${stationItems.map(card).join('')}</div>
 
       <h2 style="margin:28px 0 6px">🎩 Cosmetics</h2>
@@ -1528,10 +1528,10 @@
     // What each skill is about, shown above its unlock table.
     const bigger = (what) => (g.gatherBonusLevels ?? 50) ? ` Every ${g.gatherBonusLevels ?? 50} levels you get one more ${what}.` : '';
     const SKILL_INTRO = {
-      fishing: `${c('fish')} catches fish. Higher levels unlock better fish; aim for one with ${c('fish trout')}. Fish sell for points, or ${c('cook')} them into food.${bigger('fish per cast')} 🦀 Crab Pots fish for you: ${c('collect')}.`,
-      mining: `${c('mine')} digs ore. Pick an ore with ${c('mine iron')}. ${c('smelt')} ores into ingots and alloys.${bigger('ore per swing')} ⚙️ Ore Drills mine for you: ${c('collect')}.`,
-      woodcutting: `${c('chop')} cuts logs (${c('chop oak')} for a specific tree). Logs are used for fires, bows, arrows and staffs.${bigger('log per chop')} 🌳 Tree Saplings grow logs for you: ${c('collect')}.`,
-      digging: `${c('dig')} unearths coins, relics and fossils. ${c('donate')} them to the museum for 3× their value.${bigger('find per dig')} 🏺 Dig Sites dig for you: ${c('collect')}.`,
+      fishing: `${c('fish')} catches fish. Higher levels unlock better fish; aim for one with ${c('fish trout')}. Fish sell for points, or ${c('cook')} them into food.${bigger('fish per cast')} 🦀 Crab Pots train it for you: ${c('collect')}.`,
+      mining: `${c('mine')} digs ore. Pick an ore with ${c('mine iron')}. ${c('smelt')} ores into ingots and alloys.${bigger('ore per swing')} ⚙️ Ore Drills train it for you: ${c('collect')}.`,
+      woodcutting: `${c('chop')} cuts logs (${c('chop oak')} for a specific tree). Logs are used for fires, bows, arrows and staffs.${bigger('log per chop')} 🌳 Tree Saplings train it for you: ${c('collect')}.`,
+      digging: `${c('dig')} unearths coins, relics and fossils. ${c('donate')} them to the museum for 3× their value.${bigger('find per dig')} 🏺 Dig Sites train it for you: ${c('collect')}.`,
       skinning: `Needs a 🔪 Skinning Knife in your backpack (shop, or smith one at Smithing 20). ${c('skin')} animals for hides and raw meat. ${c('craft')} hides into leather armor.`,
       farming: `Everyone gets a free 🟫 plot; buy more in the <a href="#/shop">shop</a> (the first costs ${shopCost('farm_plot')} pts and each one after costs ${Math.round(((g.plotPriceGrowth ?? 1.12) - 1) * 100)}% more, up to 100). Buy seeds, ${c('plant carrot')}, then ${c('harvest')} when it's grown (1 crop per plot). ${c('farm')} shows your plots. Planting and harvesting each use a stamina charge.`,
       firemaking: `Buy a 🪨 Flint and Steel (${shopCost('flint_and_steel')} pts, 250 fires), then ${c('lightfire')} burns your best log (or ${c('lightfire oak')}). Better logs give more XP, and every fire leaves 🌫️ Ashes. If it doesn't catch, nothing is used up. ${c('fire')} shows how long it burns.`,
@@ -1817,7 +1817,7 @@
         ['plant [crop]', 'Plant seeds in empty plots'],
         ['harvest', 'Collect grown crops'],
         ['farm', 'Your plots'],
-        ['collect', 'Bring in what your gathering stations found (1 stamina)'],
+        ['collect', 'Turn your gathering stations\' work into XP (1 stamina, no items or points)'],
         ['stations', 'Your crab pots, ore drills, saplings and dig sites'],
         ['lightfire [log]', 'Light a fire (needs flint and steel)'],
         ['cook [food]', 'Cook on your fire, no stamina needed'],

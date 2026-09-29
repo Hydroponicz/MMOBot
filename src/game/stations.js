@@ -20,7 +20,7 @@ for (const s of STATIONS) {
     item: s.item,
     cost: s.cost,
     category: 'stations',
-    description: `${s.text}. Each one gathers a ${SKILLS[s.skill].name} resource every 20+ min, with the XP; !collect brings them all in. Up to ${MAX_STATIONS}.`,
+    description: `${s.text}. Each one works a ${SKILLS[s.skill].name} resource every 20+ min; !collect turns it all into XP (a bit more than gathering by hand, but no items or points). Up to ${MAX_STATIONS}.`,
   });
 }
 

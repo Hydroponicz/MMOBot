@@ -339,7 +339,7 @@ class GameEngine extends EventEmitter {
       farm: {
         max: MAX_PLOTS,
         plotCost: this.plotPrice(userId),
-        stations: this.allStations(userId).map((s) => ({ item: s.item, skill: s.skill, name: s.name, icon: s.icon, count: s.count, ready: s.ready, readyAt: s.readyAt, owed: s.owed, price: s.price })),
+        stations: this.allStations(userId).map((s) => ({ item: s.item, skill: s.skill, name: s.name, icon: s.icon, count: s.count, ready: s.ready, readyAt: s.readyAt, price: s.price })),
         plots: this.farmPlots(userId).map((p) => ({
           ...p,
           crop: p.crop ? { id: p.crop, name: ITEMS[p.crop].name, icon: ITEMS[p.crop].icon } : null,
@@ -417,6 +417,7 @@ class GameEngine extends EventEmitter {
       chatPointsFullPerDay: this.cfg.chatPointsFullPerDay ?? 30,
       plotPriceGrowth: this.cfg.plotPriceGrowth ?? 1.12,
       gatherBonusLevels: this.cfg.gatherBonusLevels ?? 50,
+      stationXpBonus: this.cfg.stationXpBonus ?? 1.2,
       xpMultiplier: this.cfg.xpMultiplier,
       disabledCommands: this.cfg.disabledCommands || [],
       backpack: this.backpackTiers().map((t, i) => ({ level: i + 1, ...t })),

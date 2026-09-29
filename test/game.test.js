@@ -2298,37 +2298,44 @@ test('regression: bounties, guild deposits and overpriced market buys share the 
   assert.match(engine.marketBuy(u, l.id).error, /daily limit/);
 });
 
-test('gathering stations: free first haul, !collect for one stamina, exponential prices, full bag leaves some owed', () => {
+test('gathering stations: !collect turns their work into extra XP, no items or points, for one stamina', () => {
   const { repo, say, engine, tick } = setup();
+  const { SKILLS } = require('../src/game/skills');
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
-  assert.match(say('!stations'), /🦀 1 Crab Pot ✅ ready.*⚙️ 1 Ore Drill ✅ ready/);
+  assert.match(say('!stations'), /🦀 1 Crab Pot ✅ ready.*⚙️ 1 Ore Drill ✅ ready.*no items or points/);
   const staminaBefore = engine.stamina(u.id).charges;
+  const pointsBefore = repo.getUser(u.id).points;
   const reply = say('!collect');
-  assert.match(reply, /📦 collected 🦀 .*⚙️ .*🌳 .*🏺 /);
+  assert.match(reply, /📦 collected 🦀 1 Crab Pot \+\d+ XP.*⚙️ .*🌳 .*🏺 /);
+  assert.doesNotMatch(reply, /pts/);
   assert.equal(engine.stamina(u.id).charges, staminaBefore - 1, 'one charge for everything');
-  assert.ok(repo.getSkills(u.id).fishing > 0 && repo.getSkills(u.id).mining > 0);
+  assert.equal(repo.getUser(u.id).points, pointsBefore, 'no points');
+  assert.deepEqual(repo.getInventory(u.id), {}, 'no items');
+  // Level 1: every station works shrimp (10 XP by hand) -> 12 XP with the 20% bonus.
+  assert.equal(SKILLS.fishing.resources[0].xp, 10);
+  assert.equal(repo.getSkills(u.id).fishing, 12);
   assert.match(say('!collect'), /still working\. Next: .* in 20m/);
 
   repo.addPoints(u.id, 10_000);
   assert.match(say('!buy crab pot'), /bought a Crab Pot for 750 pts! You now have 2\..*Next one: 840 pts/);
   assert.match(say('!buy ore drill 2'), /bought 2 Ore Drills for 1,590 pts/);
   assert.equal(engine.stationCount(u.id, 'mining'), 3);
-  // Prices are per station type.
-  assert.equal(engine.stationPrice(u.id, 'woodcutting'), 750);
+  assert.equal(engine.stationPrice(u.id, 'woodcutting'), 750, 'prices are per station type');
 
-  // Nearly full bag: collect what fits, the rest is owed and ready right away.
-  tick(21 * 60);
+  // A full backpack doesn't matter any more.
   const bag = engine.backpack(u.id);
-  repo.addItem(u.id, 'copper_ore', bag.capacity - bag.used - 2);
-  assert.match(say('!collect'), /Backpack full: \d+ more waiting/);
-  assert.equal(engine.backpack(u.id).used, engine.backpack(u.id).capacity);
-  const owed = engine.allStations(u.id).filter((s) => s.owed > 0);
-  assert.ok(owed.length && owed.every((s) => s.ready));
-  assert.match(say('!collect'), /backpack is full/);
-  say('!sell all');
-  tick(60);
-  assert.match(say('!collect'), /📦 collected/);
-  assert.equal(engine.allStations(u.id).reduce((s, x) => s + x.owed, 0), 0);
+  repo.addItem(u.id, 'copper_ore', bag.capacity - bag.used);
+  tick(21 * 60);
+  const before = repo.getSkills(u.id).fishing;
+  assert.match(say('!collect'), /🦀 2 Crab Pots/);
+  assert.equal(repo.getSkills(u.id).fishing - before, 24);
+
+  // The multiplier is a setting.
+  engine.cfg.stationXpBonus = 1;
+  tick(21 * 60);
+  const b2 = repo.getSkills(u.id).fishing;
+  say('!collect');
+  assert.equal(repo.getSkills(u.id).fishing - b2, 20);
 });
 
 test('sell prices drop with channel-wide selling and recover over time; !price shows them', () => {

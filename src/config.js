@@ -85,6 +85,8 @@ const config = {
     chatPointsFullPerDay: int('CHAT_POINTS_FULL_PER_DAY', 30),
     // +1 item per gathering action every this many levels (0 = off).
     gatherBonusLevels: int('GATHER_BONUS_LEVELS', 50),
+    // !collect (gathering stations) gives this times the XP of gathering by hand, and no items or points.
+    stationXpBonus: num('STATION_XP_BONUS', 1.2),
     // Sell prices drop as the channel sells an item (0 = fixed prices), recovering by half every few hours.
     priceSupplyScale: int('PRICE_SUPPLY_SCALE', 25000),
     priceRecoveryHours: num('PRICE_RECOVERY_HOURS', 6),
