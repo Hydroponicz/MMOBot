@@ -16,6 +16,15 @@ function matches(m, entry) {
   return !m.text || new RegExp(m.text).test(entry.text || '');
 }
 
+// How far a player is on each objective of a quest. Objectives can be done in any order, so every
+// objective keeps its own count. Progress saved when objectives went one at a time ({ step, count })
+// is converted: objectives before `step` are complete, `step` has `count`.
+function stepCounts(quest, pr) {
+  if (!pr) return quest.steps.map(() => 0);
+  if (Array.isArray(pr.counts)) return quest.steps.map((s, i) => Math.min(s.qty, pr.counts[i] || 0));
+  return quest.steps.map((s, i) => (i < (pr.step || 0) ? s.qty : i === (pr.step || 0) ? Math.min(s.qty, pr.count || 0) : 0));
+}
+
 module.exports = {
   // ---- Quests ---------------------------------------------------------------------------
   questKey(userId) {
@@ -23,7 +32,7 @@ module.exports = {
   },
 
   // Players pick which quests to do (up to MAX_ACTIVE at once, all progressing together). Pausing one
-  // keeps its progress. State: { active: [ids], progress: { id: { step, count } }, done: [ids] }.
+  // keeps its progress. State: { active: [ids], progress: { id: { counts: [per objective] } }, done: [ids] }.
   questState(userId) {
     const st = this.repo.getSetting(this.questKey(userId));
     if (!st) return { active: [QUESTS[0].id], progress: {}, done: [] };
@@ -45,22 +54,24 @@ module.exports = {
     return QUESTS.find((x) => x.id === s || x.name.toLowerCase() === s) || QUESTS.find((x) => x.name.toLowerCase().includes(s));
   },
 
+  // Every unfinished objective of every active quest that this action matches moves forward.
   questProgress(user, entry) {
     const st = this.questState(user.id);
     let changed = false;
     for (const id of [...st.active]) {
       const quest = QUESTS.find((q) => q.id === id);
       if (!quest) continue;
-      const pr = st.progress[id] || { step: 0, count: 0 };
-      const step = quest.steps[pr.step];
-      if (!step || !matches(step.match, entry)) continue;
-      changed = true;
-      pr.count += 1;
-      st.progress[id] = pr;
-      if (pr.count < step.qty) continue;
-      pr.step += 1;
-      pr.count = 0;
-      if (pr.step >= quest.steps.length) {
+      const counts = stepCounts(quest, st.progress[id]);
+      const finished = [];
+      quest.steps.forEach((step, i) => {
+        if (counts[i] >= step.qty || !matches(step.match, entry)) return;
+        counts[i] += 1;
+        changed = true;
+        if (counts[i] >= step.qty) finished.push(step);
+      });
+      st.progress[id] = { counts };
+      const left = quest.steps.filter((s, i) => counts[i] < s.qty);
+      if (!left.length) {
         st.done = [...st.done, id];
         st.active = st.active.filter((x) => x !== id);
         delete st.progress[id];
@@ -68,11 +79,12 @@ module.exports = {
         this.track('rewards', quest.reward);
         this.emitActivity(user, { kind: 'quest', text: `completed the quest ${quest.icon} ${quest.name}! (title: ${quest.title})` });
         this.notify?.(user.id, `${quest.icon} Quest complete: ${quest.name}! +${fmt(quest.reward)} pts and the title "${quest.title}".`);
-        const left = QUESTS.filter((q) => !st.done.includes(q.id) && !st.active.includes(q.id)).length;
-        this.announce(`📜 @${user.username} completed the quest ${quest.icon} ${quest.name}! +${fmt(quest.reward)} pts and the title "${quest.title}".${left ? ` Pick another: ${this.cfg.prefix}quests` : ''}`);
-      } else {
-        const next = quest.steps[pr.step];
-        this.announce(`📜 @${user.username} ✅ ${step.text}! Next for ${quest.icon} ${quest.name}: ${next.text} (0/${next.qty}).`);
+        const more = QUESTS.filter((q) => !st.done.includes(q.id) && !st.active.includes(q.id)).length;
+        this.announce(`📜 @${user.username} completed the quest ${quest.icon} ${quest.name}! +${fmt(quest.reward)} pts and the title "${quest.title}".${more ? ` Pick another: ${this.cfg.prefix}quests` : ''}`);
+      } else if (finished.length) {
+        const done = quest.steps.length - left.length;
+        const rest = left.map((s) => `${s.text} (${counts[quest.steps.indexOf(s)]}/${s.qty})`).join(' · ');
+        this.announce(`📜 @${user.username} ✅ ${finished.map((s) => s.text).join(' + ')}! ${quest.icon} ${quest.name}: ${done}/${quest.steps.length} done. Still to do: ${rest}.`);
       }
     }
     if (changed) this.saveQuests(user.id, st);
@@ -91,8 +103,9 @@ module.exports = {
     st.active = [...st.active, quest.id];
     this.saveQuests(user.id, st);
     const pr = st.progress[quest.id];
-    const step = quest.steps[pr?.step || 0];
-    return { ok: true, message: `📜 ${pr ? 'Resumed' : 'Started'} ${quest.icon} ${quest.name}: ${step.text} ${pr?.count || 0}/${step.qty}.${pr ? '' : ` ${quest.intro}`}` };
+    const counts = stepCounts(quest, pr);
+    const todo = quest.steps.map((s, i) => (counts[i] < s.qty ? `${s.text} ${counts[i]}/${s.qty}` : null)).filter(Boolean);
+    return { ok: true, message: `📜 ${pr ? 'Resumed' : 'Started'} ${quest.icon} ${quest.name}: ${todo.join(' · ')} (any order).${pr ? '' : ` ${quest.intro}`}` };
   },
 
   // Pause a quest: it stops counting but keeps its progress.
@@ -126,7 +139,10 @@ module.exports = {
         reward: q.reward,
         title: q.title,
         status,
-        steps: q.steps.map((s, i) => ({ text: s.text, qty: s.qty, have: done || (pr && i < pr.step) ? s.qty : pr && i === pr.step ? pr.count : 0 })),
+        steps: (() => {
+          const counts = stepCounts(q, pr);
+          return q.steps.map((s, i) => ({ text: s.text, qty: s.qty, have: done ? s.qty : counts[i] }));
+        })(),
       };
     });
   },
@@ -153,9 +169,15 @@ module.exports = {
     }
     const lines = st.active.map((id) => {
       const q = QUESTS.find((x) => x.id === id);
-      const pr = st.progress[id] || { step: 0, count: 0 };
-      const step = q.steps[pr.step];
-      return `${q.icon} ${q.name} (${pr.step + 1}/${q.steps.length}): ${step.text} ${pr.count}/${step.qty}`;
+      const counts = stepCounts(q, st.progress[id]);
+      // Objectives already started come first, so what you're working on is always shown.
+      const left = q.steps
+        .map((s, i) => ({ s, have: counts[i], i }))
+        .filter((x) => x.have < x.s.qty)
+        .sort((a, b) => (b.have > 0) - (a.have > 0) || a.i - b.i)
+        .map((x) => `${x.s.text} ${x.have}/${x.s.qty}`);
+      const shown = left.slice(0, 3).join(' · ') + (left.length > 3 ? ` +${left.length - 3} more` : '');
+      return `${q.icon} ${q.name} (${q.steps.length - left.length}/${q.steps.length} done): ${shown}`;
     });
     return `📜 ${lines.join(' · ')}${available.length ? ` | More: ${p}quests` : ''}`;
   },

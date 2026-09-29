@@ -1577,8 +1577,8 @@
       ...g.skills.filter((s) => s.type === 'combat').map((s) => skillTopic(s, 'combat')),
       {
         id: 'quests', tab: 'rewards', icon: '📜', title: 'Quests', summary: `${g.quests.length} short storylines with points and titles`,
-        body: `<p>Pick any quests you like, up to 3 at once: they all count what you already do. ${c('quest start relic hunter')} starts one, ${c('quest pause relic hunter')} pauses it (progress is kept), ${c('quest')} shows your active ones and ${c('quests')} lists them all. Or use the buttons on your character page.</p>${list(
-          g.quests.map((q) => `${q.icon} <b>${esc(q.name)}</b>: ${q.steps.map(esc).join(' → ')}. <span class="muted">Reward ${fmt(q.reward)} pts + “${esc(q.title)}”</span>`)
+        body: `<p>Pick any quests you like, up to 3 at once: they all count what you already do, and a quest's objectives can be done in any order (they all fill up at the same time). ${c('quest start relic hunter')} starts one, ${c('quest pause relic hunter')} pauses it (progress is kept), ${c('quest')} shows your active ones and ${c('quests')} lists them all. Or use the buttons on your character page.</p>${list(
+          g.quests.map((q) => `${q.icon} <b>${esc(q.name)}</b>: ${q.steps.map(esc).join(' · ')}. <span class="muted">Reward ${fmt(q.reward)} pts + “${esc(q.title)}”</span>`)
         )}`,
       },
       {

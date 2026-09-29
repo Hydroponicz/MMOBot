@@ -1875,7 +1875,7 @@ test('quests: players choose any quest, up to 3 at once, in parallel; pausing ke
   engine.on('announce', (t) => said.push(t));
   const act = (entry, n = 1) => { for (let i = 0; i < n; i++) engine.questProgress(u, { kind: 'action', ...entry }); };
   // New players start with the first quest active but can pick any other.
-  assert.match(say('!quest'), /The Blacksmith's Apprentice \(1\/5\): Mine Copper Ore 0\/10/);
+  assert.match(say('!quest'), /The Blacksmith's Apprentice \(0\/5 done\): Mine Copper Ore 0\/10 · Mine Tin Ore 0\/10 · Smelt Bronze Alloys 0\/5 \+2 more/);
   assert.match(say('!quest start relic hunter'), /Started 🏺 Relic Hunter: Dig up finds 0\/25/);
   assert.match(say('!quest hearth'), /Started 🍳 Hearth & Home/, '!quest <name> starts it too');
   assert.match(say('!quest start hunter'), /3 quests going at once/);
@@ -1883,8 +1883,8 @@ test('quests: players choose any quest, up to 3 at once, in parallel; pausing ke
   // Progress counts on every active quest that matches.
   act({ skill: 'digging', item: 'old_bone' }, 10);
   act({ skill: 'fishing', item: 'shrimp' }, 5);
-  assert.match(say('!quest'), /Relic Hunter \(1\/2\): Dig up finds 10\/25/);
-  assert.match(say('!quest'), /Hearth & Home \(1\/4\): Catch fish 5\/15/);
+  assert.match(say('!quest'), /Relic Hunter \(0\/2 done\): Dig up finds 10\/25/);
+  assert.match(say('!quest'), /Hearth & Home \(0\/4 done\): Catch fish 5\/15/);
   // Pausing stops counting but keeps progress.
   assert.match(say('!quest pause relic'), /Paused 🏺 Relic Hunter/);
   act({ skill: 'digging', item: 'old_bone' }, 5);
@@ -1913,10 +1913,32 @@ test('quests: players choose any quest, up to 3 at once, in parallel; pausing ke
 test('quests: progress saved by the old one-at-a-time quests carries over', () => {
   const { repo, engine, say, u } = extrasSetup();
   repo.setSetting(`quest:${u.id}`, { chain: 'hearth', step: 2, progress: 1, done: ['apprentice'] });
-  assert.match(say('!quest'), /Hearth & Home \(3\/4\): Light fires 1\/3/);
+  assert.match(say('!quest'), /Hearth & Home \(2\/4 done\): Light fires 1\/3 · Cook food 0\/10/);
   assert.ok(engine.titles(u.id).includes('the Apprentice'));
   assert.match(say('!quest start hunter'), /Started/);
   assert.deepEqual(engine.questState(u.id).active, ['hearth', 'hunter']);
+});
+
+test('quests: objectives can be done in any order, all at the same time', () => {
+  const { engine, say, u } = extrasSetup();
+  const said = [];
+  engine.on('announce', (t) => said.push(t));
+  const act = (entry, n = 1) => { for (let i = 0; i < n; i++) engine.questProgress(u, { kind: 'action', ...entry }); };
+  say('!quest start hearth');
+  const hearth = () => engine.publicQuests(u.id).find((q) => q.id === 'hearth');
+  const first = hearth().steps[0].text;
+  // Work on the later objectives first: they count right away.
+  const cooking = hearth().steps.findIndex((s) => /Cook/.test(s.text));
+  assert.ok(cooking > 0);
+  act({ skill: 'cooking', item: 'cooked_shrimp' }, 4);
+  act({ skill: 'fishing', item: 'shrimp' }, 3);
+  assert.equal(hearth().steps[cooking].have, 4);
+  assert.equal(hearth().steps[0].have, 3);
+  assert.match(say('!quest'), /Hearth & Home \(0\/4 done\): Catch fish 3\/15 · Cook food 4\/10 · Plant crops 0\/1 \+1 more/);
+  // Finishing an objective that isn't first says what's left.
+  act({ skill: 'cooking', item: 'cooked_shrimp' }, 6);
+  assert.match(said.at(-1), new RegExp(`✅ Cook food! .*Hearth & Home: 1\\/4 done\\. Still to do: ${first}`));
+  assert.equal(hearth().status, 'active');
 });
 
 test('channel goals: chat actions fill it; reaching it starts an XP boost', () => {
