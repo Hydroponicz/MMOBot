@@ -190,6 +190,19 @@ CREATE INDEX IF NOT EXISTS idx_relics_owner ON relics(owner_id, status);
 CREATE INDEX IF NOT EXISTS idx_relics_status ON relics(status, listed_at);
 CREATE INDEX IF NOT EXISTS idx_relics_skin ON relics(skin);
 
+-- Every fish caught, with its own length and weight (the Fishing page shows them in 3D).
+CREATE TABLE IF NOT EXISTS catches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  fish TEXT NOT NULL,
+  length REAL NOT NULL,
+  weight REAL NOT NULL,
+  spot TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_catches_user ON catches(user_id, id);
+CREATE INDEX IF NOT EXISTS idx_catches_fish ON catches(fish, weight);
+
 -- Relic trade offers between two players: relics (and points) each way.
 CREATE TABLE IF NOT EXISTS relic_trades (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -557,6 +570,22 @@ function createRepo(db) {
         .all(userId, userId, limit),
     cardTradesOpenFrom: (userId) => db.prepare("SELECT COUNT(*) AS n FROM card_trades WHERE from_id = ? AND status = 'open'").get(userId).n,
     cardTradesExpire: (before, ts) => db.prepare("UPDATE card_trades SET status = 'expired', updated_at = ? WHERE status = 'open' AND created_at < ?").run(ts, before).changes,
+
+    // Fishing: every catch with its size
+    catchInsert: (userId, { fish, length, weight, spot }, ts) =>
+      Number(db.prepare('INSERT INTO catches (user_id, fish, length, weight, spot, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(userId, fish, length, weight, spot || null, ts).lastInsertRowid),
+    catchGet: (id) => db.prepare('SELECT c.*, u.username FROM catches c JOIN users u ON u.id = c.user_id WHERE c.id = ?').get(id) || null,
+    catchesOf: (userId, limit = 60) => db.prepare('SELECT * FROM catches WHERE user_id = ? ORDER BY id DESC LIMIT ?').all(userId, limit),
+    catchCount: (userId) => db.prepare('SELECT COUNT(*) AS n FROM catches WHERE user_id = ?').get(userId).n,
+    // Heaviest catch of each fish for one player (their personal bests).
+    catchBests: (userId) =>
+      db.prepare('SELECT c.* FROM catches c JOIN (SELECT fish, MAX(weight) AS w FROM catches WHERE user_id = ? GROUP BY fish) b ON b.fish = c.fish AND b.w = c.weight WHERE c.user_id = ? GROUP BY c.fish').all(userId, userId),
+    catchBest: (userId, fish) => db.prepare('SELECT * FROM catches WHERE user_id = ? AND fish = ? ORDER BY weight DESC LIMIT 1').get(userId, fish) || null,
+    // Heaviest catch of each fish by anyone (the records).
+    catchRecords: () =>
+      db.prepare('SELECT c.*, u.username FROM catches c JOIN users u ON u.id = c.user_id JOIN (SELECT fish, MAX(weight) AS w FROM catches GROUP BY fish) b ON b.fish = c.fish AND b.w = c.weight GROUP BY c.fish').all(),
+    catchRecord: (fish) => db.prepare('SELECT c.*, u.username FROM catches c JOIN users u ON u.id = c.user_id WHERE c.fish = ? ORDER BY c.weight DESC LIMIT 1').get(fish) || null,
+    catchRecent: (limit = 20) => db.prepare('SELECT c.*, u.username FROM catches c JOIN users u ON u.id = c.user_id ORDER BY c.id DESC LIMIT ?').all(limit),
 
     // Relic cases
     relicInsert: (ownerId, { skin, float, seed, soul }, origin, ts) =>

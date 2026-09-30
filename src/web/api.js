@@ -178,6 +178,22 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     return act((r) => fn(r) || 'Slow down a little!')(req, res, next);
   });
 
+  // ---- Fishing: spots, catches with sizes, personal bests and records -------------------------
+  router.get('/fishing', (req, res) => {
+    res.json({ ...engine.fishingPage(req.user?.id ?? null), username: req.user?.username ?? null });
+  });
+  router.get('/fishing/catch/:id', (req, res) => {
+    const c = engine.catchById(req.params.id);
+    if (!c) return res.status(404).json({ error: 'no such catch' });
+    res.json(c);
+  });
+  router.post('/fishing/cast', requireLogin, (req, res) => {
+    const r = engine.castAt(req.user, String(req.body?.spot || ''));
+    if (r.error) return res.status(400).json({ error: r.error });
+    logger.info(`[site] ${req.user.username}: fishing ${req.body?.spot} → ${r.reply}`);
+    res.json({ message: r.reply || 'Slow down a little!', catches: r.catches, stamina: engine.stamina(req.user.id), level: r.level, xp: r.xp });
+  });
+
   // ---- Structures: the town, player shops, house building ----------------------------------
   router.get('/town', (req, res) => {
     res.json({ ...engine.townPage(req.user?.id ?? null), username: req.user?.username ?? null, points: req.user ? repo.getUser(req.user.id).points : null });

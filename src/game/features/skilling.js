@@ -43,11 +43,13 @@ const {
   unlockName,
 } = require('./shared');
 const { RACES } = require('../appearance');
+const { SPOT_BY_ID } = require('../fish');
 
 module.exports = {
   // ---- Skilling ----------------------------------------------------------
 
-  runAction(user, skillId, args) {
+  // opts.spot: fishing at one spot (the website's Fishing page).
+  runAction(user, skillId, args, opts = {}) {
     // Nails are Carpentry, but made at the anvil: "!craft iron nails" (a Smithing Hammer and the bar).
     let via = null;
     const nails = /\bnails?\b/i.test(args.join(' '));
@@ -82,7 +84,7 @@ module.exports = {
             ? this.process(user, skillId, args, via)
           : skill.type === 'course'
             ? this.runCourse(user, args)
-            : this.gather(user, skillId, args);
+            : this.gather(user, skillId, args, opts);
       if (r.consumed) {
         this.repo.setActionAt(user.id, now);
         // (A lucky Agility shortcut makes the lap free.)
@@ -127,11 +129,14 @@ module.exports = {
     return `🍳 cooked ${cooked}${burnt ? ` (burned ${burnt})` : ''}: ${list || 'nothing'}! +${fmt(xp)} Cooking XP (Cooking ${skillLevel('cooking', this.repo.getSkills(user.id).cooking)}). 🔥 Fire: ${out}.`;
   },
 
-  gather(user, skillId, args) {
+  gather(user, skillId, args, { spot = null } = {}) {
     const skill = SKILLS[skillId];
     const xp = this.repo.getSkills(user.id)[skillId];
     const level = skillLevel(skillId, xp);
-    const unlocked = skill.resources.filter((r) => r.level <= level);
+    // A fishing spot only has its own fish.
+    const here = spot ? SPOT_BY_ID[spot] : null;
+    const unlocked = skill.resources.filter((r) => r.level <= level && (!here || here.fish.includes(r.item)));
+    if (here) args = [];
     const tool = this.currentTool(user.id, skillId);
     if (skill.requires && !this.repo.getInventory(user.id)[skill.requires]) return { consumed: false, reply: this.missingToolMessage(skill) };
 
@@ -190,6 +195,9 @@ module.exports = {
     const qty = Math.max(1, Math.min(1 + extra + (boost && !rare ? 1 : 0), bag.capacity - bag.used + (boost ? 1 : 0)));
     const result = this.reward(user, skillId, drop.item, drop.xp * qty, { rare, qty });
     if (boost) result.reply = result.reply.replace(/!/, ` (used ${itemLabel(boost.item)})!`);
+    // Every fish gets its own length and weight; they're all on the Fishing page in 3D.
+    const caught = skillId === 'fishing' ? this.recordCatch?.(user, drop.item, qty, spot) : null;
+    if (caught) result.reply = result.reply.replace(/!/, ` (${caught.text})!`) + (here ? '' : ` 🐟 See all your catches in 3D: ${this.siteUrl}/#/fishing`);
     // Skinned animals also give their meat, if there's room for it.
     if (drop.meat) {
       const bag = this.backpack(user.id);

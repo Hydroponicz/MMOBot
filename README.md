@@ -7,7 +7,7 @@ Viewers type commands in your Kick chat to train skills, collect loot and level 
 - **16 skills**, each levelling from 1 to 500:
   | Command | Skill | What it does |
   |---|---|---|
-  | `!fish` | 🎣 Fishing | Shrimp → Shark |
+  | `!fish` | 🎣 Fishing | Shrimp → Celestial Whale. Every catch gets its own **length and weight** (e.g. `you caught 🐟 Trout (📏 55.3 cm, 1.95 kg)!`, with 🏅 personal bests, 🌟 trophies and 🏆 records flagged), and the reply links to the **Fishing page** (`#/fishing`): the skill's home, where players can also cast at five spots (Harbor Pier, Silverrun River 20, the Open Sea 40, the Abyssal Trench 100, Serpent's Reach 400, each with its own fish) and watch the catch leap out as a procedural 3D model at its real size next to a ruler (and a person for anything over 80 cm). It also has every catch in 3D, a fishdex with personal bests and size ranges, and the records. Sizes: mostly mid-range, about 1 in 40 a trophy up to 25% past the usual max, weight grows with length cubed. Breaking a record with a big fish is announced in chat |
   | `!mine` | ⛏️ Mining | Copper/Tin → Runite ore |
   | `!chop` | 🪓 Woodcutting | Logs → Redwood |
   | `!dig` | 🏺 Digging | Old bones → Dragon relics |

@@ -1081,6 +1081,7 @@
   pages.casino = async () => window.MMOCasino($app, { api, toast, esc, fmt, state, route });
   pages.stream = async () => window.MMOStream($app, { api, toast, esc, fmt, state, ago, playerLink });
   pages.pvp = async () => window.MMOPvp($app, { api, toast, esc, fmt, state, ago, playerLink });
+  pages.fishing = async () => window.MMOFishing($app, { api, toast, esc, fmt, state, ago, playerLink });
   pages.town = async (params) => window.MMOTown($app, { api, toast, esc, fmt, state, playerLink }, params);
   pages.veil = async () => window.MMOVeil($app, { api, toast, esc, fmt, state, ago, playerLink });
   pages.relics = async (_, query) => window.MMORelics($app, { api, toast, esc, fmt, state, route, ago, playerLink }, query);
@@ -1658,7 +1659,7 @@
     // What each skill is about, shown above its unlock table.
     const bigger = (what) => (g.gatherBonusLevels ?? 50) ? ` Every ${g.gatherBonusLevels ?? 50} levels you get one more ${what}.` : '';
     const SKILL_INTRO = {
-      fishing: `${c('fish')} catches fish. Higher levels unlock better fish; aim for one with ${c('fish trout')}. Fish sell for points, or ${c('cook')} them into food.${bigger('fish per cast')} 🦀 Crab Pots train it for you: ${c('collect')}.`,
+      fishing: `${c('fish')} catches fish. Higher levels unlock better fish; aim for one with ${c('fish trout')}. Fish sell for points, or ${c('cook')} them into food.${bigger('fish per cast')} 🦀 Crab Pots train it for you: ${c('collect')}. <b>Every fish has its own length and weight</b> (most are average, a few are runts, about 1 in 40 is a trophy past the usual size), and the <a href="#/fishing">Fishing page</a> shows every catch in 3D at its real size next to a ruler, your personal best for each fish, and the record holders. You can fish there too, at five spots with their own fish: Harbor Pier, Silverrun River (Fishing 20), the Open Sea (40), the Abyssal Trench (100) and Serpent's Reach (400).`,
       mining: `${c('mine')} digs ore. Pick an ore with ${c('mine iron')}. ${c('smelt')} ores into ingots and alloys.${bigger('ore per swing')} ⚙️ Ore Drills train it for you: ${c('collect')}.`,
       woodcutting: `${c('chop')} cuts logs (${c('chop oak')} for a specific tree). Logs are used for fires, bows, arrows and staffs.${bigger('log per chop')} 🌳 Tree Saplings train it for you: ${c('collect')}.`,
       digging: `${c('dig')} unearths coins, relics and fossils. ${c('donate')} them to the museum for 3× their value.${bigger('find per dig')} 🏺 Dig Sites train it for you: ${c('collect')}.`,
