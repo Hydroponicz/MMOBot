@@ -15,7 +15,8 @@
          &seconds=6       how long each event stays      &max=1       how many can be on screen at once
          &quiet=1         don't show the "connected" message when the overlay loads
          &raid=1          show the raid / world boss bar
-         &scenes=3d       the player's 3D character doing the action (default, when the browser has WebGL)
+         &scenes=3d       the player's 3D character doing the action (default; needs WebGL, so turn on
+                          "Use hardware acceleration" in OBS settings, else the flat scenes show)
          &scenes=2d       the older flat animated scenes      &scenes=0    plain text only
          &stats=1         show the rotating "this stream" panel (top XP, last rare find, raid MVP)
          &goal=1          show the channel goal bar      &project=1   show the community project bar
@@ -105,8 +106,9 @@
     const seconds = Math.min(Math.max(Number(params.get('seconds')) || 6, 2), 120);
     const max = Math.min(Math.max(Number(params.get('max')) || 1, 1), 10);
     const quiet = params.has('quiet');
+    // scenes: 3d (default; also the old "1") · 2d (flat animated scenes) · 0 (text only).
     const sceneMode = (params.get('scenes') || '3d').toLowerCase();
-    const scenes = ['2d', '1', 'true', 'on'].includes(sceneMode) && !!window.MMOAvatar;
+    const want3d = !['2d', '0', 'false', 'off', 'text'].includes(sceneMode);
     // 3D: loaded once, used for any event that comes with the player's character.
     const webgl = (() => {
       try {
@@ -115,7 +117,9 @@
         return false;
       }
     })();
-    const three = sceneMode === '3d' && webgl && window.MMOAvatar ? import('/avatar3d.js').catch(() => null) : null;
+    const three = want3d && webgl && window.MMOAvatar ? import('/avatar3d.js').catch(() => null) : null;
+    // No WebGL (e.g. hardware acceleration off in OBS): the flat animated scenes instead.
+    const scenes = !!window.MMOAvatar && (sceneMode === '2d' || (want3d && !three));
     const FADE = 1.2; // seconds to fade in and to fade out
 
     // What each skill looks like: the tool in the character's hand, what they work on, how the arm
