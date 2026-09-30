@@ -204,6 +204,7 @@
 
   // r: a relic (or a catalog skin with no float/seed). Returns an <svg>.
   function relicSvg(r, cls = '') {
+    if (window.MMORelicArt) return window.MMORelicArt.html(r, `relic-svg ${cls}`, cls.includes('big') ? 960 : 480);
     const shape = SHAPES[r.weapon] || SHAPES.sword;
     const id = `rl${++uid}`;
     const seed = r.seed ?? 500;
@@ -286,6 +287,22 @@
       return `<div class="lock-box"><b>🔒 You can't ${what} yet</b><p>New players unlock the market and trades once both of these are done. It stops throwaway accounts from passing points around.</p><ul>${rows.join('')}</ul><p>Until then you can open cases, sign trade-up contracts and sell relics to the bank.</p></div>`;
     }
 
+    // ---- 3D relics (relic3d.js, loaded when first needed) ---------------------------------------
+    let relic3d = null;
+    const load3d = () => (relic3d ||= import('/relic3d.js').catch(() => null));
+    // Swaps the 2D art in `box` for the 3D model; returns the viewer (dispose it when done).
+    async function mount3d(box, r, opts = {}) {
+      const mod = await load3d();
+      if (!mod || !mod.supported() || !box?.isConnected) return null;
+      box.classList.add('is-3d');
+      const stage = document.createElement('div');
+      stage.className = 'relic3d-stage';
+      box.appendChild(stage);
+      const view = mod.mount(stage, r, { glow: r.color, ...opts });
+      cleanups.push(() => view.dispose());
+      return view;
+    }
+
     // ---- Overlay ------------------------------------------------------------------------------
     function overlay(html, cls = '') {
       const o = document.createElement('div');
@@ -295,6 +312,7 @@
       document.body.classList.add('cd-noscroll');
       const onKey = (e) => e.key === 'Escape' && close();
       const close = () => {
+        for (const f of o._onClose || []) f();
         o.remove();
         document.removeEventListener('keydown', onKey);
         if (!document.querySelector('.cd-overlay')) document.body.classList.remove('cd-noscroll');
@@ -369,6 +387,8 @@
       const r = await post('/relics/open', { case: c.id, count });
       if (!r) return;
       setBalance(r.balance);
+      // Paint every skin in this case up front so none fly past blank.
+      window.MMORelicArt?.warm(CASES[c.id]?.skins || []);
       const o = overlay(
         `<div class="spin-head"><h2>${c.icon} ${esc(c.name)}</h2><button class="btn btn-sm" id="sp-sound" title="Sound">${sound ? '🔊' : '🔈'}</button></div>
         <div class="rl-reels">${r.relics
@@ -445,6 +465,13 @@
           setTimeout(() => burst($o.querySelector('#sp-result'), [best.color, '#fff', '#e4ae39']), 100);
         }
         const kept = new Set(r.relics.map((x) => x.id));
+        // The best pull, in 3D, spinning out of the case.
+        const hero = document.createElement('div');
+        hero.className = `sp-hero r-${best.rarity}`;
+        hero.style.setProperty('--rc', best.color);
+        hero.innerHTML = `<div class="sp-hero-art">${relicSvg(best, 'big')}</div><div class="sp-hero-name" style="color:${best.color}">${best.star ? '★ ' : ''}${esc(best.fullName.replace(/^★ /, ''))}<small>${best.exterior} · ${best.float.toFixed(4)}${best.pattern ? ` · ${esc(best.pattern)}` : ''}</small></div>`;
+        $o.querySelector('#sp-result').before(hero);
+        mount3d(hero.querySelector('.sp-hero-art'), best, { spinIn: true, controls: true }).then((v) => v && (o.el._onClose = [...(o.el._onClose || []), () => v.dispose()]));
         const draw_ = () => {
           $o.querySelector('#sp-result').innerHTML = `<div class="sp-result">${r.relics
             .map((x) => tile(x, { cls: kept.has(x.id) ? 'big' : 'big sold', extra: `<div class="rtile-value">${fmt(x.value)} pts</div>${kept.has(x.id) ? `<button class="btn btn-sm" data-sell="${x.id}">Sell +${fmt(x.buyback)}</button>` : '<span class="muted">Sold</span>'}` }))
@@ -511,7 +538,7 @@
         actions = tradeLock('buy relics from other players') || `<div class="cd-act"><button class="btn btn-primary" id="ins-buy" ${data.points < r.price ? 'disabled' : ''}>Buy for ${fmt(r.price)} pts</button><p class="muted">Sold by ${esc(r.owner)}. Value ${fmt(r.value)} pts.</p></div>`;
       }
       $d.innerHTML = `
-        <div class="ins-art r-${r.rarity}" style="--rc:${r.color}">${relicSvg(r, 'big')}</div>
+        <div class="ins-art r-${r.rarity}" style="--rc:${r.color}">${relicSvg(r, 'big')}<span class="ins-3d-hint">Drag to turn · scroll to zoom</span></div>
         <div class="ins-info">
           <div class="muted">${esc(r.caseName)}${r.origin === 'tradeup' ? ' · from a trade-up contract' : ''}</div>
           <h2 style="margin:4px 0;color:${r.color}">${esc(r.fullName)}</h2>
@@ -527,6 +554,7 @@
           <div class="cd-msg" id="ins-msg" role="alert" hidden></div>
           ${actions}
         </div>`;
+      mount3d($d.querySelector('.ins-art'), r).then((v) => v && (o.el._onClose = [...(o.el._onClose || []), () => v.dispose()]));
       const $ = (s) => $d.querySelector(s);
       const done = (res) => {
         if (!res) return;
