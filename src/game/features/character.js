@@ -129,7 +129,7 @@ module.exports = {
     if (!a) return null;
     const worn = this.repo.getWorn(userId);
     const gear = {};
-    for (const slot of ['head', 'body', 'shield']) if (worn[slot] && ITEMS[worn[slot]]) gear[slot] = materialOf(worn[slot]);
+    for (const slot of ['head', 'body', 'legs', 'shield']) if (worn[slot] && ITEMS[worn[slot]]) gear[slot] = materialOf(worn[slot]);
     if (worn.weapon && ITEMS[worn.weapon]) gear.weapon = { type: ITEMS[worn.weapon].weaponType || 'sword', color: materialOf(worn.weapon) };
     const inv = this.repo.getInventory(userId);
     const cosmetics = {};

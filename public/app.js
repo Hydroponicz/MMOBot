@@ -337,7 +337,7 @@
      <div id="sheet">
       <section class="panel">
         <div class="char-header">
-          ${p.appearance ? `<div class="char-portrait">${window.MMOAvatar.svg(p.appearance, { size: 110, title: `${p.username} the ${p.appearance.raceName}` })}</div>` : avatar(p.avatarUrl, p.username)}
+          ${p.appearance ? charStageHtml(p.appearance, { size: 170, title: `${p.username} the ${p.appearance.raceName}`, cls: 'char-stage-profile' }) : avatar(p.avatarUrl, p.username)}
           <div class="char-title">
             <h1>${esc(p.username)}${p.title ? ` <span class="char-titletext">${esc(p.title)}</span>` : ''}</h1>
             <div class="char-badges">
@@ -742,6 +742,73 @@
     return `${pips} ⚡ Stamina <b>${s.charges}/${s.max}</b>${left ? ` · full again in ${wait}` : ' · full'}`;
   }
 
+  // ---- 3D characters (avatar3d.js, loaded on demand) ------------------------------------
+  // A stage shows the 2D portrait at once and swaps in the 3D model when WebGL is there.
+  // Viewers are disposed when the page changes. Players can switch to the portrait (remembered).
+  const views3d = new Set();
+  let avatar3d = null;
+  const load3d = () => (avatar3d ||= import('/avatar3d.js').catch(() => null));
+  const prefers2d = () => {
+    try {
+      return localStorage.getItem('char3d') === '0';
+    } catch {
+      return false;
+    }
+  };
+  function charStageHtml(appearance, { size = 200, title = '', cls = '' } = {}) {
+    return `<div class="char-stage ${cls}" data-stage>
+      <div class="char-stage-2d">${window.MMOAvatar.svg(appearance, { size, title })}</div>
+      <button class="char-stage-toggle" type="button" data-stage-toggle hidden title="Switch between the 3D model and the portrait">🖼️ 2D</button>
+    </div>`;
+  }
+  // Mounts a 3D view into a stage made by charStageHtml. Returns the viewer (or null).
+  async function mountStage(stage, appearance, opts = {}) {
+    if (!stage) return null;
+    const mod = await load3d();
+    if (!mod || !mod.supported() || !stage.isConnected) return null;
+    const toggle = stage.querySelector('[data-stage-toggle]');
+    let view = null;
+    let current = appearance;
+    const show3d = () => {
+      if (view) return;
+      view = mod.mount(stage, current, opts);
+      views3d.add(view);
+      stage.classList.add('is-3d');
+      if (toggle) toggle.textContent = '🖼️ 2D';
+    };
+    const show2d = () => {
+      if (!view) return;
+      view.dispose();
+      views3d.delete(view);
+      view = null;
+      stage.classList.remove('is-3d');
+      if (toggle) toggle.textContent = '🧊 3D';
+    };
+    if (toggle) {
+      toggle.hidden = false;
+      toggle.onclick = () => {
+        const to2d = !!view;
+        to2d ? show2d() : show3d();
+        try {
+          localStorage.setItem('char3d', to2d ? '0' : '1');
+        } catch {}
+      };
+    }
+    if (prefers2d()) {
+      if (toggle) toggle.textContent = '🧊 3D';
+    } else show3d();
+    return {
+      update(a) {
+        current = a;
+        view?.update(a);
+      },
+    };
+  }
+  function disposeStages() {
+    for (const v of views3d) v.dispose();
+    views3d.clear();
+  }
+
   // ---- pages -------------------------------------------------------------
   const pages = {};
 
@@ -1047,6 +1114,7 @@
     }
     const isMe = state.me && state.me.id === data.profile.id;
     $app.innerHTML = characterSheet(data.profile, data.activity, isMe);
+    if (data.profile.appearance) mountStage($app.querySelector('[data-stage]'), data.profile.appearance);
     if (isMe) bindSheetActions();
     document.getElementById('share-card')?.addEventListener('click', () => shareCard(data.profile));
     return liveFeed(document.getElementById('player-feed'), {
@@ -1384,13 +1452,20 @@
       cosmetics: Object.fromEntries(['hat', 'cape', 'aura'].filter((k) => worn(k)).map((k) => [k, worn(k).style])),
       pet: worn('pet')?.icon || null,
     });
+    // The 3D stage is made once and moved into each redraw, so the model isn't rebuilt from scratch.
+    const holder = document.createElement('div');
+    holder.innerHTML = charStageHtml(view(), { size: 220, cls: 'char-stage-customize' });
+    const stageEl = holder.firstElementChild;
+    let stage = null;
+    let mounting = null;
     const draw = () => {
       const race = data.races.find((r) => r.id === draft.race);
       const changed = draft.race !== mine.race || [...LOOK_SECTIONS, ...WARDROBE].some(([k]) => (draft.look[k] || 'none') !== (mine.look[k] || 'none'));
       $app.innerHTML = `
         <div class="customize">
           <section class="panel customize-preview">
-            <div class="customize-portrait">${window.MMOAvatar.svg(view(), { size: 220, title: `${state.me.username} the ${race.name}` })}</div>
+            <div data-stage-slot></div>
+            <div class="customize-mini" title="How your portrait looks on leaderboards and the feed">${window.MMOAvatar.svg(view(), { size: 64, head: true })}<span class="muted">Your portrait</span></div>
             <h2 style="margin:10px 0 2px">${esc(state.me.username)}</h2>
             <div class="muted">${race.icon} ${esc(race.name)}</div>
             <div class="customize-actions">
@@ -1445,12 +1520,18 @@
             </section>
           </div>
         </div>`;
+      $app.querySelector('[data-stage-slot]')?.replaceWith(stageEl);
+      const two = stageEl.querySelector('.char-stage-2d');
+      if (two) two.innerHTML = window.MMOAvatar.svg(view(), { size: 220, title: `${state.me.username} the ${race.name}` });
+      if (stage) stage.update(view());
+      else if (mounting) mounting.then(() => stage?.update(view()));
+      else mounting = mountStage(stageEl, view()).then((st) => (stage = st));
     };
     draw();
 
     $app.onclick = async (e) => {
       const b = e.target.closest('button');
-      if (!b || b.disabled) return;
+      if (!b || b.disabled || 'stageToggle' in b.dataset) return;
       if (b.dataset.race) draft.race = b.dataset.race;
       else if (b.dataset.key) draft.look[b.dataset.key] = b.dataset.val;
       else if ('random' in b.dataset) {
@@ -3039,6 +3120,7 @@
     setActiveNav(name === 'player' || name === 'me' ? '' : name);
     if (typeof cleanup === 'function') cleanup();
     cleanup = null;
+    disposeStages();
     $app.innerHTML = '<div class="skeleton">Loading…</div>';
     try {
       cleanup = await page(params, new URLSearchParams(queryPart));

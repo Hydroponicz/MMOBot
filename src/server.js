@@ -50,6 +50,10 @@ function createApp({ config, repo, logger: baseLogger = console, settings = new 
   app.use('/auth', authRouter({ kick, repo, sessions, config, settings, logger }));
   app.use('/api', apiRouter({ engine, repo, kick, bot, config, settings, logger, backups }));
   app.use(express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'] }));
+  // three.js for the 3D character models (public/avatar3d.js), served from the npm package.
+  const three = path.join(path.dirname(require.resolve('three')), '..');
+  app.use('/vendor/three', express.static(path.join(three, 'build'), { maxAge: '7d' }));
+  app.use('/vendor/three-addons', express.static(path.join(three, 'examples', 'jsm'), { maxAge: '7d' }));
   app.get('/healthz', (req, res) => res.json({ ok: true }));
 
   return { app, engine, kick, bot, settings, backups };
