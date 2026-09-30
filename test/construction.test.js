@@ -74,11 +74,11 @@ test('construction: planks + nails become building parts, best of a kind with !b
 });
 
 test('every building part is worth more than its planks and nails, and every tier is reachable', () => {
-  for (const r of SKILLS.construction.recipes) {
+  for (const r of SKILLS.construction.recipes.filter((x) => x.kind === 'part')) {
     const inputs = Object.entries(r.inputs).reduce((s, [i, q]) => s + ITEMS[i].value * q, 0);
     assert.ok(ITEMS[r.item].value > inputs, r.item);
     assert.ok(r.level <= SKILLS.construction.maxLevel, r.item);
     for (const i of Object.keys(r.inputs)) assert.ok(SKILLS.carpentry.recipes.some((c) => c.item === i), `${i} is made by carpentry`);
   }
-  assert.equal(SKILLS.construction.recipes.length, 44);
+  assert.equal(SKILLS.construction.recipes.filter((x) => x.kind === 'part').length, 44);
 });

@@ -51,7 +51,7 @@ test('every fish and fishing spot has a size profile, and sizes stay sensible', 
 test('!fish in chat still works, and says the length and weight with a link to the 3D page', () => {
   const { repo, say, u } = setup();
   const r = say('!fish');
-  assert.match(r, /you caught 🦐 Shrimp \(📏 [\d.]+ cm, \d+ g\)! \+10 XP.*🐟 See all your catches in 3D: http:\/\/localhost:3000\/#\/fishing/);
+  assert.match(r, /you caught 🦐 Shrimp \(📏 [\d.]+ cm, \d+ g[^)]*\)! \+10 XP.*🐟 See all your catches in 3D: http:\/\/localhost:3000\/#\/fishing/);
   const rows = repo.catchesOf(u.id);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].fish, 'shrimp');

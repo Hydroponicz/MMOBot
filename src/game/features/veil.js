@@ -567,6 +567,7 @@ module.exports = {
     if (!fresh) this.veilSave(winId, winRun);
     this.veilStat(winId, 'kills', 1);
     this.guildWarScore(winId, loseId, 2, 'veil');
+    this.claimWanted?.(winner, loseId, 'killed them in the Gloamveil');
     this.veilLog({ kind: 'kill', name: winner.username, victim: iWon ? other.username : user.username, zone: z.name });
     this.emitActivity(this.repo.getUser(winId), { kind: 'duel', text: `killed @${iWon ? other.username : user.username} in the ${z.name}` });
     const looted = bagCount(winRun.bag) - before;

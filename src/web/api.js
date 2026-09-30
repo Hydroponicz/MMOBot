@@ -153,7 +153,24 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   // ---- PvP: heists, ranked arena, guild wars -------------------------------------------------
   router.get('/pvp', (req, res) => {
     const me = req.user ? repo.getUser(req.user.id) : null;
-    res.json({ ...engine.pvpPage(me?.id ?? null), points: me ? me.points : null, username: me?.username ?? null });
+    res.json({ ...engine.pvpPage(me?.id ?? null), crime: engine.crimePage(me?.id ?? null), points: me ? me.points : null, username: me?.username ?? null });
+  });
+  // The crime update: every action takes a target name (and an amount / tag / price where needed).
+  const CRIMES = {
+    pickpocket: (req) => engine.pickpocket(req.user, [String(req.body?.name || '')]),
+    poach: (req) => engine.poach(req.user, [String(req.body?.name || '')]),
+    burgle: (req) => engine.burgle(req.user, [String(req.body?.name || '')]),
+    tipoff: (req) => engine.tipoff(req.user, [String(req.body?.name || '')]),
+    jailbreak: (req) => engine.jailbreak(req.user, [String(req.body?.name || '')]),
+    bail: (req) => engine.bail(req.user),
+    wanted: (req) => engine.wantedCommand(req.user, [String(req.body?.name || ''), String(req.body?.amount || '')]),
+    'racket-buy': (req) => engine.racketCommand(req.user, ['buy', String(req.body?.tag || '')]),
+    'racket-price': (req) => engine.racketCommand(req.user, ['price', String(req.body?.price ?? '')]),
+  };
+  router.post('/pvp/crime/:action', requireLogin, (req, res, next) => {
+    const fn = CRIMES[req.params.action];
+    if (!fn) return res.status(404).json({ error: 'unknown action' });
+    return act((r) => fn(r) || 'Slow down a little!')(req, res, next);
   });
   router.post('/pvp/rob', requireLogin, act((req) => engine.rob(req.user, [String(req.body?.name || '')]) || 'Slow down a little!'));
   router.post('/pvp/guards', requireLogin, act((req) => engine.guards(req.user, [String(req.body?.guards || '')])));

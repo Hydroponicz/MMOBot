@@ -1929,9 +1929,14 @@
         ]),
       },
       {
-        id: 'pvp', tab: 'rewards', icon: '⚔️', title: 'PvP: heists, arena, guild wars', summary: 'Rob the rich, climb the ladder, win the war',
+        id: 'pvp', tab: 'rewards', icon: '⚔️', title: 'PvP: heists, crime, arena, guild wars', summary: 'Rob the rich, pick pockets, collect bounties, climb the ladder',
         body: list([
           `<b>Heists:</b> ${c('rob @name')} (1 stamina) tries to rob a player richer than you. First a 🥷 stealth check, your 🏃 Agility against theirs: pass it and you take a small share of their points. Fail and you ⚔️ fight them (combat level, weapon skill and gear on both sides, you on your current HP): win and you grab half as much, lose and you're left on 1 HP, fined (half to them) and lying low for a while. The fence keeps a cut of every haul. ${c('hire 2')} hires guards for 24h (priced by how much you hold) that cut robbers' odds.`,
+          `<b>🦹 Crime:</b> ${c('pickpocket @name')} lifts 1-3 of a random ordinary item from their backpack (never gear, tools or pets). ${c('poach @name')} steals up to 3 ripe crops from their farm (a 🎃 Scarecrow, ${c('build scarecrow')}, makes it harder). ${c('burgle @name')} takes up to 3 of something off their shop shelf (bigger shops have better locks). Same rules as heists: 1 stamina, Agility for stealth, guards help the victim, and getting caught means a fine (half to them) and jail. Players under character level 10 are off limits.`,
+          `<b>🎯 Wanted:</b> ${c('wanted @name 1000')} puts points on the head of anyone who committed a crime this week. Whoever beats them in a heist fight, the arena or the Gloamveil, or catches them in the act, collects 90%. ${c('wanted')} shows the board.`,
+          `<b>🚔 Jail:</b> ${c('bail')} pays your way out (2% of your points). ${c('jailbreak @name')} busts a friend out (Agility helps, guildmates +10%); fail and you're in the next cell. ${c('jail')} shows who's inside.`,
+          `<b>🐀 Tip-offs:</b> ${c('tipoff @name')} (100 pts): if they try any crime in the next 10 minutes, the guards are waiting, and you get a quarter of their fine (and any bounty on them). There's a 30% chance your name gets out. Tip off from the PvP page to stay anonymous.`,
+          `<b>🛡️ Protection rackets:</b> guild leaders sell protection (${c('racket price 2000')}); players buy it for 24h with ${c('racket buy TAG')}, paid into the guild bank. Anyone who comes for a client has to beat the guild's strongest member first.`,
           `<b>Ranked arena:</b> ${c('arena')} fights the player closest to your rating with both of your best gear (they don't need to be online). A small entry fee goes into the weekly pot; on Monday the top 3 split it and #1 is the Arena Champion. ${c('arena top')} shows the ladder.`,
           `<b>Guild wars:</b> guilds score war points each week when members beat other guilds' members (arena win 3, heist 2, duel 1). The winning guild gets bonus XP all next week. ${c('war')} shows the standings.`,
           'Everything is on the <a href="#/pvp">PvP</a> page.',

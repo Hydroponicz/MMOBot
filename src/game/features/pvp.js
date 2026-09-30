@@ -121,7 +121,7 @@ module.exports = {
     const theirs = this.heistInfo(target.id);
     if (theirs.protectedUntil > now) return `@${target.username} was robbed recently and is on guard for ${minutesLeft(theirs.protectedUntil - now)}.`;
     const lastHit = mine.last?.[target.id] || 0;
-    if (now - lastHit < hc.sameTargetHours * HOUR) return `you robbed @${target.username} not long ago. They'll be ready for you again in ${minutesLeft(lastHit + hc.sameTargetHours * HOUR - now)}.`;
+    if (lastHit && now - lastHit < hc.sameTargetHours * HOUR) return `you robbed @${target.username} not long ago. They'll be ready for you again in ${minutesLeft(lastHit + hc.sameTargetHours * HOUR - now)}.`;
     // A cap on what one player can take a day, so heists can't be used to empty a main into an alt.
     const today = new Date(now).toISOString().slice(0, 10);
     if (mine.day !== today) Object.assign(mine, { day: today, looted: 0 });
@@ -131,6 +131,16 @@ module.exports = {
 
     const vit = this.vitals(user.id, now);
     if (vit.ko) return `you're knocked out and can't rob anyone right now. ${this.knockedOutMessage(user.id, vit, now)}`;
+    // Snitches and protection rackets (crime.js): a tip-off gets you caught on the spot, and a
+    // racket client's guild enforcer has to be beaten first.
+    const gate = this.crimeGate?.(user, target, mine, now) || { note: '' };
+    if (gate.free) return gate.reply;
+    if (gate.reply) {
+      this.spendStamina(user, now);
+      this.repo.setActionAt(user.id, now);
+      this.saveHeistInfo(user.id, mine);
+      return gate.reply;
+    }
 
     const chance = this.heistChance(user.id, target.id);
     const guards = this.guardLevel(target.id, now);
@@ -165,11 +175,14 @@ module.exports = {
         this.saveHeistInfo(target.id, theirs);
         this.logHeist({ at: now, robber: user.username, victim: target.username, ok: true, how: sneaky ? 'stealth' : 'fight', amount: take });
         this.guildWarScore(user.id, target.id, 2, 'heist');
+        // Beating a wanted victim in the fight collects the bounty on them.
+        const bounty = fight ? this.claimWanted?.(user, target.id, 'beat them in a heist fight') : 0;
         this.notify(target.id, sneaky ? `🦹 ${user.username} snuck in and robbed you for ${fmt(take)} pts! Train 🏃 Agility or ${p}hire guards.` : `🦹 ${user.username} fought past you${guardText} and took ${fmt(take)} pts! Better gear, levels or ${p}hire guards help.`);
         this.emitActivity(user, { kind: 'heist', text: sneaky ? `snuck into ${target.username}'s vault and took ${fmt(take - fence)} pts! 🦹` : `beat ${target.username} in a fight and made off with ${fmt(take - fence)} pts! 🦹` });
         reply = sneaky
           ? `🦹 you slipped past @${target.username}${guards ? ` and ${guards} guard${guards > 1 ? 's' : ''}` : ''} unseen and got away with ${fmt(take - fence)} pts (the fence kept ${fmt(fence)}). Balance: ${fmt(this.repo.getUser(user.id).points)}`
-          : `⚔️ @${target.username} spotted you, but you won the fight${fightText} and grabbed ${fmt(take - fence)} pts (the fence kept ${fmt(fence)}). Balance: ${fmt(this.repo.getUser(user.id).points)}`;
+          : `⚔️ @${target.username} spotted you, but you won the fight${fightText} and grabbed ${fmt(take - fence)} pts (the fence kept ${fmt(fence)})${bounty ? ` plus the ${fmt(bounty)} pts bounty on them 🎯` : ''}. Balance: ${fmt(this.repo.getUser(user.id).points)}`;
+        reply += gate.note;
       } else if (!fight.winner) {
         this.logHeist({ at: now, robber: user.username, victim: target.username, ok: false, how: 'escaped', amount: 0 });
         this.notify(target.id, `🛡️ ${user.username} tried to rob you, but you fought them off.`);
@@ -183,6 +196,7 @@ module.exports = {
         mine.jailUntil = now + hc.jailMinutes * MIN;
         this.logHeist({ at: now, robber: user.username, victim: target.username, ok: false, how: 'caught', amount: fine });
         this.guildWarScore(target.id, user.id, 1, 'defence');
+        this.claimWanted?.(target, user.id, 'caught them robbing');
         this.notify(target.id, `🛡️ ${user.username} tried to rob you and lost the fight${guardText}. You got ${fmt(toVictim)} pts of their fine.`);
         this.emitActivity(user, { kind: 'heist', text: `got beaten up trying to rob ${target.username} 🚔` });
         reply = `🚔 @${target.username} caught you and won the fight${fightText}! Fined ${fmt(fine)} pts (half to them) and you're lying low for ${hc.jailMinutes}m. Stealth odds were ${Math.round(chance * 100)}%.`;
@@ -352,6 +366,7 @@ module.exports = {
       }
       this.repo.setSetting('arena', a);
       if (won) this.guildWarScore(user.id, opp.id, 3, 'arena');
+      if (!draw) this.claimWanted?.(won ? user : this.repo.getUser(opp.id), won ? opp.id : user.id, 'beat them in the arena');
       const vs = `@${opp.username} (${them.r - (draw ? 0 : -delta)})`;
       reply = draw
         ? `🏟️ ${fight.rounds} rounds with ${vs} and nobody fell: a draw. Rating ${me.r} (${delta >= 0 ? '+' : ''}${delta}).`

@@ -1349,3 +1349,11 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 .fx-inspect-info { padding-top: 10px; }
 .fx-flat { position: absolute; inset: 0; display: grid; place-items: center; font-size: 6rem; }
 @media (max-width: 560px) { .fx-water { height: 360px; } .fx-caption { left: 12px; right: 12px; max-width: none; } .fx-caption p { display: none; } }
+
+/* ---- Crime (pvp.js) ---- */
+.crime-status { padding: 8px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--border); margin-bottom: 8px; }
+.crime-jobs { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.crime-jobs input { max-width: 200px; }
+.crime-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.crime-help { font-size: 0.82rem; margin: 8px 0 0; padding-left: 18px; }
+.crime-help li { margin: 2px 0; }

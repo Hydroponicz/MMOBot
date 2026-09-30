@@ -45,7 +45,7 @@ test('chatting creates a character and awards points with a cooldown', () => {
 test('!fish gives an item, xp and points, then enforces cooldown', () => {
   const { repo, say, tick } = setup();
   const reply = say('!fish');
-  assert.match(reply, /^@Alice 🎣 you caught 🦐 Shrimp \(📏 [\d.]+ cm, \d+ g\)! \+10 XP.*🐟 See all your catches in 3D: http:\/\/localhost:3000\/#\/fishing/);
+  assert.match(reply, /^@Alice 🎣 you caught 🦐 Shrimp \(📏 [\d.]+ cm, \d+ g[^)]*\)! \+10 XP.*🐟 See all your catches in 3D: http:\/\/localhost:3000\/#\/fishing/);
   const u = repo.getUserByName('alice');
   assert.equal(repo.getSkills(u.id).fishing, 10);
   assert.equal(repo.getInventory(u.id).shrimp, 1);
@@ -2622,7 +2622,7 @@ test('crops feed other skills: boosters, resin, flux, flax, cloth robes and bloo
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
   // Glowmoss bait: used up by !fish for +1 fish.
   repo.addItem(u.id, 'glowmoss', 1);
-  assert.match(say('!fish'), /2x Shrimp \(used 🌿 Glowmoss\) \(📏 biggest [\d.]+ cm, \d+ g\)!/);
+  assert.match(say('!fish'), /2x Shrimp \(used 🌿 Glowmoss\) \(📏 biggest [\d.]+ cm, \d+ g[^)]*\)!/);
   assert.equal(repo.getInventory(u.id).glowmoss, undefined);
   tick(60);
   assert.match(say('!fish'), /you caught 🦐 Shrimp \(📏/, 'no bait, one fish');

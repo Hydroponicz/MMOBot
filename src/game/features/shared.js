@@ -79,6 +79,12 @@ const INFO_COMMANDS = {
   // Structures from Construction parts: the town and player shops.
   town: ['townCommand', 'town'], contribute: ['contributeCommand', 'town'], donateparts: ['contributeCommand', 'town'],
   stall: ['stallCommand', 'stall'], storefront: ['stallCommand', 'stall'],
+  // The crime update (crime.js).
+  pickpocket: ['pickpocket', 'pickpocket'], pocket: ['pickpocket', 'pickpocket'],
+  poach: ['poach', 'poach'], burgle: ['burgle', 'burgle'], burglary: ['burgle', 'burgle'],
+  wanted: ['wantedCommand', 'wanted'], jailbreak: ['jailbreak', 'jailbreak'], breakout: ['jailbreak', 'jailbreak'],
+  bail: ['bail', 'jailbreak'], jail: ['jailCommand', 'jailbreak'],
+  tipoff: ['tipoff', 'tipoff'], snitch: ['tipoff', 'tipoff'], racket: ['racketCommand', 'racket'], protection: ['racketCommand', 'racket'],
   rob: ['rob', 'rob'], heist: ['rob', 'rob'], guards: ['guards', 'rob'], guard: ['guards', 'rob'], hire: ['guards', 'rob'],
   arena: ['arenaFight', 'arena'], ranked: ['arenaFight', 'arena'],
   // The Gloamveil (extraction minigame).

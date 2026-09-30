@@ -862,6 +862,9 @@ for (const [tierName, logs, metal, level] of BUILD_TIERS) {
     SKILLS.construction.recipes.push({ item: id, level: Math.min(500, level + plus), kind: 'part', group: part.split('_')[0], xp: Math.round((carpXp(planks) * p + carpXp(nails) * n) * 1.1), inputs: { [planks]: p, [nails]: n } });
   }
 }
+// A Scarecrow in your backpack guards your farm from poachers (!poach is 20% less likely to work).
+ITEMS.scarecrow = { name: 'Scarecrow', icon: '🎃', value: 90, keep: true };
+SKILLS.construction.recipes.push({ item: 'scarecrow', level: 8, kind: 'farm guard', xp: 60, inputs: { wooden_frame: 2, wooden_planks: 3 } });
 SKILLS.construction.recipes.sort((a, b) => a.level - b.level);
 // A Saw: bought, or smithed from bronze.
 SKILLS.smithing.recipes.push({ item: 'saw', level: 5, kind: 'tool', xp: 30, inputs: { bronze_bar: 2 } });

@@ -116,13 +116,116 @@
       </section>`;
     }
 
+    // ---- The crime update: jobs, the wanted board, the jail and protection rackets.
+    function crimeHtml() {
+      const c = d.crime;
+      if (!c) return '';
+      const cfg = c.cfg;
+      const me = c.me;
+      const status = me
+        ? [
+            me.jailFor ? `🚔 You're in jail for <b>${mins(me.jailFor)}</b>. <button class="btn btn-sm" data-crime="bail">Pay ${fmt(me.bail)} pts bail</button>` : '',
+            me.protectedBy ? `🛡️ Protected by <b>[${esc(me.protectedBy.tag)}]</b> for ${mins(me.protectedBy.for)}.` : '',
+            me.wantedOnMe ? `🎯 There's a <b>${fmt(me.wantedOnMe)} pts</b> bounty on your head.` : '',
+          ]
+            .filter(Boolean)
+            .map((x) => `<div class="crime-status">${x}</div>`)
+            .join('')
+        : '';
+      const jobs = [
+        cfg.pickpocket && ['pickpocket', '🧤 Pickpocket', 'Lift 1-3 of a random item from their backpack (never gear, tools or pets).'],
+        cfg.poach && ['poach', '🌾 Poach crops', 'Steal up to 3 ripe crops from their farm. A 🎃 Scarecrow makes it harder.'],
+        cfg.burglary && ['burgle', '🏚️ Burgle shop', 'Take up to 3 of something off their shop shelf. Bigger shops have better locks.'],
+        cfg.tipoffs && ['tipoff', '🐀 Tip off', '100 pts: if they try a crime in the next 10 minutes, the guards are waiting and you get a quarter of the fine. Anonymous from here.'],
+      ].filter(Boolean);
+      return `
+        <section class="panel crime-panel">
+          <div class="panel-head"><h2>🦹 Crime</h2><span class="muted">1 stamina per job · caught = fine + jail</span></div>
+          ${status}
+          ${
+            loggedIn && jobs.length
+              ? `<div class="crime-jobs">
+                  <input type="text" id="crime-target" placeholder="@name" autocomplete="off" aria-label="Target" list="crime-names">
+                  <datalist id="crime-names">${d.heists.mostWanted.map((w) => `<option value="${esc(w.username)}">`).join('')}</datalist>
+                  <div class="crime-btns">${jobs.map(([id, label, help]) => `<button class="btn" data-job="${id}" title="${esc(help)}">${label}</button>`).join('')}</div>
+                </div>
+                <ul class="crime-help muted">${jobs.map(([, label, help]) => `<li><b>${label}</b>: ${esc(help)}</li>`).join('')}<li>Players under character level ${cfg.minLevel} are off limits. Up to ${cfg.dailyCrimes} jobs a day.</li></ul>`
+              : ''
+          }
+          <div class="grid grid-2" style="margin-top:12px">
+            ${
+              cfg.wanted
+                ? `<div>
+                    <h3>🎯 Wanted</h3>
+                    ${
+                      c.wanted.length
+                        ? `<table class="fx-table"><tbody>${c.wanted.map((w) => `<tr><td><a href="${playerLink(w.username)}">${esc(w.username)}</a></td><td class="num"><b>${fmt(w.total)}</b> pts</td><td class="muted">${w.posters} poster${w.posters === 1 ? '' : 's'}</td></tr>`).join('')}</tbody></table>`
+                        : '<p class="muted">The board is empty.</p>'
+                    }
+                    <p class="muted" style="font-size:.85rem">Beat a wanted player in a heist fight, the arena or the Gloamveil (or catch them in the act) to collect 90% of the bounty. Only players who committed a crime this week can be posted.</p>
+                    ${loggedIn ? `<form id="wanted-form" class="form-row"><input type="text" name="name" placeholder="@name" aria-label="Who" style="max-width:140px"><input name="amount" type="number" min="${cfg.wantedMin}" placeholder="${cfg.wantedMin}" aria-label="Bounty" style="max-width:120px"><button class="btn">Post bounty</button></form>` : ''}
+                  </div>`
+                : ''
+            }
+            <div>
+              ${
+                cfg.jailbreak
+                  ? `<h3>🚔 Jail</h3>${
+                      c.jail.length
+                        ? `<table class="fx-table"><tbody>${c.jail.map((j) => `<tr><td><a href="${playerLink(j.username)}">${esc(j.username)}</a></td><td class="muted">${mins(j.for)} left</td><td>${loggedIn && j.username !== d.username ? `<button class="btn btn-sm" data-break="${esc(j.username)}">🔓 Break out</button>` : ''}</td></tr>`).join('')}</tbody></table>`
+                        : '<p class="muted">Nobody is locked up.</p>'
+                    }<p class="muted" style="font-size:.85rem">Breakouts use Agility (guildmates +10%). Fail and you're in the next cell.</p>`
+                  : ''
+              }
+              ${
+                cfg.rackets
+                  ? `<h3>🛡️ Protection</h3>${
+                      c.rackets.length
+                        ? `<table class="fx-table"><tbody>${c.rackets.map((r) => `<tr><td>[${esc(r.tag)}] ${esc(r.name)}</td><td class="num">${fmt(r.price)}/day</td><td class="muted">${r.enforcer ? `enforcer ${esc(r.enforcer)}` : ''}</td><td>${loggedIn ? `<button class="btn btn-sm" data-racket="${esc(r.tag)}">Buy</button>` : ''}</td></tr>`).join('')}</tbody></table>`
+                        : '<p class="muted">No guild sells protection right now.</p>'
+                    }<p class="muted" style="font-size:.85rem">Anyone who comes for a client has to beat the guild's strongest member first.</p>${
+                      me?.leaderOf
+                        ? `<form id="racket-form" class="form-row"><input name="price" type="number" min="0" max="${cfg.racketMax}" value="${me.leaderOf.price || ''}" placeholder="price/day (0 = stop)" aria-label="Protection price" style="max-width:170px"><button class="btn">Set [${esc(me.leaderOf.tag)}] price</button></form>`
+                        : ''
+                    }`
+                  : ''
+              }
+            </div>
+          </div>
+        </section>`;
+    }
+
     function draw() {
       $app.innerHTML = `
         <div class="panel-head" style="margin-bottom:6px"><h1 style="margin:0">⚔️ PvP</h1>${
           !loggedIn ? '<a class="btn btn-primary" href="/auth/login">Log in with Kick to play</a>' : ''
         }</div>
         <p class="muted">Take on other players: rob the rich, climb the ranked arena and win the guild war. Duels (<code>!duel @name 500</code>) still work in chat.</p>
-        <div class="pvp-grid">${heistsHtml()}${arenaHtml()}${warHtml()}</div>`;
+        <div class="pvp-grid">${heistsHtml()}${crimeHtml()}${arenaHtml()}${warHtml()}</div>`;
+      const target = () => ($app.querySelector('#crime-target')?.value || '').trim().replace(/^@/, '');
+      $app.querySelectorAll('[data-job]').forEach((b) => {
+        b.onclick = () => {
+          if (!target()) return toast('Who? Type a name first.');
+          post(`/pvp/crime/${b.dataset.job}`, { name: target() });
+        };
+      });
+      $app.querySelectorAll('[data-crime]').forEach((b) => (b.onclick = () => post(`/pvp/crime/${b.dataset.crime}`, {})));
+      $app.querySelectorAll('[data-break]').forEach((b) => (b.onclick = () => post('/pvp/crime/jailbreak', { name: b.dataset.break })));
+      $app.querySelectorAll('[data-racket]').forEach((b) => {
+        b.onclick = () => {
+          if (confirm(`Buy [${b.dataset.racket}]'s protection for 24 hours?`)) post('/pvp/crime/racket-buy', { tag: b.dataset.racket });
+        };
+      });
+      const wf = $app.querySelector('#wanted-form');
+      if (wf) wf.onsubmit = (e) => {
+        e.preventDefault();
+        post('/pvp/crime/wanted', { name: wf.querySelector('[name=name]').value.trim().replace(/^@/, ''), amount: wf.querySelector('[name=amount]').value });
+      };
+      const rf = $app.querySelector('#racket-form');
+      if (rf) rf.onsubmit = (e) => {
+        e.preventDefault();
+        post('/pvp/crime/racket-price', { price: rf.price.value || 0 });
+      };
       $app.querySelectorAll('[data-rob]').forEach((b) => {
         b.onclick = () => {
           if (confirm(`Try to rob ${b.dataset.rob}? It uses 1 stamina, and if you're caught you pay a fine.`)) post('/pvp/rob', { name: b.dataset.rob });

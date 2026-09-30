@@ -760,6 +760,8 @@ function createRepo(db) {
     },
     setSetting: (key, value) => stmt.setSetting.run(key, JSON.stringify(value)),
     deleteSetting: (key) => stmt.deleteSetting.run(key),
+    // Every setting whose key matches a LIKE pattern (e.g. 'heist:%'), parsed.
+    listSettingsLike: (pattern) => db.prepare('SELECT key, value FROM settings WHERE key LIKE ?').all(pattern).map((r) => ({ key: r.key, value: JSON.parse(r.value) })),
 
     // Returns true the first time a message id is seen (Kick may redeliver webhooks).
     markProcessed(id) {
