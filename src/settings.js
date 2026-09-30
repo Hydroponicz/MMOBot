@@ -127,6 +127,8 @@ const FIELDS = {
   },
   events: {
     followPoints: { type: 'int', label: 'Points for a new follow', help: 'Given once per viewer when they follow the channel.', min: 0, max: 1e9 },
+    followMessages: { type: 'bool', label: 'Follow thank-you messages', help: 'The "Thanks for the follow" chat message and the follow on the feed/overlay. Switch off while the channel is being follow-botted.' },
+    followFloodPerMinute: { type: 'int', label: 'Follow flood guard (follows per minute)', help: 'More follows than this in a minute (a follow-bot wave) and the thank-you messages go quiet until it calms down (10 minutes with no flood). 0 = no guard.', min: 0, max: 1000 },
     subPoints: { type: 'int', label: 'Points for a sub or resub', help: 'Given to the subscriber.', min: 0, max: 1e9 },
     giftPointsPerSub: { type: 'int', label: 'Points per gifted sub (to the gifter)', help: 'Each gifted sub also gives the person receiving it the sub points.', min: 0, max: 1e9 },
     giftBoostMinutesPerSub: { type: 'int', label: 'Double XP minutes per gifted sub', help: 'Gifted subs start a channel-wide XP boost (0 = off). Capped at 60 minutes.', min: 0, max: 60 },
@@ -370,6 +372,8 @@ class Settings extends EventEmitter {
       },
       events: {
         followPoints: config.game.followPoints ?? 100,
+        followMessages: config.game.followMessages ?? true,
+        followFloodPerMinute: config.game.followFloodPerMinute ?? 5,
         subPoints: config.game.subPoints ?? 500,
         giftPointsPerSub: config.game.giftPointsPerSub ?? 250,
         giftBoostMinutesPerSub: config.game.giftBoostMinutesPerSub ?? 5,

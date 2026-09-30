@@ -1582,6 +1582,25 @@ function eventsSetup(rolls) {
   return { repo, engine, settings, say, said, tick: (sec = 31) => (t += sec * 1000) };
 }
 
+test('follow thank-yous can be switched off, and go quiet on their own during a follow-bot wave', () => {
+  const { repo, engine, settings, tick } = eventsSetup();
+  const follow = (n) => engine.channelEvent('channel.followed', { follower: { user_id: 1000 + n, username: `Bot${n}`, is_anonymous: false } });
+  settings.update('events', { followMessages: false });
+  assert.equal(follow(1), null);
+  assert.equal(repo.getUserByName('bot1').points, 100, 'the follow still counts');
+  settings.update('events', { followMessages: true });
+  assert.match(follow(2), /Thanks for the follow, @Bot2/);
+  // A wave: more than 5 follows in a minute and the messages stop.
+  tick(61);
+  for (let i = 3; i <= 7; i++) assert.ok(follow(i), `follow ${i}`);
+  assert.equal(follow(8), null);
+  // Still quiet a few minutes later; back to normal 10 minutes after the wave.
+  tick(5 * 60);
+  assert.equal(follow(9), null);
+  tick(11 * 60);
+  assert.match(follow(10), /Thanks for the follow, @Bot10/);
+});
+
 test('Kick follows reward once; subs and gifted subs reward and start a double-XP boost', () => {
   const { repo, engine, say } = eventsSetup();
   const follow = { follower: { user_id: 5, username: 'NewFan', is_anonymous: false } };

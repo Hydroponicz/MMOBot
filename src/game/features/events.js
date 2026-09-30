@@ -73,6 +73,13 @@ module.exports = {
       if (this.repo.getSetting(key)) return null;
       this.repo.setSetting(key, now);
       reward(user, c.followPoints);
+      // Follow-bot waves: stay quiet if messages are switched off, or while follows are flooding in
+      // (more than followFloodPerMinute in a minute, and for 10 minutes after the last flood).
+      this.followTimes = (this.followTimes || []).filter((t) => now - t < 60_000);
+      this.followTimes.push(now);
+      const limit = c.followFloodPerMinute ?? 5;
+      if (limit > 0 && this.followTimes.length > limit) this.followQuietUntil = now + 10 * 60_000;
+      if (c.followMessages === false || (this.followQuietUntil || 0) > now) return null;
       this.emitActivity(user, { kind: 'follow', text: `followed the channel${c.followPoints ? ` (+${fmt(c.followPoints)} pts)` : ''}` });
       return `💚 Thanks for the follow, @${user.username}!${c.followPoints ? ` +${fmt(c.followPoints)} pts to start your adventure.` : ''} Type ${p}commands to play.`;
     }
