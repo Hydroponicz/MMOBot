@@ -477,8 +477,18 @@ test('!sell all keeps gear and tools', () => {
   repo.addItem(u.id, 'bronze_sword', 1);
   repo.addItem(u.id, 'logs', 3);
   assert.match(say('!sell all'), /sold 🪵 3x Logs for 6 pts.*\(kept your gear & tools\)/);
-  assert.match(say('!sell all'), /nothing to sell — your gear and tools are kept/);
+  assert.match(say('!sell all'), /nothing to sell — !sell all keeps your gear & tools/);
   assert.match(say('!sell bronze sword'), /sold 🗡️ Bronze Sword for 26 pts/);
+  // Food, potions and crops (they feed other skills) stay too; groups sell them on purpose.
+  repo.addItem(u.id, 'cooked_shrimp', 2);
+  repo.addItem(u.id, 'health_potion', 1);
+  repo.addItem(u.id, 'mint', 4);
+  repo.addItem(u.id, 'logs', 1);
+  assert.match(say('!sell all'), /sold 🪵 Logs .*\(kept your gear & tools, potions, food and crops\)/);
+  assert.match(say('!sell all crops'), /sold 🍃 4x Mint/);
+  assert.match(say('!sell all crops'), /no crops to sell/);
+  assert.match(say('!sell all food'), /sold 🦐 2x Cooked Shrimp/);
+  assert.equal(repo.getInventory(u.id).health_potion, 1, 'potions are only sold by name');
 });
 
 test('!fight needs a weapon, auto-equips the best one, and any monster can be fought', () => {
@@ -856,8 +866,10 @@ test('skinning gives meat; !eat heals with cooked food', () => {
   assert.match(say('!eat salmon'), /ate a Cooked Salmon \(\+18 HP\)\. ❤️ 23\/60 HP/);
   repo.setVitals(u.id, { hp: 0, mana: 0, koUntil: 9_000_000_000 }, 1_000_000);
   assert.match(say('!eat'), /knocked out.*Food can't get you up/);
-  assert.match(say('!sellall'), /sold/);
-  assert.equal(repo.getInventory(u.id).cooked_shrimp, undefined, 'cooked food is sold by !sellall');
+  assert.match(say('!sellall'), /kept your .*food/);
+  assert.ok(repo.getInventory(u.id).cooked_shrimp, 'cooked food is kept by !sellall');
+  assert.match(say('!sell all food'), /sold/);
+  assert.equal(repo.getInventory(u.id).cooked_shrimp, undefined, '!sell all food sells it');
   assert.equal(engine.vitals(u.id).ko, true);
 });
 

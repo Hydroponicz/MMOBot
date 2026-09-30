@@ -1653,7 +1653,7 @@
         id: 'points', tab: 'basics', icon: '💰', title: 'Points & selling', summary: 'Earn points by chatting, playing and selling loot',
         body: list([
           `Chatting earns <b>${g.chatPoints} points</b> (once every ${g.chatCooldown}s)${g.chatPointsFullPerDay ? `, half that after ${g.chatPointsFullPerDay} times a day` : ''}. Every action earns a few more.`,
-          `${c('sell all')} (or ${c('sellall')}) sells your loot. Gear, tools, seeds and potions are kept; sell those by name: ${c('sell trout 5')}.`,
+          `${c('sell all')} (or ${c('sellall')}) sells your loot. It keeps gear, tools, seeds, potions, food (for fights) and crops (they feed other skills). Sell those by name (${c('sell cooked trout 5')}) or by group: ${c('sell all food')}, ${c('sell all crops')}.`,
           `Spend points in the <a href="#/shop">shop</a> (or ${c('buy')} in chat) on tools, seeds, potions and more, or gamble them in the <a href="#/casino">casino</a>.`,
         ]),
       },
@@ -1909,7 +1909,8 @@
         ['quiver', 'Your arrows'],
       ]],
       ['Points & items', [
-        ['sell all', 'Sell your loot (also !sellall)'],
+        ['sell all', 'Sell your loot; keeps gear, potions, food and crops (also !sellall)'],
+        ['sell all food', 'Sell all your cooked food (or !sell all crops)'],
         ['sell trout 5', 'Sell a specific item'],
         ['price <item>', 'What an item sells for right now (e.g. !price carrot)'],
         ['buy <item>', 'Buy from the shop (shop lists items)'],

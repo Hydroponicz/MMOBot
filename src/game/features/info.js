@@ -43,6 +43,21 @@ const {
   unlockName,
 } = require('./shared');
 
+// Item groups for !sell all food / !sell all crops.
+const SELL_GROUPS = {
+  food: { label: 'food', has: (it) => !!it.food },
+  crop: { label: 'crops', has: (it) => !!it.plantLine },
+};
+// What !sell all leaves in the backpack, named in its reply.
+const KEPT_LABELS = [
+  ['gear & tools', (it) => it.keep && !it.potion],
+  ['potions', (it) => !!it.potion],
+  ['food', (it) => !!it.food],
+  ['crops', (it) => !!it.plantLine],
+];
+const keptBySellAll = (it) => it.keep || !!it.food || !!it.plantLine;
+const listText = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}` : xs[0] || '');
+
 module.exports = {
   // ---- Info commands -----------------------------------------------------
 
@@ -76,21 +91,27 @@ module.exports = {
     return `you have ${fmt(u.points)} points 💰`;
   },
 
-  // !sell all | !sell <item> [qty|all]
+  // !sell all | !sell all food | !sell all crops | !sell <item> [qty|all]
+  // !sell all sells loot only: gear, tools, potions, seeds and ammo (`keep`) are kept, and so are
+  // food (for fights) and crops (they feed other skills). Those sell by name or by group.
   sell(user, args) {
     const inv = this.repo.getInventory(user.id);
-    if (!args.length) return 'usage: !sell <item> [amount] or !sell all';
+    if (!args.length) return 'usage: !sell <item> [amount], !sell all, !sell all food or !sell all crops';
     const named = args.filter((w) => !/^(\d+|all)$/i.test(w)).join(' ');
     const bound = named && findItem(named, Object.keys(inv).filter((i) => ITEMS[i]?.bound || ITEMS[i]?.pet));
     if (bound) return `your ${ITEMS[bound].name} can't be sold.`;
 
+    const words = args.map((w) => w.toLowerCase());
+    const group = words[0] === 'all' && args.length === 2 ? SELL_GROUPS[words[1]] || SELL_GROUPS[words[1].replace(/s$/, '')] : null;
     let entries;
-    let kept = 0;
-    if (args[0].toLowerCase() === 'all' && args.length === 1) {
-      // Gear and tools are kept; sell those by name.
-      entries = Object.entries(inv).filter(([id]) => ITEMS[id] && !ITEMS[id].keep);
-      kept = Object.entries(inv).filter(([id]) => ITEMS[id]?.keep).length;
-      if (!entries.length && kept) return 'nothing to sell — your gear and tools are kept by !sell all (sell them by name, e.g. !sell bronze sword).';
+    let kept = [];
+    if (group) {
+      entries = Object.entries(inv).filter(([id]) => ITEMS[id] && !ITEMS[id].keep && group.has(ITEMS[id]));
+      if (!entries.length) return `you have no ${group.label} to sell.`;
+    } else if (words[0] === 'all' && args.length === 1) {
+      entries = Object.entries(inv).filter(([id]) => ITEMS[id] && !keptBySellAll(ITEMS[id]));
+      kept = KEPT_LABELS.filter(([, has]) => Object.keys(inv).some((id) => ITEMS[id] && has(ITEMS[id]))).map(([label]) => label);
+      if (!entries.length && kept.length) return `nothing to sell — !sell all keeps your ${listText(kept)}. Sell those by name (e.g. !sell bronze sword)${kept.some((k) => k === 'food' || k === 'crops') ? ', or with !sell all food / !sell all crops' : ''}.`;
     } else {
       let qtyArg = args[args.length - 1].toLowerCase();
       let nameArgs = args;
@@ -121,7 +142,7 @@ module.exports = {
     const what = single ? itemLabel(entries[0][0], entries[0][1]) : `${fmt(count)} items`;
     const plain = single ? `${fmt(entries[0][1])}x ${ITEMS[entries[0][0]].name}` : what;
     this.emitActivity(user, { kind: 'sell', text: `sold ${plain} for ${fmt(total)} pts` });
-    const keptNote = kept ? ' (kept your gear & tools)' : '';
+    const keptNote = kept.length ? ` (kept your ${listText(kept)})` : '';
     return `sold ${what} for ${fmt(total)} pts 💰 Balance: ${fmt(this.repo.getUser(user.id).points)}${keptNote}`;
   },
 
