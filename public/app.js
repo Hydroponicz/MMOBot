@@ -2175,24 +2175,24 @@
           </section>
           <section class="panel">
             <h2>OBS overlay</h2>
-            <p class="muted">In OBS: <b>Sources → + → Browser</b>, paste the link below, set width 400 and height 600, then place it where you like. When it loads you'll see “MMOBot overlay connected” for a few seconds.</p>
+            <p class="muted">In OBS: <b>Sources → + → Browser</b>, paste the link below, set width 400 and height 600, then place it where you like. It shows one event at a time, fading in and out on a see-through card, so it stays out of the way; boss HP and goals are on the website. When it loads you'll see “MMOBot overlay connected” for a few seconds.</p>
             <form id="overlay-form" class="overlay-form">
               <label>Show
                 <select name="events">
+                  <option value="big">only level-ups, rare finds, subs &amp; raids</option>
                   <option value="all">every action</option>
-                  <option value="big">only level-ups, rare finds &amp; upgrades</option>
                 </select>
               </label>
-              <label>for <input type="number" name="seconds" value="10" min="2" max="120" style="width:70px"> seconds</label>
-              <label>max <input type="number" name="max" value="6" min="1" max="30" style="width:64px"> at once</label>
+              <label>each for <input type="number" name="seconds" value="6" min="2" max="120" style="width:70px"> seconds</label>
               <label>as
                 <select name="scenes">
+                  <option value="0">text</option>
                   <option value="1">characters doing the action</option>
-                  <option value="0">text only</option>
                 </select>
               </label>
-              <label><input type="checkbox" name="stats" checked> “this stream” panel</label>
-              <label><input type="checkbox" name="goal" checked> goal bar</label>
+              <label><input type="checkbox" name="raid"> boss bar</label>
+              <label><input type="checkbox" name="goal"> goal bar</label>
+              <label><input type="checkbox" name="stats"> “this stream” panel</label>
             </form>
             <div class="form-row" style="margin-top:10px">
               <input type="text" id="overlay-url" readonly style="max-width:none" aria-label="Overlay link">
@@ -2221,12 +2221,10 @@
     const overlayUrl = () => {
       const f = overlayForm;
       const q = new URLSearchParams();
-      if (f.events.value === 'big') q.set('events', 'big');
-      if (Number(f.seconds.value) !== 10) q.set('seconds', f.seconds.value);
-      if (Number(f.max.value) !== 6) q.set('max', f.max.value);
-      if (f.scenes.value === '0') q.set('scenes', '0');
-      if (!f.stats.checked) q.set('stats', '0');
-      if (!f.goal.checked) q.set('goal', '0');
+      if (f.events.value === 'all') q.set('events', 'all');
+      if (Number(f.seconds.value) !== 6) q.set('seconds', f.seconds.value);
+      if (f.scenes.value === '1') q.set('scenes', '1');
+      for (const k of ['raid', 'goal', 'stats']) if (f[k].checked) q.set(k, '1');
       return `${location.origin}/overlay.html${q.toString() ? `?${q}` : ''}`;
     };
     const syncOverlay = () => {

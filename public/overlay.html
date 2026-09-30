@@ -6,116 +6,87 @@
   <link rel="icon" href="data:," />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@600;800&display=swap" rel="stylesheet" />
   <style>
-    /* OBS Browser Source (e.g. 400×600): transparent background, newest events slide in at the bottom.
+    /* OBS Browser Source (e.g. 400×600), transparent background. Kept calm on purpose so it doesn't
+       distract viewers: one event at a time at the bottom that slowly fades in, stays, and fades out.
+       More events wait in a queue. Everything else (boss HP, goals...) lives on the website.
        URL options (build them on the admin page):
-         ?events=all      every action (default)       ?events=big   only level-ups, rare finds, upgrades
-         &seconds=10      how long each event stays    &max=6        how many can be on screen at once
+         ?events=big      only level-ups, rare finds, subs, raids... (default)   ?events=all  every action
+         &seconds=6       how long each event stays      &max=1       how many can be on screen at once
          &quiet=1         don't show the "connected" message when the overlay loads
-         &raid=0          hide the raid boss health bar and channel boost banner at the top
-         &scenes=0        plain text rows instead of animated characters doing the action
-         &stats=0         hide the rotating "this stream" panel (top XP, last rare find, raid MVP)
-         &goal=0          hide the channel goal bar
-         &project=0       hide the community project bar
+         &raid=1          show the raid / world boss bar
+         &scenes=1        animated characters doing the action instead of plain text
+         &stats=1         show the rotating "this stream" panel (top XP, last rare find, raid MVP)
+         &goal=1          show the channel goal bar      &project=1   show the community project bar
+         &boost=1         show the channel boost banner
        Redemption effects (fireworks, spotlight...) play on the separate full-screen overlay: /fx.html */
     html, body { margin: 0; background: transparent; overflow: hidden; }
     body { font-family: Inter, system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; justify-content: flex-end; padding: 12px; box-sizing: border-box; gap: 8px; }
     .ev {
-      display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-radius: 12px;
-      background: rgba(11, 14, 17, 0.88); color: #e8edf2; font-weight: 600; font-size: 16px;
-      border-left: 4px solid #53fc18; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
-      animation: in 0.4s ease-out, out 0.5s ease-in var(--out, 9.5s) forwards;
+      display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 12px;
+      background: rgba(11, 14, 17, 0.45); color: #e8edf2; font-weight: 600; font-size: 16px;
+      border-left: 3px solid rgba(83, 252, 24, 0.7); text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+      opacity: 0; transition: opacity var(--fade, 1.2s) ease-in-out;
     }
-    .ev .ic { font-size: 22px; }
+    .ev.on { opacity: 1; }
+    .ev .ic { font-size: 20px; }
     .ev b { color: #53fc18; }
-    .ev small { color: #8b98a8; font-weight: 600; margin-left: 4px; }
-    .ev.big { font-size: 19px; padding: 11px 16px; }
-    .ev.big .ic { font-size: 28px; }
-    .ev.levelup, .ev.charlevel { border-left-color: #ffc940; }
-    .ev.levelup b, .ev.charlevel b { color: #ffc940; }
-    .ev.rare { border-left-color: #c084fc; }
-    .ev.rare b { color: #c084fc; }
-    .ev.upgrade { border-left-color: #38bdf8; }
+    .ev small { color: #aab4c0; font-weight: 600; margin-left: 4px; }
+    .ev.levelup, .ev.charlevel, .ev.follow, .ev.sub, .ev.gift { border-left-color: rgba(255, 201, 64, 0.8); }
+    .ev.levelup b, .ev.charlevel b, .ev.follow b, .ev.sub b, .ev.gift b { color: #ffc940; }
+    .ev.rare, .ev.redeem, .ev.fund { border-left-color: rgba(192, 132, 252, 0.8); }
+    .ev.rare b, .ev.redeem b, .ev.fund b { color: #c084fc; }
+    .ev.upgrade { border-left-color: rgba(56, 189, 248, 0.8); }
     .ev.upgrade b { color: #38bdf8; }
-    .ev.jackpot { border-left-color: #53fc18; }
-    .ev.jackpot b { color: #53fc18; }
-    .ev.status { border-left-color: #8b98a8; font-size: 14px; }
-    .ev.status.bad { border-left-color: #ff5c7a; }
-    .ev.follow, .ev.sub, .ev.gift { border-left-color: #ffc940; }
-    .ev.follow b, .ev.sub b, .ev.gift b { color: #ffc940; }
-    .ev.raid, .ev.duel, .ev.event { border-left-color: #ff5c7a; }
+    .ev.raid, .ev.duel, .ev.event { border-left-color: rgba(255, 92, 122, 0.8); }
     .ev.raid b, .ev.duel b { color: #ff5c7a; }
-    /* Raid boss bar and boost banner, pinned to the top. */
+    .ev.status { border-left-color: rgba(139, 152, 168, 0.8); font-size: 14px; }
+    .ev.status.bad { border-left-color: rgba(255, 92, 122, 0.8); }
+    /* Boss bar (and the optional panels), pinned to the top and updated in place. */
     #top { position: fixed; top: 12px; left: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; }
-    .panel { padding: 10px 14px; border-radius: 12px; background: rgba(11, 14, 17, 0.9); color: #e8edf2; font-weight: 800; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4); animation: in 0.4s ease-out; }
-    .boss { border: 2px solid #ff5c7a; }
-    .boss .name { display: flex; justify-content: space-between; font-size: 16px; }
-    .boss .name small { color: #8b98a8; font-weight: 600; }
-    .bar { height: 16px; margin-top: 6px; border-radius: 99px; background: #1c232c; overflow: hidden; }
-    .bar span { display: block; height: 100%; background: linear-gradient(90deg, #dc2626, #f87171); transition: width 0.4s; }
-    .boss .top { margin-top: 6px; font-size: 13px; font-weight: 600; color: #8b98a8; }
-    .boss.world { border-color: #a45cff; }
-    .boss.world .bar span { background: linear-gradient(90deg, #6d28d9, #a78bfa); }
-    .goal { border: 2px solid #ffc940; }
-    .goal .name { display: flex; justify-content: space-between; font-size: 15px; }
-    .goal .name small { color: #8b98a8; font-weight: 600; }
-    .goal .bar span { background: linear-gradient(90deg, #f59e0b, #fde047); }
-    .goal.done { border-color: #53fc18; color: #53fc18; text-align: center; }
-    .project { border: 2px solid #c084fc; }
-    .project .name { display: flex; justify-content: space-between; font-size: 15px; }
-    .project .name small { color: #8b98a8; font-weight: 600; }
-    .project .bar span { background: linear-gradient(90deg, #8b5cf6, #f0abfc); }
-    .project .top { margin-top: 6px; font-size: 12px; font-weight: 600; color: #8b98a8; }
-    .project.done { border-color: #ffc940; color: #ffc940; text-align: center; }
-    .ev.redeem, .ev.fund { border-left-color: #c084fc; }
-    .ev.redeem b, .ev.fund b { color: #c084fc; }
-    .stats { font-size: 14px; font-weight: 700; min-height: 34px; display: flex; align-items: center; gap: 8px; }
-    .stats .lbl { color: #8b98a8; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
+    .panel { padding: 8px 12px; border-radius: 12px; background: rgba(11, 14, 17, 0.45); color: #e8edf2; font-weight: 800; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8); animation: fade 1.2s ease-in-out; }
+    .panel .name { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+    .panel .name small { color: #aab4c0; font-weight: 600; white-space: nowrap; }
+    .bar { height: 8px; margin-top: 6px; border-radius: 99px; background: rgba(28, 35, 44, 0.7); overflow: hidden; }
+    .bar span { display: block; height: 100%; background: #f87171; transition: width 1s ease-out; }
+    .boss { border-left: 3px solid rgba(255, 92, 122, 0.8); }
+    .boss.world { border-left-color: rgba(164, 92, 255, 0.8); }
+    .boss.world .bar span { background: #a78bfa; }
+    .panel .sub { margin-top: 4px; font-size: 12px; font-weight: 600; color: #aab4c0; }
+    .goal { border-left: 3px solid rgba(255, 201, 64, 0.8); }
+    .goal .bar span { background: #fde047; }
+    .project { border-left: 3px solid rgba(192, 132, 252, 0.8); }
+    .project .bar span { background: #f0abfc; }
+    .boost { border-left: 3px solid rgba(83, 252, 24, 0.8); color: #53fc18; font-size: 14px; }
+    .stats { font-size: 13px; font-weight: 700; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+    .stats .lbl { color: #aab4c0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
     .stats .who { display: inline-flex; align-items: center; gap: 4px; margin-right: 8px; }
     .stats .who b { color: #53fc18; }
-    .stats .slide { animation: in 0.4s ease-out; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
-    .boost { border: 2px solid #53fc18; color: #53fc18; text-align: center; font-size: 16px; }
-    /* Animated scene: the player's character doing the action. */
+    /* Animated scene (&scenes=1): the player's character doing the action. */
     .ev.scene { padding: 4px 14px 4px 4px; gap: 6px; }
     .ev.scene svg.stage { flex: none; width: 160px; height: 88px; overflow: visible; }
     .ev .txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     .ev .who { color: #53fc18; font-weight: 800; }
     .ev .what { color: #e8edf2; }
-    .ev .xp { color: #8b98a8; font-size: 13px; }
+    .ev .xp { color: #aab4c0; font-size: 13px; }
     .ev.rare .who, .ev.rare .rare-tag { color: #c084fc; }
     .rare-tag { font-size: 12px; font-weight: 800; letter-spacing: 0.08em; }
-    .face { width: 30px; height: 30px; border-radius: 50%; overflow: hidden; background: #1c232c; flex: none; }
+    .face { width: 26px; height: 26px; border-radius: 50%; overflow: hidden; background: rgba(28, 35, 44, 0.7); flex: none; }
     .face svg { display: block; }
-    .stage .arm { transform-box: view-box; transform-origin: 82px 99px; animation: swing 0.6s ease-in-out infinite; }
-    .stage.m-stir .arm { animation: stir 0.8s ease-in-out infinite; }
-    .stage.m-cast .arm { animation: cast 1.2s ease-in-out infinite; }
-    .stage.m-stab .arm { animation: stab 0.6s ease-in-out infinite; }
-    .stage.m-plant .arm { animation: plant 0.9s ease-in-out infinite; }
-    .stage.m-shoot .arm { animation: recoil 0.9s ease-out infinite; }
-    .stage .target { transform-box: fill-box; transform-origin: 50% 100%; animation: hit 0.6s ease-out infinite; }
-    .stage.m-cast .target { animation: bob 1.2s ease-in-out infinite; }
-    .stage.m-stir .target { animation: bob 0.8s ease-in-out infinite; }
-    .stage.m-shoot .target, .stage.m-plant .target { animation: hit 0.9s ease-out infinite; }
-    .stage .fx { animation: burst 0.6s ease-out infinite; opacity: 0; }
-    .stage.m-shoot .fx, .stage.m-plant .fx { animation-duration: 0.9s; }
-    .stage.m-cast .fx { animation-duration: 1.2s; }
-    .stage.m-stir .fx { animation: rise 0.8s ease-out infinite; }
-    .stage .shot { animation: fly 0.9s ease-in infinite; }
-    .stage .loot { transform-box: fill-box; transform-origin: 50% 50%; animation: pop 0.6s cubic-bezier(.2, 1.6, .5, 1) 1.4s both, float 1.6s ease-in-out 2s infinite; }
-    @keyframes swing { 0%, 100% { transform: rotate(-40deg); } 55% { transform: rotate(28deg); } }
-    @keyframes stir { 0%, 100% { transform: rotate(-12deg); } 50% { transform: rotate(10deg); } }
-    @keyframes cast { 0%, 100% { transform: rotate(-35deg); } 40% { transform: rotate(12deg); } }
-    @keyframes stab { 0%, 100% { transform: translate(-6px, 0); } 55% { transform: translate(14px, -2px); } }
-    @keyframes plant { 0%, 100% { transform: translate(0, -6px); } 55% { transform: translate(8px, 6px); } }
-    @keyframes recoil { 0%, 30%, 100% { transform: none; } 38% { transform: translate(-5px, 0); } }
-    @keyframes hit { 0%, 50% { transform: none; } 60% { transform: rotate(-7deg) scale(0.94); } 75% { transform: rotate(4deg); } 100% { transform: none; } }
-    @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
-    @keyframes burst { 0%, 52% { opacity: 0; transform: none; } 58% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)); } }
-    @keyframes rise { 0% { opacity: 0; transform: none; } 30% { opacity: 0.9; } 100% { opacity: 0; transform: translate(var(--dx), -22px); } }
+    .stage .arm { transform-box: view-box; transform-origin: 82px 99px; animation: swing 1.2s ease-in-out infinite; }
+    .stage.m-stir .arm { animation: stir 1.6s ease-in-out infinite; }
+    .stage.m-cast .arm { animation: cast 2s ease-in-out infinite; }
+    .stage.m-stab .arm { animation: stab 1.2s ease-in-out infinite; }
+    .stage.m-plant .arm { animation: plant 1.6s ease-in-out infinite; }
+    .stage.m-shoot .arm { animation: recoil 1.6s ease-out infinite; }
+    .stage .shot { animation: fly 1.6s ease-in infinite; }
+    @keyframes swing { 0%, 100% { transform: rotate(-30deg); } 55% { transform: rotate(20deg); } }
+    @keyframes stir { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(8deg); } }
+    @keyframes cast { 0%, 100% { transform: rotate(-30deg); } 40% { transform: rotate(10deg); } }
+    @keyframes stab { 0%, 100% { transform: translate(-4px, 0); } 55% { transform: translate(10px, -2px); } }
+    @keyframes plant { 0%, 100% { transform: translate(0, -4px); } 55% { transform: translate(6px, 4px); } }
+    @keyframes recoil { 0%, 30%, 100% { transform: none; } 38% { transform: translate(-4px, 0); } }
     @keyframes fly { 0%, 30% { opacity: 0; transform: none; } 35% { opacity: 1; } 60% { opacity: 1; transform: translateX(52px); } 61%, 100% { opacity: 0; transform: translateX(52px); } }
-    @keyframes pop { from { opacity: 0; transform: translateY(14px) scale(0.2); } to { opacity: 1; transform: none; } }
-    @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
-    @keyframes in { from { transform: translateX(-110%); opacity: 0; } to { transform: none; opacity: 1; } }
-    @keyframes out { to { opacity: 0; transform: translateY(-10px); } }
+    @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
   </style>
 </head>
 <body>
@@ -123,11 +94,13 @@
   <script src="/avatar.js"></script>
   <script>
     const params = new URLSearchParams(location.search);
-    const onlyBig = params.get('events') === 'big' || params.has('big');
-    const seconds = Math.min(Math.max(Number(params.get('seconds')) || 10, 2), 120);
-    const max = Math.min(Math.max(Number(params.get('max')) || 6, 1), 30);
+    const on = (k) => ['1', 'true', 'on'].includes(params.get(k));
+    const onlyBig = params.get('events') !== 'all';
+    const seconds = Math.min(Math.max(Number(params.get('seconds')) || 6, 2), 120);
+    const max = Math.min(Math.max(Number(params.get('max')) || 1, 1), 10);
     const quiet = params.has('quiet');
-    const scenes = params.get('scenes') !== '0' && !!window.MMOAvatar;
+    const scenes = on('scenes') && !!window.MMOAvatar;
+    const FADE = 1.2; // seconds to fade in and to fade out
 
     // What each skill looks like: the tool in the character's hand, what they work on, how the arm
     // moves, and the color of the bits that fly off.
@@ -166,9 +139,6 @@
       if (!sc || !a.appearance) return '';
       const { skin, outfit } = MMOAvatar.colorsOf(a.appearance);
       const target = a.target || sc.target;
-      const fx = [[-18, -22], [-10, -30], [8, -26], [14, -14]]
-        .map(([dx, dy], i) => `<circle class="fx" cx="150" cy="${76 + i * 3}" r="${2.4 - i * 0.3}" fill="${sc.fx}" style="--dx:${dx}px;--dy:${dy}px;animation-delay:${i * 0.03}s"/>`)
-        .join('');
       const shot = sc.shot ? `<text class="shot" x="108" y="80" font-size="18" fill="${sc.fx}" text-anchor="middle" dominant-baseline="central">${sc.shot}</text>` : '';
       return `<svg class="stage m-${sc.move}" viewBox="0 0 220 120">
         <ellipse cx="54" cy="116" rx="44" ry="5" fill="#000" opacity=".35"/>
@@ -181,27 +151,54 @@
         </g>
         ${shot}
         <text class="target" x="172" y="86" font-size="50" text-anchor="middle" dominant-baseline="central">${esc(target)}</text>
-        ${fx}
-        ${a.icon ? `<text class="loot" x="172" y="30" font-size="26" text-anchor="middle" dominant-baseline="central">${esc(a.icon)}</text>` : ''}
+        ${a.icon ? `<text x="172" y="30" font-size="26" text-anchor="middle" dominant-baseline="central">${esc(a.icon)}</text>` : ''}
       </svg>`;
     }
-    const face = (a) => (scenes && a.appearance ? `<span class="face">${MMOAvatar.svg(a.appearance, { size: 30, head: true })}</span>` : '');
+    const face = (a) => (scenes && a.appearance ? `<span class="face">${MMOAvatar.svg(a.appearance, { size: 26, head: true })}</span>` : '');
 
     const BIG = ['levelup', 'charlevel', 'rare', 'upgrade', 'jackpot', 'follow', 'sub', 'gift', 'raid', 'duel', 'event', 'redeem', 'fund'];
     const icons = { levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', buy: '🛒', action: '✨', test: '🧪', jackpot: '🎰', death: '💀', achievement: '🏆', task: '📋', trade: '🤝', follow: '💚', sub: '⭐', gift: '🎁', raid: '⚔️', duel: '⚔️', event: '📣', pull: '🃏', unbox: '🧰', redeem: '📣', fund: '🏛️' };
     const skillIcons = { fishing: '🎣', mining: '⛏️', woodcutting: '🪓', digging: '🏺', smelting: '🔥', smithing: '⚒️', swords: '🗡️', skinning: '🔪', farming: '🌱' };
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
+    // One event at a time (or `max`): each fades in, stays, fades out, then the next one in the queue
+    // shows. A long queue shortens the stay, and the oldest waiting events are dropped past 15.
+    const queue = [];
+    let showing = 0;
     function show(html, cls, stay = seconds) {
+      const item = { html, cls, stay };
+      queue.push(item);
+      while (queue.length > 15) queue.shift();
+      next();
+      return item;
+    }
+    function next() {
+      if (showing >= max || !queue.length) return;
+      const item = queue.shift();
+      showing++;
       const el = document.createElement('div');
-      el.className = `ev ${cls}`;
-      el.style.setProperty('--out', `${stay - 0.5}s`);
-      el.innerHTML = html;
+      el.className = `ev ${item.cls}`;
+      el.style.setProperty('--fade', `${FADE}s`);
+      el.innerHTML = item.html;
       document.body.appendChild(el);
-      setTimeout(() => el.remove(), stay * 1000);
-      const all = document.body.querySelectorAll('.ev');
-      for (let i = 0; i < all.length - max; i++) all[i].remove();
-      return el;
+      item.el = el;
+      requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('on')));
+      const stay = queue.length > 3 ? Math.min(item.stay, Math.max(3, seconds / 2)) : item.stay;
+      item.timer = setTimeout(() => hide(item), (FADE + stay) * 1000);
+    }
+    function hide(item) {
+      if (item.gone) return;
+      item.gone = true;
+      clearTimeout(item.timer);
+      const i = queue.indexOf(item);
+      if (i >= 0) return void queue.splice(i, 1);
+      if (!item.el) return;
+      item.el.classList.remove('on');
+      setTimeout(() => {
+        item.el.remove();
+        showing--;
+        next();
+      }, FADE * 1000);
     }
 
     let connected = false;
@@ -210,7 +207,7 @@
     const es = new EventSource('/api/events');
     es.addEventListener('open', () => {
       clearTimeout(lostTimer);
-      lostNotice?.remove();
+      if (lostNotice) hide(lostNotice);
       lostNotice = null;
       if (!connected && !quiet) show('<span class="ic">✅</span><span>MMOBot overlay connected</span>', 'status', 5);
       connected = true;
@@ -224,69 +221,101 @@
         }
       }, 10000);
     });
-    // Raid boss health bar and channel boost banner.
-    const showTop = params.get('raid') !== '0';
+    // Optional panels at the top (boss bar, goal, project, boost, stats), all off by default. Panels are updated in
+    // place, so a new number doesn't redraw or re-animate anything; only a panel that appears fades in.
+    const showTop = on('raid');
+    const showGoal = on('goal');
+    const showProject = on('project');
+    const showBoost = on('boost');
+    const showStats = on('stats');
     const topEl = document.getElementById('top');
     let raid = null;
     let world = null;
     let boost = null;
     let goal = null;
-    let stats = null;
-    let slide = 0;
-    const showGoal = params.get('goal') !== '0';
-    const showProject = params.get('project') !== '0';
     let project = null;
     let projectDone = null;
-    const showStats = params.get('stats') !== '0';
+    let stats = null;
+    let slide = 0;
     const fmtN = (n) => Number(n).toLocaleString();
-    function drawTop() {
-      if (!showTop) return;
-      const parts = [];
-      if (boost && boost.until > Date.now()) {
-        const m = Math.max(1, Math.ceil((boost.until - Date.now()) / 60000));
-        parts.push(`<div class="panel boost">⚡ ${boost.multiplier}x ${boost.kind === 'xp' ? 'XP' : 'chat points'} for everyone · ${m}m left</div>`);
+    const panels = new Map();
+    // p: { key, cls, name, right, pct, sub, html }
+    function renderPanel(p) {
+      let el = panels.get(p.key);
+      if (!el) {
+        el = document.createElement('div');
+        el.innerHTML = '<div class="name"><span></span><small></small></div><div class="bar"><span></span></div><div class="sub"></div><div class="html"></div>';
+        panels.set(p.key, el);
       }
-      for (const r of [raid, world]) {
-        if (!r || !r.active) continue;
-        const pct = Math.max(0, Math.round((r.hp / r.maxHp) * 100));
-        const ms = Math.max(0, r.endsAt - Date.now());
-        const left = r.world ? `${Math.ceil(ms / 86_400_000)}d` : `${Math.ceil(ms / 60000)}m`;
-        const tops = (r.top || []).slice(0, 3).map((t) => `${esc(t.username)} ${fmtN(t.damage)}`).join(' · ');
-        parts.push(`<div class="panel boss${r.world ? ' world' : ''}"><div class="name"><span>${r.icon} ${r.world ? 'WORLD BOSS' : 'RAID'}: ${esc(r.name)}</span><small>${fmtN(r.hp)} / ${fmtN(r.maxHp)} HP · ${left}</small></div>
-          <div class="bar"><span style="width:${pct}%"></span></div><div class="top">Type !attack · ${r.fighters || 0} fighting${tops ? ` · ${tops}` : ''}</div></div>`);
+      el.className = `panel ${p.cls}`;
+      const set = (sel, v, prop = 'textContent') => {
+        const n = el.querySelector(sel);
+        if (n[prop] !== v) n[prop] = v;
+      };
+      el.querySelector('.name').style.display = p.name ? '' : 'none';
+      set('.name span', p.name || '');
+      set('.name small', p.right || '');
+      el.querySelector('.bar').style.display = p.pct == null ? 'none' : '';
+      if (p.pct != null) el.querySelector('.bar span').style.width = `${p.pct}%`;
+      el.querySelector('.sub').style.display = p.sub ? '' : 'none';
+      set('.sub', p.sub || '');
+      el.querySelector('.html').style.display = p.html ? '' : 'none';
+      set('.html', p.html || '', 'innerHTML');
+      return el;
+    }
+    function drawTop() {
+      const list = [];
+      if (showBoost && boost && boost.until > Date.now()) {
+        const m = Math.max(1, Math.ceil((boost.until - Date.now()) / 60000));
+        list.push({ key: 'boost', cls: 'boost', name: `⚡ ${boost.multiplier}x ${boost.kind === 'xp' ? 'XP' : 'chat points'} for everyone`, right: `${m}m left` });
+      }
+      if (showTop) {
+        for (const r of [raid, world]) {
+          if (!r || !r.active) continue;
+          const ms = Math.max(0, r.endsAt - Date.now());
+          const left = r.world ? `${Math.ceil(ms / 86_400_000)}d` : `${Math.ceil(ms / 60000)}m`;
+          list.push({
+            key: r.world ? 'world' : 'raid',
+            cls: `boss${r.world ? ' world' : ''}`,
+            name: `${r.icon} ${r.name}`,
+            right: `${fmtN(r.hp)} HP · ${left}`,
+            pct: Math.max(0, Math.min(100, (r.hp / r.maxHp) * 100)),
+            sub: `!attack · ${r.fighters || 0} fighting`,
+          });
+        }
       }
       if (showGoal && goal) {
-        const pct = Math.min(100, Math.round((goal.progress / goal.target) * 100));
-        parts.push(
-          goal.done
-            ? `<div class="panel goal done">🎉 CHANNEL GOAL REACHED! ${goal.multiplier}x XP for everyone!</div>`
-            : `<div class="panel goal"><div class="name"><span>🎯 GOAL: ${esc(goal.label)}</span><small>${fmtN(goal.progress)} / ${fmtN(goal.target)}</small></div><div class="bar"><span style="width:${pct}%"></span></div></div>`
-        );
+        list.push(goal.done
+          ? { key: 'goal', cls: 'goal', name: `🎉 Goal reached! ${goal.multiplier}x XP for everyone` }
+          : { key: 'goal', cls: 'goal', name: `🎯 ${goal.label}`, right: `${fmtN(goal.progress)} / ${fmtN(goal.target)}`, pct: Math.min(100, (goal.progress / goal.target) * 100) });
       }
       if (showProject && projectDone && projectDone.until > Date.now()) {
-        parts.push(`<div class="panel project done">${projectDone.icon} PROJECT COMPLETE: ${esc(projectDone.name)}! Top donor: ${esc(projectDone.top)}</div>`);
+        list.push({ key: 'project', cls: 'project', name: `${projectDone.icon} ${projectDone.name} complete!` });
       } else if (showProject && project) {
-        const pct = Math.min(100, Math.round((project.progress / project.goal) * 100));
-        const tops = (project.top || []).slice(0, 3).map((t) => `${esc(t.username)} ${fmtN(t.amount)}`).join(' · ');
-        parts.push(`<div class="panel project"><div class="name"><span>${project.icon} COMMUNITY PROJECT: ${esc(project.name)}</span><small>${fmtN(project.progress)} / ${fmtN(project.goal)}</small></div>
-          <div class="bar"><span style="width:${pct}%"></span></div><div class="top">Type !fund 500 to chip in${tops ? ` · ${tops}` : ''}</div></div>`);
+        list.push({ key: 'project', cls: 'project', name: `${project.icon} ${project.name}`, right: `${fmtN(project.progress)} / ${fmtN(project.goal)}`, pct: Math.min(100, (project.progress / project.goal) * 100), sub: '!fund 500 to chip in' });
       }
       if (showStats && stats) {
         const slides = [];
         if (stats.top && stats.top.length) {
           slides.push(`<span class="lbl">Top XP this stream</span>${stats.top
-            .map((t, i) => `<span class="who">${['🥇', '🥈', '🥉'][i]}${scenes && t.appearance ? `<span class="face" style="width:24px;height:24px">${MMOAvatar.svg(t.appearance, { size: 24, head: true })}</span>` : ''}<b>${esc(t.username)}</b> ${fmtN(t.xp)}</span>`)
+            .map((t, i) => `<span class="who">${['🥇', '🥈', '🥉'][i]}<b>${esc(t.username)}</b> ${fmtN(t.xp)}</span>`)
             .join('')}`);
         }
         if (stats.lastRare) slides.push(`<span class="lbl">Last rare find</span>💎 <b style="color:#c084fc">${esc(stats.lastRare.username)}</b> ${esc(stats.lastRare.text)}`);
-        if (stats.lastPet) slides.push(`<span class="lbl">New pet</span>🐾 <b style="color:#ffc940">${esc(stats.lastPet.username)}</b> ${esc(stats.lastPet.text)}`);
         if (stats.mvp) slides.push(`<span class="lbl">Raid MVP</span>👑 <b style="color:#ff5c7a">${esc(stats.mvp.username)}</b>`);
-        if (stats.bounties && stats.bounties.length) slides.push(`<span class="lbl">Bounties</span>${stats.bounties.map((b) => `🎯 ${b.icon} ${esc(b.name)} <b style="color:#ffc940">${fmtN(b.reward)}</b>`).join(' · ')}`);
-        if (stats.limited) slides.push(`<span class="lbl">Shop · this week only</span>${stats.limited.icon} <b style="color:#ffc940">${esc(stats.limited.name)}</b> ${fmtN(stats.limited.cost)} pts`);
-        if (stats.actions) slides.push(`<span class="lbl">This stream</span>⚡ ${fmtN(stats.actions)} actions by chat`);
-        if (slides.length) parts.push(`<div class="panel stats"><span class="slide">${slides[slide % slides.length]}</span></div>`);
+        if (slides.length) list.push({ key: 'stats', cls: 'stats', html: slides[slide % slides.length] });
       }
-      topEl.innerHTML = parts.join('');
+      const keep = new Set(list.map((p) => p.key));
+      for (const [k, el] of panels) {
+        if (!keep.has(k)) {
+          el.remove();
+          panels.delete(k);
+        }
+      }
+      list.forEach((p, i) => {
+        const el = renderPanel(p);
+        if (topEl.children[i] !== el) topEl.insertBefore(el, topEl.children[i] || null);
+      });
     }
     es.addEventListener('raid', (e) => {
       const r = JSON.parse(e.data);
@@ -307,11 +336,11 @@
       stats = JSON.parse(e.data);
       drawTop();
     });
-    // Rotate the "this stream" panel.
+    // Rotate the "this stream" panel (slowly).
     setInterval(() => {
       slide++;
       if (showStats && stats) drawTop();
-    }, 8000);
+    }, 20000);
     es.addEventListener('boost', (e) => {
       boost = JSON.parse(e.data);
       drawTop();
@@ -328,13 +357,13 @@
         show(
           `${scene}<span class="txt">${a.kind === 'rare' ? '<span class="rare-tag">✨ RARE FIND</span>' : ''}<span class="who">${esc(a.username)}</span><span class="what">${esc(a.text)}</span>${xpLine}</span>`,
           `scene ${esc(a.kind)}${a.kind === 'rare' ? ' big' : ''}`,
-          a.kind === 'rare' ? seconds + 3 : seconds
+          seconds
         );
         return;
       }
       const icon = a.kind === 'action' ? skillIcons[a.skill] || icons.action : icons[a.kind] || '✨';
       const xp = a.xp && !big ? `<small>+${Number(a.xp).toLocaleString()} xp</small>` : '';
-      show(`${face(a)}<span class="ic">${icon}</span><span>${a.username ? `<b>${esc(a.username)}</b> ` : ''}${esc(a.text)}${xp}</span>`, `${esc(a.kind)}${big ? ' big' : ''}`, big ? seconds + 3 : seconds);
+      show(`${face(a)}<span class="ic">${icon}</span><span>${a.username ? `<b>${esc(a.username)}</b> ` : ''}${esc(a.text)}${xp}</span>`, `${esc(a.kind)}${big ? ' big' : ''}`);
     });
   </script>
 </body>
