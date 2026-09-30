@@ -692,6 +692,83 @@
         drawCases();
       };
       $tab().querySelectorAll('[data-open]').forEach((b) => (b.onclick = () => openCases(c, +b.dataset.open)));
+      $tab().querySelectorAll('.rtile[data-id]:not([data-id=""])').forEach((t) => {
+        t.classList.add('is-previewable');
+        t.title = 'Preview in 3D';
+        t.onclick = () => preview(c, c.skins.find((s) => s.id === t.dataset.id));
+      });
+    }
+
+    // ---- Preview a case's item before opening --------------------------------------------------
+    // Any float in the skin's range and any pattern seed, on the real 3D model, with the value it'd have.
+    function preview(c, s) {
+      if (!s) return;
+      const color = RAR[s.rarity].color;
+      const extOf = (f) => cat.exteriors.find((e) => f < e.max) || cat.exteriors[cat.exteriors.length - 1];
+      const exts = cat.exteriors.filter((e, i) => (i ? cat.exteriors[i - 1].max : 0) < s.max && e.max > s.min);
+      const lo = Math.round(s.base * Math.min(...exts.map((e) => e.mult)));
+      const hi = Math.round(s.base * Math.max(...exts.map((e) => e.mult)));
+      let float = s.min;
+      let seed = Math.floor(Math.random() * 1000);
+      const relic = () => ({ ...s, skin: s.id, color, float, seed });
+      const o = overlay(`<button class="cd-x" data-close aria-label="Close">✕</button><div id="pv"></div>`);
+      const $d = o.el.querySelector('#pv');
+      $d.innerHTML = `
+        <div class="ins-art r-${s.rarity}" style="--rc:${color}">${relicSvg(relic(), 'big')}</div>
+        <div class="ins-info">
+          <div class="muted">${c.icon} ${esc(c.name)} · preview</div>
+          <h2 style="margin:4px 0;color:${color}">${s.star ? '★ ' : ''}${esc(s.weaponName)} | ${esc(s.name)}</h2>
+          <div class="cd-tags"><span class="cchip" style="color:${color}">${esc(RAR[s.rarity].name)}</span><span class="cchip">🎯 ${pct(s.chance)} per case</span><span class="cchip">${esc(s.finish)}</span></div>
+          <div class="cd-value"><span class="muted">Worth about</span><b>${fmt(lo)}${hi !== lo ? ` – ${fmt(hi)}` : ''}</b><span class="muted">pts depending on wear</span></div>
+          <div class="cd-wear">
+            <div class="muted">Wear <b id="pv-ext"></b> · float <b id="pv-float"></b> · rolls ${s.min.toFixed(2)} to ${s.max.toFixed(2)}</div>
+            <input type="range" id="pv-slider" min="${s.min}" max="${Math.min(1, s.max)}" step="0.001" value="${s.min}" aria-label="Preview wear" style="width:100%">
+            <div class="muted" style="font-size:.8rem">Slide to see how it looks from its best to its most worn · est. <b id="pv-val"></b> pts</div>
+          </div>
+          <div class="form-row" style="flex-wrap:wrap;margin-top:10px">
+            <button class="btn" id="pv-seed">🎲 Another pattern</button>
+            <button class="btn btn-primary" id="pv-open">Open ${esc(c.name)} · ${fmt(c.price)} pts</button>
+          </div>
+          <p class="muted" style="font-size:.8rem">Every copy gets its own float and pattern seed when it's unboxed${s.star ? '; ★ specials are the rarest drop in the case' : ''}.</p>
+        </div>`;
+      const art = $d.querySelector('.ins-art');
+      let view = null;
+      const show = () => {
+        const e = extOf(float);
+        $d.querySelector('#pv-ext').textContent = e.name;
+        $d.querySelector('#pv-float').textContent = float.toFixed(3);
+        $d.querySelector('#pv-val').textContent = fmt(Math.round(s.base * e.mult));
+      };
+      let pending = 0;
+      const redraw = () => {
+        show();
+        cancelAnimationFrame(pending);
+        pending = requestAnimationFrame(() => {
+          if (view) view.setRelic(relic());
+          else {
+            const img = art.querySelector('.relic-svg, .relic-img');
+            if (img) img.outerHTML = relicSvg(relic(), 'big');
+          }
+        });
+      };
+      show();
+      mount3d(art, relic(), { spinIn: true }).then((v) => {
+        if (!v) return;
+        view = v;
+        o.el._onClose = [...(o.el._onClose || []), () => v.dispose()];
+      });
+      $d.querySelector('#pv-slider').oninput = (e) => {
+        float = Number(e.target.value);
+        redraw();
+      };
+      $d.querySelector('#pv-seed').onclick = () => {
+        seed = Math.floor(Math.random() * 1000);
+        redraw();
+      };
+      $d.querySelector('#pv-open').onclick = () => {
+        o.close();
+        openCases(c, 1);
+      };
     }
 
     function drawInventory() {

@@ -214,7 +214,7 @@ export function mount(el, relic, opts = {}) {
   }
   let half = null;
 
-  const built = buildWeapon(relic);
+  let built = buildWeapon(relic);
   const turn = new THREE.Group();
   turn.add(built.object);
   scene.add(turn);
@@ -260,6 +260,15 @@ export function mount(el, relic, opts = {}) {
   loop();
 
   return {
+    // Re-skins the same weapon (a new float or pattern) and keeps the camera where it is.
+    setRelic(next) {
+      if (disposed) return;
+      const old = built;
+      built = buildWeapon(next);
+      turn.remove(old.object);
+      turn.add(built.object);
+      old.dispose();
+    },
     dispose() {
       disposed = true;
       cancelAnimationFrame(raf);
