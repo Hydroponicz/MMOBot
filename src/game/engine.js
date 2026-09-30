@@ -106,7 +106,7 @@ class GameEngine extends EventEmitter {
 
     let reply = null;
     if (COMMAND_TO_SKILL[cmd]) {
-      // "!nails iron" -> "!saw iron nails"; "!planks" -> "!saw planks".
+      // "!nails iron" -> "!craft iron nails"; "!planks" -> "!saw planks".
       const extra = COMMAND_ARGS[cmd];
       const full = extra ? (args.length ? [...args, extra] : [extra]) : args;
       if (!disabledCommands.includes(cmd)) reply = this.runAction(user, COMMAND_TO_SKILL[cmd], full);

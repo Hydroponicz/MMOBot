@@ -599,7 +599,7 @@ const SKILLS = {
     // Refines raw materials for Construction: logs into planks (needs a Saw) and alloys into nails
     // (needs a Smithing Hammer). The tool is per recipe, see CARPENTRY below.
     pickBest: false,
-    example: 'planks, oak planks, nails or iron nails',
+    example: 'planks or oak planks (nails: !craft nails)',
     failMessages: ['the saw jammed', 'the plank split along the grain', 'you bent the nails'],
     recipes: [], // filled in below
   },
@@ -627,7 +627,7 @@ const SKILLS = {
     maxLevel: 500,
     // Leather armor (from skinned hides; helps archers), bigger quivers and magic runes.
     pickBest: false,
-    example: 'rabbit coif, deerskin body, large quiver or runes',
+    example: 'rabbit coif, deerskin body, large quiver, runes or iron nails',
     failMessages: ['the stitching came apart'],
     recipes: [], // filled in below
   },
@@ -805,8 +805,9 @@ for (const [bowId, bowName, logs, fletchLevel, wield, attack] of BOW_LIST) {
 SKILLS.fletching.recipes.sort((a, b) => a.level - b.level);
 
 // ---- Carpentry: planks and nails ------------------------------------------------------------
-// One kind of plank per log (a Saw, Carpentry level = the log's Woodcutting level) and one kind of
-// nails per alloy (a Smithing Hammer, Carpentry level = the alloy's Smithing level). 1 in, 1 out, so
+// One kind of plank per log (!saw with a Saw, Carpentry level = the log's Woodcutting level) and one
+// kind of nails per alloy (!craft nails with a Smithing Hammer, Carpentry level = the alloy's Smithing
+// level; a recipe's `command` says which chat command makes it). 1 in, 1 out, so
 // refining never fills the backpack; the XP is for the extra step.
 const plankName = (logs) => (logs === 'logs' ? 'Wooden Planks' : `${ITEMS[logs].name.replace(/ (Logs|Bark|Timber)$/, '')} Planks`);
 const plankId = (logs) => plankName(logs).toLowerCase().replace(/ /g, '_');
@@ -821,7 +822,7 @@ for (const [metal, metalName, alloy, smithLevel] of METALS) {
   const id = nailId(metal);
   if (ITEMS[id]) throw new Error(`nail item ${id} already exists`);
   ITEMS[id] = { name: `${metalName} Nails`, icon: '📌', value: Math.max(4, Math.round(ITEMS[alloy].value * 1.3)), material: 'nails' };
-  SKILLS.carpentry.recipes.push({ item: id, level: smithLevel, kind: 'nails', group: 'nails', requires: 'smithing_hammer', xp: Math.max(6, Math.round(barXp(alloy) * 0.7)), inputs: { [alloy]: 1 } });
+  SKILLS.carpentry.recipes.push({ item: id, level: smithLevel, kind: 'nails', group: 'nails', command: 'craft', requires: 'smithing_hammer', xp: Math.max(6, Math.round(barXp(alloy) * 0.7)), inputs: { [alloy]: 1 } });
 }
 SKILLS.carpentry.recipes.sort((a, b) => a.level - b.level);
 
@@ -1372,10 +1373,11 @@ const TOOL_ALIASES = { rod: 'rod', pole: 'rod', pickaxe: 'pickaxe', pick: 'picka
 const COMMAND_TO_SKILL = {};
 for (const id of SKILL_IDS) if (SKILLS[id].type !== 'farm') COMMAND_TO_SKILL[SKILLS[id].command] ??= id; // farming has its own commands
 COMMAND_TO_SKILL.agility ??= 'agility'; // !agility works like !run
-// Other words for the new crafting skills: !carpentry / !planks / !nails, !construct.
-for (const w of ['carpentry', 'carpenter', 'planks', 'plank', 'nails', 'nail']) COMMAND_TO_SKILL[w] ??= 'carpentry';
+// Other words for the new crafting skills: !carpentry / !planks, !nails (= !craft nails), !construct.
+for (const w of ['carpentry', 'carpenter', 'planks', 'plank']) COMMAND_TO_SKILL[w] ??= 'carpentry';
+for (const w of ['nails', 'nail']) COMMAND_TO_SKILL[w] ??= 'crafting';
 for (const w of ['construct', 'construction']) COMMAND_TO_SKILL[w] ??= 'construction';
-// "!planks" means "!saw planks" and "!nails iron" means "!saw iron nails".
+// "!planks" means "!saw planks" and "!nails iron" means "!craft iron nails".
 const COMMAND_ARGS = { planks: 'planks', plank: 'planks', nails: 'nails', nail: 'nails' };
 const COMBAT_SKILLS = SKILL_IDS.filter((id) => SKILLS[id].type === 'combat');
 // "sword" -> "swords"

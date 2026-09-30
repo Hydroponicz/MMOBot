@@ -160,6 +160,8 @@ for (const id of SKILL_IDS) {
     GATHER_HINT[r.item] ??= `!${SKILLS[id].command} ${word}`;
   }
 }
+// Recipes made with another command than their skill's (nails: "!craft iron nails").
+for (const id of SKILL_IDS) for (const r of SKILLS[id].recipes || []) if (r.command) GATHER_HINT[r.item] = `!${r.command} ${ITEMS[r.item].name.toLowerCase()}`;
 // Monster loot: feathers -> "!fight chicken".
 for (const id of SKILL_IDS) {
   for (const m of SKILLS[id].type === 'combat' ? SKILLS[id].monsters : []) {

@@ -55,7 +55,7 @@
           ? '<p><a class="btn btn-primary" href="/auth/login">Log in with Kick to build</a></p>'
           : '<p class="muted">Give parts from chat: <code>!contribute 5 walls</code></p>'
         : !d.parts?.length
-          ? `<p class="muted">You have no building parts. Make them with <code>!saw planks</code> + <code>!saw nails</code>, then <code>!build frame</code> / <code>door</code> / <code>wall</code> / <code>roof</code>.</p>`
+          ? `<p class="muted">You have no building parts. Make them with <code>!saw planks</code> + <code>!craft nails</code>, then <code>!build frame</code> / <code>door</code> / <code>wall</code> / <code>roof</code>.</p>`
           : `<form id="tc-form" class="form-row" style="flex-wrap:wrap;align-items:center">
               <select name="item" aria-label="Part">${partOpts}</select>
               <input type="number" name="qty" min="1" value="1" style="max-width:100px" aria-label="How many">
@@ -121,7 +121,7 @@
       return `
         <section class="panel">
           <div class="panel-head"><h2>🧱 Your building parts</h2><span class="muted">Make more: <code>!build frame</code> · <code>door</code> · <code>wall</code> · <code>roof</code></span></div>
-          ${d.parts.length ? `<div class="part-chips">${d.parts.map((p) => `<span class="cchip">${p.icon} ${esc(p.name)} <b>×${fmt(p.qty)}</b></span>`).join('')}</div>` : '<p class="muted">None yet. Planks (<code>!saw planks</code>, needs a Saw) + nails (<code>!saw nails</code>, needs a Smithing Hammer) → <code>!build</code>.</p>'}
+          ${d.parts.length ? `<div class="part-chips">${d.parts.map((p) => `<span class="cchip">${p.icon} ${esc(p.name)} <b>×${fmt(p.qty)}</b></span>`).join('')}</div>` : '<p class="muted">None yet. Planks (<code>!saw planks</code>, needs a Saw) + nails (<code>!craft nails</code>, needs a Smithing Hammer and a smelted bar) → <code>!build</code>.</p>'}
         </section>`;
     }
 

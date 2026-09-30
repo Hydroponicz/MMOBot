@@ -134,7 +134,7 @@ module.exports = {
             : found.item === 'skinning_knife'
               ? ' Now try !skin.'
             : found.item === 'saw'
-              ? ' Now !saw planks from your logs (and !saw nails with a Smithing Hammer), then !build.'
+              ? ' Now !saw planks from your logs (and !craft nails from a bar with a Smithing Hammer), then !build.'
               : found.seedFor
                 ? ` Now !plant ${ITEMS[found.seedFor].name.toLowerCase()}.`
                 : found.potion

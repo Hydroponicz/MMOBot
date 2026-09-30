@@ -287,7 +287,7 @@ const QUESTS = [
     steps: [
       { text: 'Chop logs', qty: 20, match: { skill: 'woodcutting' } },
       { text: 'Saw planks (!saw planks)', qty: 10, match: { skill: 'carpentry', item: questItems((i) => i.material === 'plank') } },
-      { text: 'Hammer nails (!saw nails)', qty: 5, match: { skill: 'carpentry', item: questItems((i) => i.material === 'nails') } },
+      { text: 'Craft nails (!craft nails)', qty: 5, match: { skill: 'carpentry', item: questItems((i) => i.material === 'nails') } },
       { text: 'Build frames (!build frame)', qty: 3, match: { skill: 'construction', item: questItems((i) => i.buildPart === 'frame') } },
     ],
     reward: 3000,

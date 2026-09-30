@@ -39,16 +39,20 @@ test('carpentry: a saw turns logs into planks, a hammer turns alloys into nails'
   // Nails need the hammer, not the saw.
   assert.match(say('!nails'), /you need a 🔨 Smithing Hammer/);
   repo.addItem(u.id, 'smithing_hammer', 1);
-  assert.match(say('!saw nails'), /Bronze Nails/);
+  assert.match(say('!saw nails'), /nails aren't sawn.*!craft nails/);
+  assert.match(say('!craft nails'), /Bronze Nails/);
   assert.match(say('!nails bronze'), /Bronze Nails/);
   assert.equal(inv().bronze_nails, 2);
+  assert.ok(xp('carpentry') > 0);
   assert.equal(inv().bronze_bar, undefined);
   // Iron nails need Carpentry 15.
   repo.addItem(u.id, 'iron_bar', 1);
   assert.match(say('!nails iron'), /Carpentry level 15/);
+  assert.match(say('!craft iron nails'), /Carpentry level 15/);
   // A bare !saw lists what you can make.
   repo.addItem(u.id, 'logs', 1);
   assert.match(say('!saw'), /you can saw: .*wooden planks/);
+  assert.doesNotMatch(say('!saw'), /nails/);
 });
 
 test('construction: planks + nails become building parts, best of a kind with !build <kind>', () => {
@@ -65,7 +69,7 @@ test('construction: planks + nails become building parts, best of a kind with !b
   repo.addXp(u.id, 'construction', xpForLevel(20));
   assert.match(say('!build wall'), /Wooden Wall Panel/);
   assert.equal(inv().wooden_planks, undefined);
-  assert.match(say('!build door'), /needs 3 Wooden Planks \+ 1 Bronze Nails. You're missing 3 Wooden Planks \+ 1 Bronze Nails — try !saw wooden \/ !saw bronze/);
+  assert.match(say('!build door'), /needs 3 Wooden Planks \+ 1 Bronze Nails. You're missing 3 Wooden Planks \+ 1 Bronze Nails — try !saw wooden \/ !craft bronze nails/);
   assert.match(say('!construct oak frame'), /needs 2 Oak Planks \+ 1 Iron Nails/);
 });
 

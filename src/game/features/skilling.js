@@ -48,10 +48,19 @@ module.exports = {
   // ---- Skilling ----------------------------------------------------------
 
   runAction(user, skillId, args) {
+    // Nails are Carpentry, but made at the anvil: "!craft iron nails" (a Smithing Hammer and the bar).
+    let via = null;
+    const nails = /\bnails?\b/i.test(args.join(' '));
+    if (skillId === 'crafting' && nails) {
+      skillId = 'carpentry';
+      via = 'craft';
+    } else if (skillId === 'carpentry' && nails) {
+      return `nails aren't sawn, they're hammered out of a smelted bar: ${this.cfg.prefix}craft nails (or ${this.cfg.prefix}craft iron nails) with a 🔨 Smithing Hammer in your backpack.`;
+    }
     // In the Gloamveil, fights come to you (and your gear stays as it went in).
     if (COMBAT_SKILLS.includes(skillId) && this.inVeil(user.id)) return "you're in the Gloamveil: monsters find you in there. !search, !deeper or !extract.";
     // A bare "!smith" just lists what you can make, so it doesn't need (or use) stamina.
-    if (SKILLS[skillId].pickBest === false && !args.length) return this.process(user, skillId, args).reply;
+    if (SKILLS[skillId].pickBest === false && !args.length) return this.process(user, skillId, args, via).reply;
     if (skillId === 'cooking' && String(args[0] || '').toLowerCase() === 'all') return this.cookAll(user);
     // "!build house" / "!build stall": structures, not parts.
     if (skillId === 'construction' && /^(house|home)$/i.test(args[0] || '')) return this.buildHouse(user);
@@ -70,7 +79,7 @@ module.exports = {
           : skill.type === 'burn'
             ? this.burn(user, args)
           : skill.type === 'process'
-            ? this.process(user, skillId, args)
+            ? this.process(user, skillId, args, via)
           : skill.type === 'course'
             ? this.runCourse(user, args)
             : this.gather(user, skillId, args);
@@ -262,11 +271,19 @@ module.exports = {
 
   // Smelting: turns ores from the backpack into ingots (one ore type) and alloys (mixed ores).
   // Always frees backpack space, so it works even when the backpack is full.
-  process(user, skillId, args) {
+  // `via` is the chat command used when a skill's recipes are split between commands (Carpentry:
+  // planks with !saw, nails with !craft); only that command's recipes are offered.
+  process(user, skillId, args, via = null) {
     const base = SKILLS[skillId];
     // Race-only recipes (e.g. the Dwarven Warhammer) are hidden from other races.
     const race = this.appearance(user.id)?.race;
-    const skill = { ...base, recipes: base.recipes.filter((r) => !r.race || r.race === race) };
+    const command = via || base.command;
+    const skill = {
+      ...base,
+      command,
+      ...(command !== base.command ? { example: 'nails or iron nails' } : {}),
+      recipes: base.recipes.filter((r) => (!r.race || r.race === race) && (r.command || base.command) === command),
+    };
     const level = skillLevel(skillId, this.repo.getSkills(user.id)[skillId]);
     const inv = this.repo.getInventory(user.id);
     if (skill.requires && !inv[skill.requires]) return { consumed: false, reply: this.missingToolMessage(skill) };
@@ -313,6 +330,8 @@ module.exports = {
       if (recipe.level > level) {
         return { consumed: false, reply: `you need ${skill.icon} ${skill.name} level ${recipe.level} for ${ITEMS[id].name}.` };
       }
+      // The tool first: no point gathering the bar without the hammer.
+      if (recipe.requires && !inv[recipe.requires]) return { consumed: false, reply: this.missingToolMessage({ ...skill, requires: recipe.requires }) };
       if (!hasInputs(recipe)) return { consumed: false, reply: missing(recipe) };
     } else if (skill.pickBest === false) {
       // Smithing: say what they can make right now instead of guessing.
