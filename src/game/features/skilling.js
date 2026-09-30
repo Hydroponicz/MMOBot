@@ -330,6 +330,8 @@ module.exports = {
       }
     }
 
+    // Some skills need a different tool per recipe (Carpentry: a Saw for planks, a Hammer for nails).
+    if (recipe.requires && !inv[recipe.requires]) return { consumed: false, reply: this.missingToolMessage({ ...skill, requires: recipe.requires }) };
     // Arrows go in your quiver: you need one, with room.
     if (ITEMS[recipe.item].ammo === 'bow') {
       const q = this.quiver(user.id);

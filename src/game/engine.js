@@ -12,6 +12,7 @@ const {
   STARTER_PLOTS,
   GEAR_SLOTS,
   COMMAND_TO_SKILL,
+  COMMAND_ARGS,
   COMBAT_SKILLS,
   WEAPON_SKILL,
   TOOL_TO_SKILL,
@@ -105,7 +106,10 @@ class GameEngine extends EventEmitter {
 
     let reply = null;
     if (COMMAND_TO_SKILL[cmd]) {
-      if (!disabledCommands.includes(cmd)) reply = this.runAction(user, COMMAND_TO_SKILL[cmd], args);
+      // "!nails iron" -> "!saw iron nails"; "!planks" -> "!saw planks".
+      const extra = COMMAND_ARGS[cmd];
+      const full = extra ? (args.length ? [...args, extra] : [extra]) : args;
+      if (!disabledCommands.includes(cmd)) reply = this.runAction(user, COMMAND_TO_SKILL[cmd], full);
     } else if (INFO_COMMANDS[cmd]) {
       const [handler, name] = INFO_COMMANDS[cmd];
       if (!disabledCommands.includes(name)) reply = this[handler](user, args, cmd);

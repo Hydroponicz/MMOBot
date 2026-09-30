@@ -718,6 +718,8 @@ const SKILL_ACTIONS = {
   smelting: { tool: 'tongs', prop: 'furnace', motion: 'stab', bits: '#ff8a3a' },
   smithing: { tool: 'hammer', prop: 'anvil', motion: 'swing', bits: '#ffcf4a' },
   fletching: { tool: 'knife', prop: 'log', motion: 'stab', bits: '#c9a06a' },
+  carpentry: { tool: 'saw', prop: 'log', motion: 'stab', bits: '#e0b878' },
+  construction: { tool: 'hammer', prop: 'emoji', emoji: '🏗️', motion: 'swing', bits: '#c9a06a' },
   crafting: { tool: 'needle', prop: 'emoji', emoji: '🧵', motion: 'stab', bits: '#c9a06a' },
   alchemy: { tool: 'spoon', prop: 'cauldron', motion: 'stir', bits: '#b58cf0' },
   swords: { tool: 'weapon', prop: 'emoji', emoji: '👹', motion: 'swing', bits: '#ff5c7a' },
@@ -755,6 +757,11 @@ function buildTool(kind, M) {
   } else if (kind === 'knife') {
     handle(0.1, 0.016);
     g.add(mesh(cone(0.025, 0.18, 4), iron, [0, -0.17, 0.0], [Math.PI, 0, 0], [1, 1, 0.25]));
+  } else if (kind === 'saw') {
+    // A wooden grip and a long toothed blade.
+    g.add(mesh(new RoundedBoxGeometry(0.05, 0.12, 0.05, 2, 0.015), wood, [0, 0, 0]));
+    g.add(mesh(new THREE.BoxGeometry(0.1, 0.36, 0.006), iron, [0.02, -0.24, 0]));
+    for (let k = 0; k < 9; k++) g.add(mesh(cone(0.012, 0.025, 3), iron, [0.075, -0.1 - k * 0.035, 0], [0, 0, -Math.PI / 2], [1, 1, 0.3]));
   } else if (kind === 'needle') {
     g.add(mesh(cyl(0.004, 0.004, 0.16, 6), iron, [0, -0.08, 0]));
   } else if (kind === 'rod') {

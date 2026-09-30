@@ -121,6 +121,7 @@ const ITEMS = {
 
   // Tools you carry. "keep" items are skipped by "!sell all" (sell them by name if you really want to).
   smithing_hammer: { name: 'Smithing Hammer', icon: '🔨', value: 250, keep: true },
+  saw: { name: 'Saw', icon: '🪚', value: 250, keep: true },
   skinning_knife: { name: 'Skinning Knife', icon: '🔪', value: 250, keep: true },
 
   // Skinning
@@ -588,6 +589,35 @@ const SKILLS = {
     failMessages: ['the string snapped'],
     recipes: [], // filled in below from BOW_LIST / ARROW_LIST
   },
+  carpentry: {
+    name: 'Carpentry',
+    icon: '🪚',
+    command: 'saw',
+    verb: 'made',
+    type: 'process',
+    maxLevel: 500,
+    // Refines raw materials for Construction: logs into planks (needs a Saw) and alloys into nails
+    // (needs a Smithing Hammer). The tool is per recipe, see CARPENTRY below.
+    pickBest: false,
+    example: 'planks, oak planks, nails or iron nails',
+    failMessages: ['the saw jammed', 'the plank split along the grain', 'you bent the nails'],
+    recipes: [], // filled in below
+  },
+  construction: {
+    name: 'Construction',
+    icon: '🏗️',
+    command: 'build',
+    verb: 'built',
+    type: 'process',
+    maxLevel: 500,
+    // Planks + nails make building parts (frames, doors, wall panels, roof trusses): the materials
+    // for player-built structures. Needs a Smithing Hammer to drive the nails.
+    requires: 'smithing_hammer',
+    pickBest: false,
+    example: 'frame, door, wall, roof or oak wall panel',
+    failMessages: ['the joint came apart', 'you hit your thumb', 'it came out crooked, so you started over'],
+    recipes: [], // filled in below
+  },
   crafting: {
     name: 'Crafting',
     icon: '🧵',
@@ -773,6 +803,68 @@ for (const [bowId, bowName, logs, fletchLevel, wield, attack] of BOW_LIST) {
   SKILLS.fletching.recipes.push({ item: id, level: fletchLevel, kind: 'weapon', group: 'staff', xp: Math.round(logXp(logs) * 2 * 0.8), inputs: { [logs]: 2 } });
 }
 SKILLS.fletching.recipes.sort((a, b) => a.level - b.level);
+
+// ---- Carpentry: planks and nails ------------------------------------------------------------
+// One kind of plank per log (a Saw, Carpentry level = the log's Woodcutting level) and one kind of
+// nails per alloy (a Smithing Hammer, Carpentry level = the alloy's Smithing level). 1 in, 1 out, so
+// refining never fills the backpack; the XP is for the extra step.
+const plankName = (logs) => (logs === 'logs' ? 'Wooden Planks' : `${ITEMS[logs].name.replace(/ (Logs|Bark|Timber)$/, '')} Planks`);
+const plankId = (logs) => plankName(logs).toLowerCase().replace(/ /g, '_');
+for (const r of SKILLS.woodcutting.resources) {
+  const id = plankId(r.item);
+  if (ITEMS[id]) throw new Error(`plank item ${id} already exists`);
+  ITEMS[id] = { name: plankName(r.item), icon: '🟫', value: Math.max(3, Math.round(ITEMS[r.item].value * 1.3)), material: 'plank' };
+  SKILLS.carpentry.recipes.push({ item: id, level: r.level, kind: 'plank', group: 'planks', requires: 'saw', xp: Math.max(4, Math.round(r.xp * 0.7)), inputs: { [r.item]: 1 } });
+}
+const nailId = (metal) => `${metal}_nails`;
+for (const [metal, metalName, alloy, smithLevel] of METALS) {
+  const id = nailId(metal);
+  if (ITEMS[id]) throw new Error(`nail item ${id} already exists`);
+  ITEMS[id] = { name: `${metalName} Nails`, icon: '📌', value: Math.max(4, Math.round(ITEMS[alloy].value * 1.3)), material: 'nails' };
+  SKILLS.carpentry.recipes.push({ item: id, level: smithLevel, kind: 'nails', group: 'nails', requires: 'smithing_hammer', xp: Math.max(6, Math.round(barXp(alloy) * 0.7)), inputs: { [alloy]: 1 } });
+}
+SKILLS.carpentry.recipes.sort((a, b) => a.level - b.level);
+
+// ---- Construction: building parts -------------------------------------------------------------
+// Each tier pairs a wood with an alloy of about the same level. Parts are the materials future
+// player-built structures (houses, shops, town buildings) will be made of; for now they sell well
+// and are worth more than what went into them.
+const BUILD_TIERS = [
+  // tier name, logs (for the planks), metal (for the nails), Construction level
+  ['Wooden', 'logs', 'bronze', 1],
+  ['Oak', 'oak_logs', 'iron', 15],
+  ['Willow', 'willow_logs', 'steel', 30],
+  ['Mahogany', 'mahogany_logs', 'mithril', 55],
+  ['Yew', 'yew_logs', 'adamant', 70],
+  ['Redwood', 'redwood_logs', 'rune', 90],
+  ['Ebony', 'ebony_logs', 'obsidian', 130],
+  ['Bloodwood', 'bloodwood_logs', 'orichalcum', 200],
+  ['Spiritwood', 'spiritwood_logs', 'dragonite', 300],
+  ['Elder', 'elder_logs', 'void', 400],
+  ['Celestial', 'celestial_timber', 'celestial', 490],
+];
+const BUILD_PARTS = [
+  // part id, name, icon, planks, nails, levels after the tier's
+  ['frame', 'Frame', '🪜', 2, 1, 0],
+  ['door', 'Door', '🚪', 3, 1, 3],
+  ['wall_panel', 'Wall Panel', '🧱', 4, 2, 6],
+  ['roof_truss', 'Roof Truss', '🛖', 6, 2, 10],
+];
+const carpXp = (item) => SKILLS.carpentry.recipes.find((r) => r.item === item).xp;
+for (const [tierName, logs, metal, level] of BUILD_TIERS) {
+  const planks = plankId(logs);
+  const nails = nailId(metal);
+  for (const [part, partName, icon, p, n, plus] of BUILD_PARTS) {
+    const id = `${tierName.toLowerCase()}_${part}`;
+    if (ITEMS[id]) throw new Error(`building part ${id} already exists`);
+    ITEMS[id] = { name: `${tierName} ${partName}`, icon, value: Math.round((ITEMS[planks].value * p + ITEMS[nails].value * n) * 1.35), keep: true, buildPart: part, buildTier: tierName.toLowerCase() };
+    SKILLS.construction.recipes.push({ item: id, level: Math.min(500, level + plus), kind: 'part', group: part.split('_')[0], xp: Math.round((carpXp(planks) * p + carpXp(nails) * n) * 1.1), inputs: { [planks]: p, [nails]: n } });
+  }
+}
+SKILLS.construction.recipes.sort((a, b) => a.level - b.level);
+// A Saw: bought, or smithed from bronze.
+SKILLS.smithing.recipes.push({ item: 'saw', level: 5, kind: 'tool', xp: 30, inputs: { bronze_bar: 2 } });
+SKILLS.smithing.recipes.sort((a, b) => a.level - b.level);
 
 // ---- Magic --------------------------------------------------------------------------------
 // Spells you know by Magic level; the best one is used. attack is added to your staff's.
@@ -1213,6 +1305,7 @@ const SHOP = [
   { item: 'magic_rune', cost: 8, category: 'arrows', description: 'One per !cast. Runes don\'t take backpack slots. Or !craft runes: 1 Ashes + 1 Tin Ore makes 10, 1 Runebloom (a Farming crop) makes 20, better blooms more.' },
   // Always add new shop items at the end (see above).
   { item: 'flint_and_steel', cost: 50, description: 'Lights fires with !lightfire (burns one log from your backpack for Firemaking XP and Ashes). Good for 250 fires, then it wears out.' },
+  { item: 'saw', cost: 500, description: 'Lets you !saw logs into planks for Carpentry (nails need a Smithing Hammer). Keep it in your backpack. Or smith one at Smithing 5 from 2 Bronze Alloy.' },
 ];
 
 // Backpack: how many items (total, across all stacks) a player can carry. Upgrade with
@@ -1279,6 +1372,11 @@ const TOOL_ALIASES = { rod: 'rod', pole: 'rod', pickaxe: 'pickaxe', pick: 'picka
 const COMMAND_TO_SKILL = {};
 for (const id of SKILL_IDS) if (SKILLS[id].type !== 'farm') COMMAND_TO_SKILL[SKILLS[id].command] ??= id; // farming has its own commands
 COMMAND_TO_SKILL.agility ??= 'agility'; // !agility works like !run
+// Other words for the new crafting skills: !carpentry / !planks / !nails, !construct.
+for (const w of ['carpentry', 'carpenter', 'planks', 'plank', 'nails', 'nail']) COMMAND_TO_SKILL[w] ??= 'carpentry';
+for (const w of ['construct', 'construction']) COMMAND_TO_SKILL[w] ??= 'construction';
+// "!planks" means "!saw planks" and "!nails iron" means "!saw iron nails".
+const COMMAND_ARGS = { planks: 'planks', plank: 'planks', nails: 'nails', nail: 'nails' };
 const COMBAT_SKILLS = SKILL_IDS.filter((id) => SKILLS[id].type === 'combat');
 // "sword" -> "swords"
 const WEAPON_SKILL = Object.fromEntries(COMBAT_SKILLS.map((id) => [SKILLS[id].weaponType, id]));
@@ -1312,6 +1410,7 @@ module.exports = {
   STARTER_PLOTS,
   GEAR_SLOTS,
   COMMAND_TO_SKILL,
+  COMMAND_ARGS,
   COMBAT_SKILLS,
   WEAPON_SKILL,
   TOOL_TO_SKILL,

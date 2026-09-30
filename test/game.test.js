@@ -128,7 +128,7 @@ test('!stats, !inv, !top, !points and !commands respond', () => {
   assert.match(say('!top'), /1\. Alice/);
   assert.match(say('!top fishing'), /Fishing: 1\. Alice Lv2/);
   assert.match(say('!points'), /points/);
-  assert.match(say('!commands'), /!fish !mine !chop !dig !skin !plant !harvest !lightfire !cook !smelt !smith !fletch !craft !brew !fight !shoot !cast/);
+  assert.match(say('!commands'), /!fish !mine !chop !dig !skin !plant !harvest !lightfire !cook !smelt !smith !fletch !saw !build !craft !brew !fight !shoot !cast/);
   assert.equal(say('!unknowncommand'), null);
 });
 
@@ -136,7 +136,7 @@ test('profile exposes everything the website needs', () => {
   const { repo, engine, say } = setup();
   say('!fish');
   const p = engine.profile(repo.getUserByName('alice').id);
-  assert.equal(p.skills.length, 17);
+  assert.equal(p.skills.length, 19);
   assert.equal(p.skills[0].id, 'fishing');
   assert.equal(p.skills[0].level, 2);
   assert.equal(p.skills[0].rank, 1);
@@ -427,7 +427,7 @@ test('rod prices saved before the tool rework still apply', () => {
 test('the shop sells a smithing hammer (500) and a sword (1,000) via !buy', () => {
   const { repo, say } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
-  assert.match(say('!shop'), /🔨 Smithing Hammer 500, 🗡️ Bronze Sword 1,000, 🔪 Skinning Knife 500, 🟫 Farm Plot 750, 🏹 Oak Shortbow 500, 🧺 Quiver 250, 🪄 Oak Staff 500, 🪨 Flint and Steel 50 pts, gathering stations 🦀⚙️🌳🏺 from 750 \(!stations\), potions from 150 \(!buy minor health potion\), arrows from 6 each \(!buy arrows 50\), plus seeds/);
+  assert.match(say('!shop'), /🔨 Smithing Hammer 500, 🗡️ Bronze Sword 1,000, 🔪 Skinning Knife 500, 🟫 Farm Plot 750, 🏹 Oak Shortbow 500, 🧺 Quiver 250, 🪄 Oak Staff 500, 🪨 Flint and Steel 50, 🪚 Saw 500 pts, gathering stations 🦀⚙️🌳🏺 from 750 \(!stations\), potions from 150 \(!buy minor health potion\), arrows from 6 each \(!buy arrows 50\), plus seeds/);
   assert.match(say('!buy hammer'), /Smithing Hammer costs 500 pts, you have 5/);
   repo.addPoints(u.id, 2000);
   assert.match(say('!buy hammer'), /bought 🔨 Smithing Hammer for 500 pts! Now try !smith bronze sword/);
@@ -1959,7 +1959,7 @@ test('pets: rare drop once per skill, follows you, +5% XP in its skill', () => {
   assert.equal(engine.petXp(u.id, 'fishing'), 1.05);
   assert.equal(engine.petXp(u.id, 'mining'), 1);
   say('!mine');
-  assert.match(say('!pet'), /pets \(2\/17\).*Following you: 🐧 Heron Chick/);
+  assert.match(say('!pet'), /pets \(2\/19\).*Following you: 🐧 Heron Chick/);
   assert.match(say('!pet golem'), /Rock Golem is following you now/);
   assert.equal(engine.characterView(u.id).pet, '🗿');
   assert.equal(engine.backpack(u.id).used, 3, 'pets take no backpack space (just 2 fish and 1 ore)');
