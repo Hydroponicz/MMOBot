@@ -351,7 +351,8 @@
     dagger: 'M108,44 L170,44 L192,50 L170,56 L108,56 Z',
     fang: 'M112,47 Q162,26 196,60 Q160,44 114,60 Z',
     saber: 'M64,45 Q150,40 228,24 Q170,52 64,56 Z',
-    axe: 'M156,48 L166,18 Q210,28 206,50 Q210,72 166,82 L156,52 Z',
+    // A double-bitted battle axe: two crescent blades flaring from a narrow neck, and a top spike.
+    axe: 'M178,44 Q174,26 154,10 Q186,-4 218,10 Q200,26 196,44 L196,56 Q200,74 218,90 Q186,104 154,90 Q174,74 178,56 Z M196,45 L226,50 L196,55 Z',
     hammer: 'M166,22 L214,22 Q220,22 220,28 L220,72 Q220,78 214,78 L166,78 Q160,78 160,72 L160,28 Q160,22 166,22 Z',
     staff: 'M14,47 L186,47 L186,53 L14,53 Z M228,50 A18,18 0 1 1 192,50 A18,18 0 1 1 228,50 Z',
     bow: 'M133,4 Q40,50 133,96 L120,96 Q62,50 120,4 Z',
@@ -364,7 +365,7 @@
   // shape's proportions (up to 6:1) and fitted to it, so the whole painting shows on thin blades too.
   const BBOX = {
     sword: [64, 44, 160, 12], greatsword: [70, 39, 164, 22], dagger: [108, 44, 84, 12], fang: [112, 26, 84, 34],
-    saber: [64, 24, 164, 32], axe: [156, 18, 54, 64], hammer: [160, 22, 60, 56], staff: [14, 32, 214, 36],
+    saber: [64, 24, 164, 32], axe: [154, 2, 72, 96], hammer: [160, 22, 60, 56], staff: [14, 32, 214, 36],
     bow: [40, 4, 93, 92], scythe: [104, 6, 100, 44], spear: [180, 40, 54, 20], glaive: [160, 28, 74, 44], shield: [68, 4, 104, 92],
   };
   const aspectOf = (weapon) => {
@@ -379,7 +380,7 @@
     dagger: [['rect', 'grip', 62, 45, 40, 10, 3], ['circle', 'steel', 58, 50, 6], ['rect', 'steel', 101, 36, 7, 28, 2]],
     fang: [['ring', 'steel', 60, 62, 11, 5], ['poly', 'grip', [[68, 55], [114, 46], [116, 61], [72, 68]]]],
     saber: [['rect', 'grip', 22, 46, 38, 8, 2], ['circle', 'gold', 17, 50, 6], ['ellipse', 'gold', 62, 50, 5, 15]],
-    axe: [['rect', 'wood', 18, 46, 176, 8, 3], ['rect', 'grip', 20, 45, 40, 10, 3]],
+    axe: [['rect', 'wood', 16, 46, 184, 8, 3], ['rect', 'grip', 20, 44, 44, 12, 4], ['circle', 'steel', 15, 50, 6], ['rect', 'steel', 173, 40, 28, 20, 4], ['rect', 'steel', 64, 44, 5, 12, 2]],
     hammer: [['rect', 'wood', 18, 46, 146, 8, 3], ['rect', 'grip', 20, 45, 40, 10, 3]],
     staff: [['line', 'gold', 184, 40, 196, 34, 4], ['line', 'gold', 184, 60, 196, 66, 4], ['rect', 'grip', 80, 45, 30, 10, 3]],
     bow: [['line', 'string', 130, 6, 130, 94, 1.2], ['rect', 'grip', 84, 42, 10, 16, 3]],
