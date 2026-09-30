@@ -278,25 +278,34 @@
     g.fillStyle = halo;
     g.fillRect(0, 0, W, H);
 
-    // ---- the creature
+    // ---- the creature: an original 3D-built, cel-shaded render (creature3d.js), or the emoji
     const size = H * (rank >= 4 ? 0.66 : 0.6);
-    const art = document.createElement('canvas');
-    art.width = art.height = Math.ceil(size * 1.5);
-    const a = art.getContext('2d');
-    a.textAlign = 'center';
-    a.textBaseline = 'middle';
-    a.font = `${Math.round(size)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+    let art = null;
+    if (creaturesState === 'ready' && window.MMOCreatures?.has(card.id)) {
+      try {
+        art = window.MMOCreatures.render(card, Math.ceil(size * 1.5));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    if (!art) {
+      art = document.createElement('canvas');
+      art.width = art.height = Math.ceil(size * 1.5);
+      const a = art.getContext('2d');
+      a.textAlign = 'center';
+      a.textBaseline = 'middle';
+      a.font = `${Math.round(size)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+      a.fillText(card.icon || '❓', art.width / 2, art.width / 2 + size * 0.05);
+      // Lighting across the body: bright from the top left, element-tinted shade bottom right.
+      a.globalCompositeOperation = 'source-atop';
+      const lit = a.createLinearGradient(0, 0, art.width, art.height);
+      lit.addColorStop(0, 'rgba(255,255,240,.28)');
+      lit.addColorStop(0.5, 'rgba(255,255,255,0)');
+      lit.addColorStop(1, `${E.far}88`);
+      a.fillStyle = lit;
+      a.fillRect(0, 0, art.width, art.height);
+    }
     const ac = art.width / 2;
-    a.fillText(card.icon || '❓', ac, ac + size * 0.05);
-    // Lighting across the body: warm/bright from the top left, element-tinted shade bottom right.
-    a.globalCompositeOperation = 'source-atop';
-    const lit = a.createLinearGradient(0, 0, art.width, art.height);
-    lit.addColorStop(0, 'rgba(255,255,240,.28)');
-    lit.addColorStop(0.5, 'rgba(255,255,255,0)');
-    lit.addColorStop(1, `${E.far}88`);
-    a.fillStyle = lit;
-    a.fillRect(0, 0, art.width, art.height);
-    a.globalCompositeOperation = 'source-over';
     // Silhouette (for the outline and rim): the creature's shape in one color.
     const sil = (color) => {
       const c = document.createElement('canvas');
@@ -379,8 +388,24 @@
     return cv;
   }
 
+  // The 3D creature renderer loads once in the background; cards wait for it (or fall back to the
+  // emoji if it can't load, e.g. no WebGL).
+  let creaturesState = 'idle';
+  function creaturesReady() {
+    if (creaturesState === 'idle') {
+      creaturesState = 'loading';
+      import('/creature3d.js')
+        .then((m) => (creaturesState = m.supported() ? 'ready' : 'failed'))
+        .catch(() => (creaturesState = 'failed'))
+        .finally(() => {
+          pumping = false;
+          pump();
+        });
+    }
+    return creaturesState === 'ready' || creaturesState === 'failed';
+  }
   const urls = new Map();
-  const keyOf = (c, W) => `${c.id}|${c.element}|${c.rarity}|${W}`;
+  const keyOf = (c, W) => `${c.id}|${c.element}|${c.rarity}|${W}|${creaturesState === 'ready' ? '3d' : 'e'}`;
   function url(c, W = 480) {
     const k = keyOf(c, W);
     if (!urls.has(k)) {
@@ -396,6 +421,7 @@
   let pumping = false;
   function pump() {
     if (pumping) return;
+    if (!creaturesReady()) return;
     pumping = true;
     const step = () => {
       const t0 = performance.now();
@@ -445,6 +471,7 @@
   }
   // Paints these now (a pack's cards before they're flipped).
   function warm(list, W = 480) {
+    if (!creaturesReady()) return;
     for (const c of list) url({ id: c.id, icon: c.icon, element: c.element, rarity: c.rarity }, W);
   }
 
