@@ -101,13 +101,40 @@ module.exports = {
     return { ok: true, game: 'roulette', ...spin, ...this.settleBet(user, 'roulette', b.bet, spin.multiplier, spin.win ? spin.betLabel : null) };
   },
 
-  playPlinko(user, betArg, risk) {
+  // One or many balls (the bet is per ball). "all", "half" and "25%" with several balls split that
+  // share of your points between them. One drop counts as one bet for the cooldown.
+  playPlinko(user, betArg, risk, ballsArg = 1) {
     const r = casino.riskOf(risk || 'medium');
-    if (!r) return { ok: false, error: 'risk must be low, medium or high.' };
-    const b = this.takeBet(user, betArg);
+    if (!r) return { ok: false, error: 'risk must be low, medium, high or extreme.' };
+    const maxBalls = this.cfg.plinkoMaxBalls ?? 1000;
+    const balls = Math.floor(Number(ballsArg) || 1);
+    if (balls < 1) return { ok: false, error: 'drop at least 1 ball.' };
+    if (balls > maxBalls) return { ok: false, error: `at most ${fmt(maxBalls)} balls per drop.` };
+    let arg = betArg;
+    if (balls > 1 && /^(all|max|allin|half|\d+(\.\d+)?%)$/i.test(String(betArg || '').trim())) {
+      const share = casino.parseBet(betArg, this.repo.getUser(user.id).points);
+      arg = String(Math.floor((share || 0) / balls));
+    }
+    const b = this.takeBet(user, arg);
     if (b.bet === undefined) return { ok: false, ...b };
-    const drop = casino.dropPlinko(this.rng, r);
-    return { ok: true, game: 'plinko', rows: casino.PLINKO_ROWS, ...drop, ...this.settleBet(user, 'plinko', b.bet, drop.multiplier, `${drop.multiplier}x`) };
+    const total = b.bet * balls;
+    const balance = this.repo.getUser(user.id).points;
+    if (total > balance) {
+      return { ok: false, error: `${fmt(balls)} balls × ${fmt(b.bet)} = ${fmt(total)} pts, but you have ${fmt(balance)}. Try ${fmt(Math.floor(balance / b.bet))} balls or a smaller bet.` };
+    }
+    if (balls === 1) {
+      const drop = casino.dropPlinko(this.rng, r);
+      return { ok: true, game: 'plinko', rows: casino.PLINKO_ROWS, balls: [drop], ...drop, ...this.settleBet(user, 'plinko', b.bet, drop.multiplier, `${drop.multiplier}x`) };
+    }
+    const drops = Array.from({ length: balls }, () => casino.dropPlinko(this.rng, r));
+    const payout = drops.reduce((s, d) => s + payoutOf(b.bet, d.multiplier), 0);
+    const best = Math.max(...drops.map((d) => d.multiplier));
+    // Settle the whole drop as one bet at its average multiplier.
+    const settled = this.settleBet(user, 'plinko', total, payout / total, `${fmt(balls)} balls, best ${best}x`);
+    if (best >= 10 && !(settled.multiplier >= 10 || settled.net >= 10000)) {
+      this.emitActivity(user, { kind: 'jackpot', text: `hit ${best}x on plinko (${r})! 🎉` });
+    }
+    return { ok: true, game: 'plinko', rows: casino.PLINKO_ROWS, risk: r, balls: drops, perBall: b.bet, best, ...settled, bet: total };
   },
 
   // Blackjack keeps the hand in the database, so it survives restarts. The stake is taken up front.
@@ -443,13 +470,32 @@ module.exports = {
     return this.casinoReply(r, `🎡 ${dot} ${r.number} — you bet ${r.betLabel}:`);
   },
 
+  // !plinko 500 high · !plinko 100 extreme 50 (50 balls of 100) · !plinko all high x20 (all, split)
   chatPlinko(user, args) {
-    if (!args.length) return 'usage: !plinko <bet> [low|medium|high], e.g. !plinko 500 high';
-    const [a, b] = args;
-    const [bet, risk] = casino.riskOf(a) ? [b, a] : [a, b];
-    const r = this.playPlinko(user, bet, risk);
+    if (!args.length) return 'usage: !plinko <bet> [low|medium|high|extreme] [balls], e.g. !plinko 500 high or !plinko 100 extreme 50';
+    let risk = null;
+    let bet = null;
+    let balls = 1;
+    for (const w of args) {
+      const n = String(w).toLowerCase();
+      if (!risk && casino.riskOf(n)) risk = n;
+      else if (bet === null && casino.parseBet(n, 1) !== null) bet = n;
+      else if (/^(x?\d+x?|\d+balls?)$/.test(n)) balls = Number(n.replace(/\D/g, ''));
+    }
+    const r = this.playPlinko(user, bet, risk, balls);
     if (!r.ok) return r.error || null;
-    return this.casinoReply(r, `🔻 Plinko (${r.risk}) landed on ${r.multiplier}x:`);
+    if (r.balls.length === 1) return this.casinoReply(r, `🔻 Plinko (${r.risk}) landed on ${r.multiplier}x:`);
+    // "12× 0x, 3× 0.7x, 1× 40x"
+    const counts = {};
+    for (const d of r.balls) counts[d.multiplier] = (counts[d.multiplier] || 0) + 1;
+    const spread = Object.entries(counts)
+      .sort((a, b) => Number(b[0]) - Number(a[0]))
+      .slice(0, 4)
+      .map(([m, n]) => `${n}× ${m}x`)
+      .join(', ');
+    const head = `🔻 Plinko (${r.risk}) ${fmt(r.balls.length)} balls of ${fmt(r.perBall)}: ${spread}${Object.keys(counts).length > 4 ? '…' : ''} →`;
+    const bal = `Balance: ${fmt(r.balance)}`;
+    return r.net > 0 ? `${head} WON ${fmt(r.payout)} pts on ${fmt(r.bet)}! 💰 ${bal}` : r.net === 0 ? `${head} broke even. ${bal}` : `${head} got back ${fmt(r.payout)} of ${fmt(r.bet)}. ${bal}`;
   },
 
   bjText(v) {
@@ -561,6 +607,6 @@ module.exports = {
     const c = this.cfg;
     if (c.casinoEnabled === false) return 'the casino is closed right now.';
     const p = c.prefix;
-    return `🎰 Casino (points only): ${p}slots <bet> · ${p}roulette red <bet> · ${p}plinko <bet> [low|medium|high] · ${p}bj <bet> then ${p}hit/${p}stand/${p}double/${p}split · ${p}crash <bet> 2x · ${p}mines <bet> 3 then ${p}pick 1-25/${p}cashout. Bets: 500, 1k, half, all. Or play at ${this.siteUrl}/#/casino`;
+    return `🎰 Casino (points only): ${p}slots <bet> · ${p}roulette red <bet> · ${p}plinko <bet> [low|medium|high|extreme] [balls] · ${p}bj <bet> then ${p}hit/${p}stand/${p}double/${p}split · ${p}crash <bet> 2x · ${p}mines <bet> 3 then ${p}pick 1-25/${p}cashout. Bets: 500, 1k, half, all. Or play at ${this.siteUrl}/#/casino`;
   },
 };

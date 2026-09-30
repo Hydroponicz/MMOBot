@@ -4,6 +4,7 @@
   const SUIT_RED = new Set(['♥', '♦']);
   let tab = 'slots';
   let risk = 'medium';
+  let plinkoBalls = 1;
   let rouletteChoice = 'red';
 
   window.MMOCasino = async ($app, { api, toast, esc, fmt, state, route }) => {
@@ -44,7 +45,7 @@
         <div class="casino-top">
           <div>
             <h1><span class="live-dot">● LIVE</span> Casino</h1>
-            <p class="muted">Play with the points you earn in chat. In chat: <code>!slots 500</code>, <code>!roulette red 1k</code>, <code>!plinko half high</code>, <code>!bj all</code>, <code>!crash 500 2x</code>, <code>!mines 500 3</code>.</p>
+            <p class="muted">Play with the points you earn in chat. In chat: <code>!slots 500</code>, <code>!roulette red 1k</code>, <code>!plinko 100 extreme 50</code>, <code>!bj all</code>, <code>!crash 500 2x</code>, <code>!mines 500 3</code>.</p>
           </div>
           ${
             loggedIn
@@ -252,16 +253,20 @@
           const x = W / 2 + (i - rows / 2) * gap;
           const hot = m >= 10 ? '#dc2626' : m >= 2 ? '#f97316' : m >= 1 ? '#eab308' : '#53fc18';
           return `<g id="pb${i}"><rect x="${(x - gap / 2 + 1.5).toFixed(1)}" y="${by}" width="${(gap - 3).toFixed(1)}" height="22" rx="4" fill="${hot}"/>
-            <text x="${x.toFixed(1)}" y="${by + 15}" font-size="${m >= 100 ? 8 : 9}" font-weight="800" text-anchor="middle" fill="#0b0e11">${m}x</text></g>`;
+            <text x="${x.toFixed(1)}" y="${by + 15}" font-size="${m >= 1000 ? 6.5 : m >= 100 ? 8 : 9}" font-weight="800" text-anchor="middle" fill="#0b0e11">${m}x</text></g>`;
         })
         .join('');
       $('#cz-stage').innerHTML = `<svg viewBox="0 0 ${W} ${by + 30}" class="plinko" id="cz-plinko" role="img" aria-label="Plinko board">${pegs.join('')}${buckets}<g id="cz-balls"></g></svg>`;
+      const maxBalls = info.plinko.maxBalls || 1;
       $('#cz-controls').innerHTML = `
-        <div class="rl-choices">${['low', 'medium', 'high']
-          .map((x) => `<button class="rl-btn ${x === risk ? 'active' : ''}" data-risk="${x}">${x[0].toUpperCase() + x.slice(1)} risk</button>`)
+        <div class="rl-choices">${['low', 'medium', 'high', 'extreme']
+          .map((x) => `<button class="rl-btn ${x === risk ? 'active' : ''}${x === 'extreme' ? ' extreme' : ''}" data-risk="${x}">${x[0].toUpperCase() + x.slice(1)}${x === 'extreme' ? ' 🔥' : ' risk'}</button>`)
           .join('')}</div>
-        <button class="btn btn-primary big-btn" id="cz-go" style="margin-top:8px">🔻 Drop ball</button>`;
-      $('#cz-pay').innerHTML = `<p class="muted" style="font-size:.85rem">Higher risk: bigger edges (up to ${Math.max(...mult)}x), smaller middle.</p>`;
+        ${maxBalls > 1 ? `<label class="muted" for="cz-balls-n" style="display:block;margin-top:10px">Balls (bet is per ball)</label>
+        <div class="form-row"><input type="number" id="cz-balls-n" min="1" max="${maxBalls}" value="${plinkoBalls}"></div>
+        <div class="bet-quick">${[1, 10, 50, 100].filter((n) => n <= maxBalls).map((n) => `<button class="mini" data-balls="${n}">${n}</button>`).join('')}</div>` : ''}
+        <button class="btn btn-primary big-btn" id="cz-go" style="margin-top:8px">🔻 Drop ${plinkoBalls > 1 ? `${fmt(plinkoBalls)} balls` : 'ball'}</button>`;
+      $('#cz-pay').innerHTML = `<p class="muted" style="font-size:.85rem">${risk === 'extreme' ? 'Extreme: 1000x on either edge (about 1 ball in 2,000), but the middle nine pay nothing: most balls lose.' : `Higher risk: bigger edges (up to ${Math.max(...mult)}x), smaller middle.`}</p>`;
       $app.querySelectorAll('[data-risk]').forEach((b) => {
         b.onclick = () => {
           if (busy) return;
@@ -269,39 +274,71 @@
           renderPlinko();
         };
       });
+      const ballsInput = $('#cz-balls-n');
+      const setBalls = (n) => {
+        plinkoBalls = Math.max(1, Math.min(maxBalls, Math.floor(Number(n) || 1)));
+        $('#cz-go').textContent = `🔻 Drop ${plinkoBalls > 1 ? `${fmt(plinkoBalls)} balls` : 'ball'}`;
+      };
+      if (ballsInput) ballsInput.oninput = () => setBalls(ballsInput.value);
+      $app.querySelectorAll('[data-balls]').forEach((b) => {
+        b.onclick = () => {
+          if (ballsInput) ballsInput.value = b.dataset.balls;
+          setBalls(b.dataset.balls);
+        };
+      });
       $('#cz-go').onclick = async () => {
         if (busy || needLogin()) return;
         busy = true;
-        const r = await post('/casino/plinko', { bet: betInput.value, risk });
+        const r = await post('/casino/plinko', { bet: betInput.value, risk, balls: plinkoBalls });
         if (!r) return (busy = false);
         const ns = 'http://www.w3.org/2000/svg';
-        const ball = document.createElementNS(ns, 'circle');
-        ball.setAttribute('r', '6');
-        ball.setAttribute('fill', '#53fc18');
-        ball.setAttribute('class', 'plinko-ball');
-        $('#cz-balls').appendChild(ball);
-        let pos = 0; // rights so far
-        const place = (row) => {
-          const x = W / 2 + (pos - row / 2) * gap;
-          ball.setAttribute('cx', x.toFixed(1));
-          ball.setAttribute('cy', (18 + row * gap).toFixed(1));
+        const drops = r.balls || [r];
+        // Big drops: animate up to 100 balls (the rest land instantly), spread over ~4 seconds.
+        const shown = drops.slice(0, 100);
+        const stagger = drops.length > 1 ? Math.max(25, Math.min(180, 4000 / shown.length)) : 0;
+        const hit = (bucket) => {
+          const g = $(`#pb${bucket}`);
+          if (!g) return;
+          g.classList.remove('hit');
+          void g.getBBox();
+          g.classList.add('hit');
         };
-        place(0);
-        result('Dropping…');
-        r.path.forEach((step, row) => {
+        result(drops.length > 1 ? `Dropping ${fmt(drops.length)} balls…` : 'Dropping…');
+        shown.forEach((d, n) => {
           later(() => {
-            pos += step;
-            place(row + 1);
-          }, 110 * (row + 1));
+            const ball = document.createElementNS(ns, 'circle');
+            ball.setAttribute('r', '6');
+            ball.setAttribute('fill', d.multiplier >= 10 ? '#ffc940' : '#53fc18');
+            ball.setAttribute('class', 'plinko-ball');
+            $('#cz-balls')?.appendChild(ball);
+            let pos = 0; // rights so far
+            const place = (row) => {
+              ball.setAttribute('cx', (W / 2 + (pos - row / 2) * gap).toFixed(1));
+              ball.setAttribute('cy', (18 + row * gap).toFixed(1));
+            };
+            place(0);
+            d.path.forEach((step, row) => {
+              later(() => {
+                pos += step;
+                place(row + 1);
+              }, 110 * (row + 1));
+            });
+            later(() => {
+              hit(d.bucket);
+              ball.remove();
+            }, 110 * (rows + 1) + 150);
+          }, n * stagger);
         });
         later(() => {
-          $(`#pb${r.bucket}`)?.classList.add('hit');
-          later(() => $(`#pb${r.bucket}`)?.classList.remove('hit'), 900);
-          ball.remove();
           setBalance(r.balance);
-          outcome(r);
+          if (drops.length === 1) outcome(r);
+          else {
+            const best = Math.max(...drops.map((d) => d.multiplier));
+            const kind = r.net > 0 ? 'win' : r.net < 0 ? 'lose' : '';
+            result(`${fmt(drops.length)} balls × ${fmt(r.perBall)}: ${r.net > 0 ? `🎉 WON <b>${fmt(r.payout)}</b>` : `got back ${fmt(r.payout)}`} of ${fmt(r.bet)} pts · best ${best}x`, kind);
+          }
           busy = false;
-        }, 110 * (rows + 1) + 150);
+        }, (shown.length - 1) * stagger + 110 * (rows + 1) + 200);
       };
     }
 

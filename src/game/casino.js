@@ -85,8 +85,10 @@ const PLINKO_RISKS = {
   low: [10, 3, 1.6, 1.4, 1.1, 1, 0.5, 1, 1.1, 1.4, 1.6, 3, 10],
   medium: [33, 11, 4, 2, 1.1, 0.6, 0.3, 0.6, 1.1, 2, 4, 11, 33],
   high: [170, 24, 8.1, 2, 0.7, 0.2, 0.2, 0.2, 0.7, 2, 8.1, 24, 170],
+  // 1000x on either edge (1 in 2,048), nothing in the middle nine: about 85% of balls pay 0.
+  extreme: [1000, 40, 6, 0.7, 0, 0, 0, 0, 0, 0.7, 6, 40, 1000],
 };
-const riskOf = (r) => ({ l: 'low', low: 'low', m: 'medium', med: 'medium', medium: 'medium', h: 'high', high: 'high' })[String(r || '').toLowerCase()];
+const riskOf = (r) => ({ l: 'low', low: 'low', m: 'medium', med: 'medium', medium: 'medium', h: 'high', high: 'high', x: 'extreme', ex: 'extreme', extreme: 'extreme', insane: 'extreme' })[String(r || '').toLowerCase()];
 
 function dropPlinko(rng, risk = 'medium') {
   const path = Array.from({ length: PLINKO_ROWS }, () => (rng() < 0.5 ? 0 : 1)); // 0 = left, 1 = right

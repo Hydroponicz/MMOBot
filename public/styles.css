@@ -431,6 +431,8 @@ tr.locked td { opacity: 0.55; }
 
 /* Plinko */
 .plinko { width: 100%; max-width: 520px; height: auto; }
+.rl-btn.extreme { border-color: var(--danger); color: var(--danger); }
+.rl-btn.extreme.active { background: var(--danger); color: #0b0e11; }
 .plinko-ball { filter: drop-shadow(0 0 6px rgba(83, 252, 24, 0.9)); transition: cx 0.1s linear, cy 0.1s ease-in; }
 .plinko g.hit rect { transform-box: fill-box; transform-origin: center; animation: bucket-hit 0.5s ease-out; stroke: #fff; stroke-width: 2; }
 @keyframes bucket-hit { 40% { transform: translateY(5px); } }

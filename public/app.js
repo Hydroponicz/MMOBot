@@ -1972,7 +1972,8 @@
       ['Casino', [
         ['slots 500', '🎰 Slots (all, half, 1k also work)'],
         ['roulette red 500', '🎡 Colors, odd/even, halves, dozens or a number'],
-        ['plinko 500 high', '🔻 Plinko: low, medium or high risk'],
+        ['plinko 500 high', '🔻 Plinko: low, medium, high or extreme (1000x) risk'],
+        ['plinko 100 extreme 50', '🔻 Drop 50 balls of 100 at once'],
         ['bj 500', '🃏 Blackjack: hit, stand, double, split'],
         ['crash 500 2x', '🚀 Crash, cashing out at 2x'],
         ['mines 500 3', '💣 Mines, then pick 7 and cashout'],

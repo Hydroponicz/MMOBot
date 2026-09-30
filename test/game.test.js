@@ -1319,6 +1319,31 @@ test('!plinko: 12 rows, risk levels, path decides the bucket', () => {
   assert.match(say('!plinko medium 100'), /landed on 0\.3x: lost 70/);
 });
 
+test('!plinko extreme pays 1000x on the edge; many balls in one drop', () => {
+  // Ball 1: all left (1000x). Balls 2-3: 6 lefts, 6 rights (middle, 0x).
+  const { repo, engine, say, tick } = setup({ rolls: [...Array(12).fill(0.1), ...Array(2).fill([...Array(6).fill(0.1), ...Array(6).fill(0.9)]).flat()] });
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addPoints(u.id, 995); // 1,000
+  assert.match(say('!plinko 100 extreme 3'), /Plinko \(extreme\) 3 balls of 100: 1× 1000x, 2× 0x → WON 100,000 pts on 300! .*Balance: 100,700/);
+  assert.equal(repo.getUser(u.id).points, 100_700);
+  tick();
+  assert.match(say('!plinko 100 x 5000'), /at most 1,000 balls/);
+  tick();
+  assert.match(say('!plinko 1000 high 200'), /200 balls × 1,000 = 200,000 pts, but you have 100,7\d\d\. Try 100 balls/);
+  tick();
+  // "all" with several balls splits your points between them.
+  const r = engine.playPlinko(u, 'all', 'low', 7);
+  assert.ok(r.perBall >= Math.floor(100_700 / 7));
+  assert.equal(r.balls.length, 7);
+  assert.equal(r.bet, r.perBall * 7);
+  // Extreme keeps the usual ~99% return.
+  const C = [1, 12, 66, 220, 495, 792, 924, 792, 495, 220, 66, 12, 1];
+  const { PLINKO_RISKS } = require('../src/game/casino');
+  const rtp = PLINKO_RISKS.extreme.reduce((sum, m, i) => sum + m * C[i], 0) / 4096;
+  assert.ok(rtp > 0.98 && rtp < 1, `extreme RTP ${rtp}`);
+  assert.equal(Math.max(...PLINKO_RISKS.extreme), 1000);
+});
+
 test('!bj: deal, hit, stand, double; hand survives between commands', () => {
   // Cards use two rolls each (rank, suit). Ranks: A,2..10,J,Q,K -> index/13.
   const r = (rank) => (['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'].indexOf(rank) + 0.5) / 13;
