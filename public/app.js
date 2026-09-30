@@ -2282,8 +2282,9 @@
               <label>each for <input type="number" name="seconds" value="6" min="2" max="120" style="width:70px"> seconds</label>
               <label>as
                 <select name="scenes">
-                  <option value="0">text</option>
-                  <option value="1">characters doing the action</option>
+                  <option value="3d">their 3D character doing the action</option>
+                  <option value="2d">flat animated scene</option>
+                  <option value="0">text only</option>
                 </select>
               </label>
               <label><input type="checkbox" name="raid"> boss bar</label>
@@ -2319,7 +2320,7 @@
       const q = new URLSearchParams();
       if (f.events.value === 'all') q.set('events', 'all');
       if (Number(f.seconds.value) !== 6) q.set('seconds', f.seconds.value);
-      if (f.scenes.value === '1') q.set('scenes', '1');
+      if (f.scenes.value !== '3d') q.set('scenes', f.scenes.value);
       for (const k of ['raid', 'goal', 'stats']) if (f[k].checked) q.set(k, '1');
       return `${location.origin}/overlay.html${q.toString() ? `?${q}` : ''}`;
     };

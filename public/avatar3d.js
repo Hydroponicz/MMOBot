@@ -231,10 +231,12 @@ function buildCharacter(appearance, M) {
   });
 
   // ---- weapon
+  let weaponHolder = null;
   if (G.weapon) {
     const wc = G.weapon.color || '#9aa3ad';
     const hand = arms[type === 'bow' ? -1 : 1].hand;
     const holder = new THREE.Group();
+    weaponHolder = holder;
     holder.position.copy(hand.position);
     hand.parent.add(holder);
     if (type === 'bow') {
@@ -688,7 +690,7 @@ function buildCharacter(appearance, M) {
 
   root.userData.height = neckTop + 0.45 * R.head[1] + (hat || G.head ? 0.25 : 0.08);
   root.userData.headY = neckTop + 0.2;
-  return { group: root, tick: (t) => anim.forEach((f) => f(t)) };
+  return { group: root, tick: (t) => anim.forEach((f) => f(t)), rig: { arms, body, head, torso, weapon: weaponHolder, weaponType: type, neckTop } };
 }
 
 // Frees a character's geometries (shared materials are freed with the view).
@@ -697,6 +699,360 @@ function disposeGroup(g) {
     if (o.geometry) o.geometry.dispose();
   });
   for (const d of g.userData.disposables || []) d.dispose?.();
+}
+
+// ---- Actions (the stream overlay): the character doing what they just did ---------------------
+// A tool in the right hand (or their own weapon for fights), something to work on in front of them,
+// a looping motion, and the loot popping up. action: { skill, kind, target (emoji), loot (emoji) }.
+const SKILL_ACTIONS = {
+  fishing: { tool: 'rod', prop: 'water', motion: 'cast' },
+  mining: { tool: 'pickaxe', prop: 'rock', motion: 'swing', bits: '#a8a29e' },
+  woodcutting: { tool: 'axe', prop: 'tree', motion: 'swing', bits: '#b07b4f' },
+  digging: { tool: 'shovel', prop: 'dirt', motion: 'dig', bits: '#8d5a3b' },
+  skinning: { tool: 'knife', prop: 'emoji', emoji: '🦌', motion: 'stab', bits: '#d0d0d0' },
+  farming: { tool: 'trowel', prop: 'dirt', motion: 'plant', bits: '#6bc46b' },
+  harvest: { tool: null, prop: 'crops', motion: 'plant', bits: '#e3c16f' },
+  firemaking: { tool: 'flint', prop: 'fire', motion: 'stab', bits: '#ffb03a' },
+  agility: { tool: null, prop: 'emoji', emoji: '🏁', motion: 'run' },
+  cooking: { tool: 'pan', prop: 'fire', motion: 'stir', bits: '#dddddd' },
+  smelting: { tool: 'tongs', prop: 'furnace', motion: 'stab', bits: '#ff8a3a' },
+  smithing: { tool: 'hammer', prop: 'anvil', motion: 'swing', bits: '#ffcf4a' },
+  fletching: { tool: 'knife', prop: 'log', motion: 'stab', bits: '#c9a06a' },
+  crafting: { tool: 'needle', prop: 'emoji', emoji: '🧵', motion: 'stab', bits: '#c9a06a' },
+  alchemy: { tool: 'spoon', prop: 'cauldron', motion: 'stir', bits: '#b58cf0' },
+  swords: { tool: 'weapon', prop: 'emoji', emoji: '👹', motion: 'swing', bits: '#ff5c7a' },
+  archery: { tool: 'weapon', prop: 'emoji', emoji: '👹', motion: 'shoot', bits: '#ff5c7a' },
+  magic: { tool: 'weapon', prop: 'emoji', emoji: '👹', motion: 'spell', bits: '#b58cf0' },
+};
+const KIND_MOTION = { levelup: 'cheer', charlevel: 'cheer', achievement: 'cheer', jackpot: 'cheer', pet: 'cheer', task: 'cheer', death: 'fall', duel: 'attack', raid: 'attack', follow: 'wave', sub: 'wave', gift: 'wave' };
+
+// A tool held in the right hand: the handle runs on from the arm (local -y), the head at the end.
+function buildTool(kind, M) {
+  const g = new THREE.Group();
+  const wood = M.std('#8a5d36', { rough: 0.7 });
+  const iron = M.metal('#9aa3ad');
+  const handle = (len, r = 0.018) => g.add(mesh(cyl(r, r, len, 10), wood, [0, -len / 2 + 0.05, 0]));
+  if (kind === 'pickaxe') {
+    handle(0.55);
+    g.add(horn([V(0, -0.5, -0.2), V(0, -0.55, 0), V(0, -0.5, 0.22)], 0.03, iron, 6));
+  } else if (kind === 'axe') {
+    handle(0.55);
+    const blade = new THREE.Shape();
+    blade.moveTo(0, 0.06);
+    blade.quadraticCurveTo(0.16, 0.1, 0.17, -0.02);
+    blade.quadraticCurveTo(0.12, -0.12, 0, -0.06);
+    blade.closePath();
+    g.add(mesh(new THREE.ExtrudeGeometry(blade, { depth: 0.02, bevelEnabled: true, bevelSize: 0.006, bevelThickness: 0.006, bevelSegments: 1 }), iron, [0, -0.47, -0.01], [0, -Math.PI / 2, Math.PI / 2]));
+  } else if (kind === 'hammer') {
+    handle(0.42);
+    g.add(mesh(new RoundedBoxGeometry(0.08, 0.08, 0.2, 2, 0.015), iron, [0, -0.38, 0.02]));
+  } else if (kind === 'shovel') {
+    handle(0.7);
+    g.add(mesh(new RoundedBoxGeometry(0.16, 0.2, 0.02, 2, 0.008), iron, [0, -0.72, 0.02], [0.3, 0, 0]));
+  } else if (kind === 'trowel') {
+    handle(0.14);
+    g.add(mesh(cone(0.05, 0.14, 4), iron, [0, -0.2, 0.02], [Math.PI, 0, 0], [1, 1, 0.3]));
+  } else if (kind === 'knife') {
+    handle(0.1, 0.016);
+    g.add(mesh(cone(0.025, 0.18, 4), iron, [0, -0.17, 0.0], [Math.PI, 0, 0], [1, 1, 0.25]));
+  } else if (kind === 'needle') {
+    g.add(mesh(cyl(0.004, 0.004, 0.16, 6), iron, [0, -0.08, 0]));
+  } else if (kind === 'rod') {
+    g.add(mesh(cyl(0.009, 0.02, 1.0, 8), wood, [0, -0.46, 0.08], [0.18, 0, 0]));
+    g.add(mesh(torus(0.03, 0.01), iron, [0, -0.05, 0.03], [0, Math.PI / 2, 0]));
+    g.userData.tip = V(0, -0.95, 0.17);
+  } else if (kind === 'flint') {
+    g.add(mesh(new THREE.DodecahedronGeometry(0.04), M.std('#6b6f75', { rough: 0.9 }), [0, -0.05, 0.03]));
+  } else if (kind === 'pan') {
+    handle(0.2, 0.014);
+    g.add(mesh(cyl(0.11, 0.09, 0.03, 20), M.std('#2a2d33', { rough: 0.4, metal: 0.6 }), [0, -0.24, 0.08], [1.4, 0, 0]));
+  } else if (kind === 'spoon') {
+    handle(0.4, 0.012);
+    g.add(mesh(sphere(0.035, 12, 8), wood, [0, -0.36, 0], [0, 0, 0], [1, 0.5, 1.3]));
+  } else if (kind === 'tongs') {
+    for (const x of [-0.015, 0.015]) g.add(mesh(cyl(0.008, 0.008, 0.4, 6), iron, [x, -0.2, 0.02]));
+  }
+  return g;
+}
+
+// What they work on. Returns { group, hit(t) (a little shake), top (loot height) }.
+function buildProp(kind, M, emoji) {
+  const g = new THREE.Group();
+  let top = 0.55;
+  const dispose = [];
+  if (kind === 'rock') {
+    g.add(mesh(new THREE.DodecahedronGeometry(0.26, 1), M.std('#8b8f96', { rough: 0.95 }), [0, 0.2, 0], [0.3, 0.5, 0], [1.2, 0.8, 1]));
+    g.add(mesh(new THREE.DodecahedronGeometry(0.06, 0), M.std('#d08a4a', { rough: 0.4, metal: 0.4 }), [0.1, 0.33, 0.14]));
+    top = 0.5;
+  } else if (kind === 'tree') {
+    g.add(mesh(cyl(0.08, 0.11, 0.9, 12), M.std('#7a5334', { rough: 0.9 }), [0, 0.45, 0]));
+    for (const [y, r] of [[1.0, 0.36], [1.3, 0.28], [1.55, 0.18]]) g.add(mesh(sphere(r, 16, 12), M.std('#3f8a4a', { rough: 0.85 }), [0, y, 0]));
+    top = 1.1;
+  } else if (kind === 'water') {
+    const water = mesh(new THREE.CircleGeometry(0.5, 40), M.std('#3a7fc2', { rough: 0.15, metal: 0.2, opacity: 0.85 }), [0, 0.01, 0], [-Math.PI / 2, 0, 0]);
+    g.add(water);
+    for (const r of [0.15, 0.3]) g.add(mesh(new THREE.RingGeometry(r, r + 0.01, 40), M.std('#bfe3ff', { opacity: 0.5 }), [0, 0.015, 0], [-Math.PI / 2, 0, 0]));
+    top = 0.5;
+  } else if (kind === 'dirt' || kind === 'crops') {
+    g.add(mesh(sphere(0.3, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), M.std('#6b4226', { rough: 1 }), [0, 0, 0], [0, 0, 0], [1.2, 0.35, 1]));
+    if (kind === 'crops') for (const [x, z] of [[-0.12, 0], [0.05, 0.08], [0.12, -0.06]]) g.add(mesh(cone(0.03, 0.3, 6), M.std('#e0bd4a'), [x, 0.2, z]));
+    else g.add(mesh(cone(0.02, 0.12, 6), M.std('#5aa84a'), [0.02, 0.14, 0.02]));
+    top = 0.45;
+  } else if (kind === 'fire' || kind === 'furnace' || kind === 'cauldron') {
+    if (kind === 'furnace') g.add(mesh(new RoundedBoxGeometry(0.4, 0.5, 0.36, 3, 0.04), M.std('#6f6a66', { rough: 0.95 }), [0, 0.25, 0]));
+    else for (let i = 0; i < 3; i++) g.add(mesh(cyl(0.035, 0.035, 0.36, 8), M.std('#6b4226'), [0, 0.04, 0], [Math.PI / 2, (i * Math.PI) / 3, 0]));
+    const flameY = kind === 'furnace' ? 0.18 : 0.12;
+    const flame = new THREE.Group();
+    flame.position.set(0, flameY, kind === 'furnace' ? 0.13 : 0);
+    for (const [r, h, c, o] of [[0.11, 0.3, '#ff4a1a', 0.75], [0.075, 0.24, '#ff9a2a', 0.9], [0.04, 0.16, '#ffe27a', 1]]) {
+      const m = new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, toneMapped: false, depthWrite: false });
+      flame.add(mesh(cone(r, h, 12), m, [0, h / 2, 0]));
+      dispose.push(m);
+    }
+    g.add(flame);
+    const light = new THREE.PointLight('#ff8a3a', 1.2, 1.5);
+    light.position.set(0, 0.35, 0.2);
+    g.add(light);
+    if (kind === 'cauldron') {
+      g.add(mesh(sphere(0.22, 24, 16, 0, Math.PI * 2, Math.PI * 0.35, Math.PI * 0.65), M.std('#2a2d33', { rough: 0.5, metal: 0.5, side: THREE.DoubleSide }), [0, 0.32, 0]));
+      g.add(mesh(new THREE.CircleGeometry(0.19, 24), M.std('#8a4cc2', { emissive: '#8a4cc2', ei: 0.8 }), [0, 0.42, 0], [-Math.PI / 2, 0, 0]));
+      top = 0.75;
+    } else top = kind === 'furnace' ? 0.8 : 0.55;
+    g.userData.flicker = (t) => {
+      flame.scale.set(1 + Math.sin(t * 11) * 0.08, 1 + Math.sin(t * 7) * 0.15, 1);
+      light.intensity = 1.1 + Math.sin(t * 13) * 0.25;
+    };
+  } else if (kind === 'anvil') {
+    g.add(mesh(new RoundedBoxGeometry(0.16, 0.24, 0.16, 2, 0.02), M.metal('#4a4f57'), [0, 0.12, 0]));
+    g.add(mesh(new RoundedBoxGeometry(0.4, 0.1, 0.18, 2, 0.02), M.metal('#5a6068'), [0, 0.29, 0]));
+    g.add(mesh(new RoundedBoxGeometry(0.14, 0.03, 0.06, 2, 0.01), M.std('#ff8a3a', { emissive: '#ff5a1a', ei: 1.5 }), [0, 0.355, 0]));
+    top = 0.6;
+  } else if (kind === 'log') {
+    g.add(mesh(cyl(0.08, 0.08, 0.45, 12), M.std('#8a5d36', { rough: 0.8 }), [0, 0.1, 0], [0, 0, Math.PI / 2]));
+    top = 0.45;
+  } else {
+    const sp = emojiSprite(emoji || '👹', 0.6);
+    sp.position.set(0, 0.42, 0);
+    g.add(sp);
+    dispose.push(sp.material.map, sp.material);
+    top = 0.85;
+  }
+  g.userData.top = top;
+  g.userData.dispose = dispose;
+  return g;
+}
+
+// Adds the action to a built character: returns { group (props etc.), tick(t), frame: {target, dist} }.
+function buildAction(char, action, M) {
+  const { rig, group: who } = char;
+  const kind = action.kind || 'action';
+  const sk = SKILL_ACTIONS[action.skill === 'farming' && action.harvest ? 'harvest' : action.skill] || null;
+  const motion = kind === 'action' || kind === 'rare' || kind === 'test' ? sk?.motion || 'wave' : KIND_MOTION[kind] || 'wave';
+  const scene = new THREE.Group();
+  const facing = motion === 'cheer' || motion === 'wave' || motion === 'fall' ? 0.25 : Math.PI / 2 - 0.55;
+  who.rotation.y = facing;
+  const fwd = V(Math.sin(facing), 0, Math.cos(facing));
+  const withProp = !['cheer', 'wave', 'fall'].includes(motion);
+  who.position.set(withProp ? -0.42 : 0, 0, 0);
+  const [armR, armL] = [rig.arms[1].arm, rig.arms[-1].arm];
+
+  // Tool: fights use their own weapon (or fists); skills swap it for the tool.
+  let tool = null;
+  const useWeapon = sk?.tool === 'weapon' || motion === 'attack';
+  if (rig.weapon) rig.weapon.visible = useWeapon || !withProp;
+  if (!useWeapon && sk?.tool && withProp) {
+    tool = buildTool(sk.tool, M);
+    tool.scale.setScalar(1.25);
+    tool.position.copy(rig.arms[1].hand.position);
+    armR.add(tool);
+  }
+
+  // The prop, in front of them.
+  let prop = null;
+  if (withProp) {
+    const propKind = sk?.prop || 'emoji';
+    prop = buildProp(propKind, M, action.target || sk?.emoji);
+    const reach = motion === 'cast' ? 1.25 : motion === 'shoot' || motion === 'spell' ? 1.3 : sk?.tool === 'shovel' ? 0.85 : 0.72;
+    prop.position.copy(who.position).addScaledVector(fwd, reach);
+    scene.add(prop);
+  }
+
+  // Bits that fly off on each hit.
+  const bits = [];
+  if (withProp && sk?.bits) {
+    for (let i = 0; i < 7; i++) {
+      const b = mesh(new THREE.BoxGeometry(0.03, 0.03, 0.03), M.std(sk.bits, { rough: 0.8 }));
+      b.visible = false;
+      scene.add(b);
+      bits.push({ m: b, v: V(0, 0, 0) });
+    }
+  }
+  const burst = (at) => {
+    for (const b of bits) {
+      b.m.visible = true;
+      b.m.position.copy(at);
+      b.v.set((Math.random() - 0.5) * 1.4, 1 + Math.random() * 1.2, (Math.random() - 0.5) * 1.4);
+    }
+  };
+
+  // Loot pops up above the prop (or them).
+  let loot = null;
+  const disposables = [...(prop?.userData.dispose || [])];
+  if (action.loot) {
+    loot = emojiSprite(action.loot, 0.32);
+    loot.visible = false;
+    scene.add(loot);
+    disposables.push(loot.material.map, loot.material);
+  }
+  const lootBase = prop ? prop.position.clone().setY(prop.userData.top + 0.1) : V(who.position.x, (who.userData.height || 1.8) + 0.15, 0);
+
+  // Arrows and spells fly to the target.
+  let shot = null;
+  if (motion === 'shoot' || motion === 'spell') {
+    shot = motion === 'shoot' ? mesh(cyl(0.006, 0.006, 0.4, 6), M.std('#d9c7a0'), [0, 0, 0], [0, 0, Math.PI / 2]) : mesh(sphere(0.06, 16, 12), M.std('#b58cf0', { emissive: '#9b6bff', ei: 2 }));
+    shot.visible = false;
+    scene.add(shot);
+  }
+
+  // Fishing line: rod tip to a bobber.
+  let fishLine = null;
+  let bobber = null;
+  if (motion === 'cast' && tool?.userData.tip) {
+    const geo = new THREE.BufferGeometry().setFromPoints([V(0, 0, 0), V(0, 0, 0)]);
+    fishLine = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: '#e8e8e8', transparent: true, opacity: 0.8 }));
+    scene.add(fishLine);
+    bobber = mesh(sphere(0.03, 12, 8), M.std('#e0453a'), prop.position.clone().setY(0.03).toArray());
+    scene.add(bobber);
+    disposables.push(geo, fishLine.material);
+  }
+
+  const period = { swing: 1.1, attack: 1.1, dig: 1.3, stab: 0.8, stir: 1.4, plant: 1.4, cast: 2.4, shoot: 1.6, spell: 1.8, cheer: 1.2, wave: 1.2, run: 0.5, fall: 99 }[motion] || 1.2;
+  const baseX = { r: armR.rotation.x, l: armL.rotation.x };
+  const baseZ = { r: armR.rotation.z, l: armL.rotation.z };
+  let lastHit = -1;
+  let hits = 0;
+  const tmp = V(0, 0, 0);
+  const ease = (x) => (x < 0.5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2);
+
+  const tick = (t, dt) => {
+    const cyc = Math.floor(t / period);
+    const p = (t % period) / period;
+    let hitNow = false;
+    armR.rotation.z = baseZ.r;
+    armL.rotation.z = baseZ.l;
+    if (motion === 'swing' || motion === 'attack') {
+      // Wind up overhead, strike down fast.
+      const up = p < 0.6 ? ease(p / 0.6) : 1 - ease((p - 0.6) / 0.25 > 1 ? 1 : (p - 0.6) / 0.25);
+      armR.rotation.x = -0.5 - 2.3 * up;
+      hitNow = p > 0.83;
+    } else if (motion === 'dig') {
+      armR.rotation.x = -0.4 - Math.sin(p * Math.PI * 2) * 0.5;
+      armL.rotation.x = -0.6 - Math.sin(p * Math.PI * 2) * 0.4;
+      rig.body.position.y = -Math.abs(Math.sin(p * Math.PI)) * 0.04;
+      hitNow = p > 0.2 && p < 0.3;
+    } else if (motion === 'stab') {
+      armR.rotation.x = -0.7 - Math.max(0, Math.sin(p * Math.PI * 2)) * 0.6;
+      hitNow = p > 0.2 && p < 0.3;
+    } else if (motion === 'stir') {
+      armR.rotation.x = -1.0 + Math.sin(t * 4.5) * 0.15;
+      armR.rotation.z = baseZ.r + Math.cos(t * 4.5) * 0.15;
+      hitNow = p > 0.45 && p < 0.55;
+    } else if (motion === 'plant') {
+      rig.body.position.y = -0.06 - Math.sin(p * Math.PI) * 0.05;
+      armR.rotation.x = -0.9 - Math.sin(p * Math.PI) * 0.4;
+      armL.rotation.x = -0.6 - Math.sin(p * Math.PI) * 0.3;
+      hitNow = p > 0.45 && p < 0.55;
+    } else if (motion === 'cast') {
+      const back = p < 0.25 ? ease(p / 0.25) : p < 0.4 ? 1 - ease((p - 0.25) / 0.15) : 0;
+      armR.rotation.x = -0.8 - 1.6 * back;
+      hitNow = p > 0.4 && p < 0.5;
+    } else if (motion === 'shoot' || motion === 'spell') {
+      armL.rotation.x = motion === 'shoot' ? -1.45 : baseX.l;
+      armR.rotation.x = motion === 'shoot' ? -1.45 + (p < 0.5 ? 0.3 * ease(p / 0.5) : 0) : -1.2 - Math.sin(p * Math.PI) * 0.4;
+      if (shot) {
+        const f = p < 0.5 ? -1 : (p - 0.5) / 0.3;
+        shot.visible = f >= 0 && f <= 1;
+        if (shot.visible) {
+          const from = who.position.clone().add(V(0, 1.05, 0)).addScaledVector(fwd, 0.35);
+          const to = prop.position.clone().setY(0.45);
+          shot.position.lerpVectors(from, to, f);
+          if (motion === 'shoot') shot.rotation.set(0, facing - Math.PI / 2, Math.PI / 2);
+        }
+      }
+      hitNow = p > 0.8;
+    } else if (motion === 'cheer') {
+      const j = Math.abs(Math.sin(p * Math.PI));
+      who.position.y = j * 0.12;
+      armR.rotation.x = -2.7 - j * 0.2;
+      armL.rotation.x = -2.7 - j * 0.2;
+      armR.rotation.z = baseZ.r + 0.35;
+      armL.rotation.z = baseZ.l - 0.35;
+      hitNow = p < 0.1;
+    } else if (motion === 'wave') {
+      armR.rotation.x = -2.6;
+      armR.rotation.z = baseZ.r + 0.25 + Math.sin(t * 7) * 0.25;
+    } else if (motion === 'run') {
+      who.position.y = Math.abs(Math.sin(t * 12)) * 0.05;
+      armR.rotation.x = Math.sin(t * 12) * 0.8;
+      armL.rotation.x = -Math.sin(t * 12) * 0.8;
+      rig.body.rotation.x = 0.12;
+    } else if (motion === 'fall') {
+      const f = Math.min(1, Math.max(0, (t - 0.8) / 0.6));
+      who.rotation.x = -ease(f) * 1.45;
+      who.position.y = ease(f) * 0.12;
+      armR.rotation.x = -f * 2.4;
+      armL.rotation.x = -f * 2.4;
+    }
+    if (hitNow && cyc !== lastHit) {
+      lastHit = cyc;
+      hits++;
+      if (prop) {
+        prop.userData.shakeAt = t;
+        burst(prop.position.clone().setY(Math.min(prop.userData.top, 0.5)));
+      } else if (motion === 'cheer') burst(V(who.position.x, (who.userData.height || 1.8) + 0.1, 0));
+      if (loot && hits === (motion === 'cheer' ? 1 : 2)) loot.userData.at = t;
+    }
+    // Prop shake and flicker
+    if (prop) {
+      const since = t - (prop.userData.shakeAt ?? -9);
+      prop.rotation.z = since < 0.25 ? Math.sin(since * 60) * 0.05 * (1 - since / 0.25) : 0;
+      prop.userData.flicker?.(t);
+    }
+    for (const b of bits) {
+      if (!b.m.visible) continue;
+      b.v.y -= 4.5 * dt;
+      b.m.position.addScaledVector(b.v, dt);
+      b.m.rotation.x += dt * 8;
+      if (b.m.position.y < 0) b.m.visible = false;
+    }
+    if (loot && loot.userData.at !== undefined) {
+      const since = t - loot.userData.at;
+      loot.visible = true;
+      const pop = Math.min(1, since / 0.35);
+      const s = 0.32 * (pop < 1 ? 0.3 + pop * 0.9 : 1 + Math.sin(since * 3) * 0.04);
+      loot.scale.set(s, s, s);
+      loot.position.copy(lootBase).add(V(0, pop * 0.25 + Math.sin(since * 2.2) * 0.03, 0));
+    }
+    if (fishLine) {
+      tool.updateMatrixWorld(true);
+      tmp.copy(tool.userData.tip);
+      tool.localToWorld(tmp);
+      scene.worldToLocal(tmp);
+      bobber.position.y = 0.03 + Math.sin(t * 5) * 0.01 - (p > 0.7 && p < 0.8 ? 0.03 : 0);
+      fishLine.geometry.setFromPoints([tmp.clone(), bobber.position.clone()]);
+    }
+  };
+
+  // Frame the character and the prop together.
+  const h = who.userData.height || 1.8;
+  const cx = prop ? (who.position.x + prop.position.x) / 2 : who.position.x;
+  const cz = prop ? (who.position.z + prop.position.z) / 2 : 0;
+  return {
+    group: scene,
+    tick,
+    frame: { target: V(cx, h * 0.5, cz), dist: Math.max(2.9, h * 2.05) + (prop ? 0.55 : 0) + (prop?.userData.top > 1 ? 0.5 : 0) },
+    dispose: () => disposables.forEach((d) => d.dispose?.()),
+  };
 }
 
 // ---- The viewer ----------------------------------------------------------------------------------
@@ -709,9 +1065,13 @@ export function supported() {
   }
 }
 
-// Mounts a turntable viewer in `el` (sized by CSS). opts: { autoRotate, controls, zoom }.
+// Mounts a viewer in `el` (sized by CSS). opts: { autoRotate, controls, view: 'head',
+// action: { skill, kind, target, loot, harvest } (the character doing it, for the stream overlay),
+// zoom (camera distance multiplier for action scenes) }.
 export function mount(el, appearance, opts = {}) {
-  const { autoRotate = true, controls: withControls = true } = opts;
+  const { action = null } = opts;
+  const autoRotate = action ? false : opts.autoRotate ?? true;
+  const withControls = action ? false : opts.controls ?? true;
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -743,7 +1103,7 @@ export function mount(el, appearance, opts = {}) {
   const ground = new THREE.Mesh(new THREE.CircleGeometry(0.85, 48), new THREE.MeshBasicMaterial({ map: groundTex, transparent: true, depthWrite: false }));
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = 0.001;
-  scene.add(ground);
+  if (!action) scene.add(ground);
   const shadowTex = radialTexture('rgba(0,0,0,0.55)', 'rgba(0,0,0,0)');
   const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.42, 32), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }));
   shadow.rotation.x = -Math.PI / 2;
@@ -752,7 +1112,7 @@ export function mount(el, appearance, opts = {}) {
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.78, 0.8, 64), new THREE.MeshBasicMaterial({ color: '#53fc18', transparent: true, opacity: 0.35 }));
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.003;
-  scene.add(ring);
+  if (!action) scene.add(ring);
 
   const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 50);
   let controls = null;
@@ -803,7 +1163,15 @@ export function mount(el, appearance, opts = {}) {
 
   let M = materials();
   let char = null;
+  let act = null;
   const frame = () => {
+    if (act) {
+      const { target } = act.frame;
+      const dist = act.frame.dist * (opts.zoom || 1);
+      camera.position.set(target.x + dist * 0.12, target.y + 0.35 * (opts.zoom || 1), dist);
+      camera.lookAt(target);
+      return;
+    }
     const h = char?.group.userData.height || 1.8;
     const headY = char?.group.userData.headY || 1.4;
     const close = opts.view === 'head';
@@ -824,8 +1192,18 @@ export function mount(el, appearance, opts = {}) {
       M.dispose();
       M = materials();
     }
+    if (act) {
+      scene.remove(act.group);
+      disposeGroup(act.group);
+      act.dispose();
+      act = null;
+    }
     char = buildCharacter(app, M);
     scene.add(char.group);
+    if (action) {
+      act = buildAction(char, action, M);
+      scene.add(act.group);
+    }
     frame();
   }
   update(appearance);
@@ -852,8 +1230,10 @@ export function mount(el, appearance, opts = {}) {
     if (disposed) return;
     raf = requestAnimationFrame(loop);
     if (!visible || document.hidden) return;
-    const t = clock.getElapsedTime();
+    const dt = Math.min(0.05, clock.getDelta());
+    const t = clock.elapsedTime;
     char?.tick(t);
+    act?.tick(t, dt);
     controls?.update();
     renderer.render(scene, camera);
   };
@@ -873,6 +1253,10 @@ export function mount(el, appearance, opts = {}) {
       io.disconnect();
       controls?.dispose();
       if (char) disposeGroup(char.group);
+      if (act) {
+        disposeGroup(act.group);
+        act.dispose();
+      }
       M.dispose();
       for (const o of [ground, shadow, ring]) {
         o.geometry.dispose();
@@ -883,6 +1267,7 @@ export function mount(el, appearance, opts = {}) {
       envTex.dispose();
       pmrem.dispose();
       renderer.dispose();
+      renderer.forceContextLoss();
       renderer.domElement.remove();
     },
   };
