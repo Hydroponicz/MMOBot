@@ -1319,6 +1319,28 @@ test('!plinko: 12 rows, risk levels, path decides the bucket', () => {
   assert.match(say('!plinko medium 100'), /landed on 0\.3x: lost 70/);
 });
 
+test('plinko on the website can be spammed one ball at a time; chat keeps the casino cooldown', () => {
+  const { repo, engine, say } = setup();
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
+  repo.addPoints(u.id, 10_000);
+  let t = 5_000_000;
+  engine.now = () => t;
+  // Website drops: 150ms apart is fine (the default gap is 100ms), 50ms is refused.
+  for (let i = 0; i < 10; i++) {
+    t += 150;
+    assert.equal(engine.playPlinko(u, '10', 'low', 1, { fast: true }).ok, true, `drop ${i}`);
+  }
+  t += 50;
+  assert.equal(engine.playPlinko(u, '10', 'low', 1, { fast: true }).ok, false);
+  // Chat (no fast flag) still waits the full casino cooldown.
+  t += 1000;
+  const chat = engine.playPlinko(u, '10', 'low', 1);
+  assert.equal(chat.ok, false);
+  assert.equal(chat.cooldown, true);
+  t += 5000;
+  assert.match(say('!plinko 10 low'), /Plinko \(low\)/);
+});
+
 test('!plinko extreme pays 1000x on the edge; many balls in one drop', () => {
   // Ball 1: all left (1000x). Balls 2-3: 6 lefts, 6 rights (middle, 0x).
   const { repo, engine, say, tick } = setup({ rolls: [...Array(12).fill(0.1), ...Array(2).fill([...Array(6).fill(0.1), ...Array(6).fill(0.9)]).flat()] });

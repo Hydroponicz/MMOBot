@@ -461,7 +461,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       cooldown: c.casinoCooldown ?? 5,
       slots: casino.SLOT_SYMBOLS.map(({ id, icon, label, three, two }) => ({ id, icon, label, three, two })),
       wheel: casino.WHEEL_ORDER.map((n) => ({ n, color: casino.colorOf(n) })),
-      plinko: { rows: casino.PLINKO_ROWS, risks: casino.PLINKO_RISKS, maxBalls: engine.cfg.plinkoMaxBalls ?? 1000 },
+      plinko: { rows: casino.PLINKO_ROWS, risks: casino.PLINKO_RISKS, maxBalls: engine.cfg.plinkoMaxBalls ?? 1000, dropMs: engine.cfg.plinkoDropMs ?? 100 },
       balance: req.user ? repo.getUser(req.user.id).points : null,
       blackjack: req.user ? engine.blackjackState(req.user) : null,
       crash: { growth: casino.CRASH_GROWTH, max: casino.CRASH_MAX, state: req.user ? engine.crashState(req.user) : null },
@@ -479,7 +479,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   const betOf = (req) => String(req.body?.bet ?? '');
   router.post('/casino/slots', ...play((req) => engine.playSlots(req.user, betOf(req))));
   router.post('/casino/roulette', ...play((req) => engine.playRoulette(req.user, String(req.body?.choice || ''), betOf(req))));
-  router.post('/casino/plinko', ...play((req) => engine.playPlinko(req.user, betOf(req), String(req.body?.risk || 'medium'), Number(req.body?.balls) || 1)));
+  router.post('/casino/plinko', ...play((req) => engine.playPlinko(req.user, betOf(req), String(req.body?.risk || 'medium'), Number(req.body?.balls) || 1, { fast: true })));
   router.post('/casino/blackjack', ...play((req) => engine.blackjackStart(req.user, betOf(req))));
   router.post('/casino/blackjack/:action', ...play((req) => engine.blackjackAction(req.user, req.params.action)));
   // Crash: start a live round (optional auto cash-out), poll it, cash out.

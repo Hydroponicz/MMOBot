@@ -49,11 +49,12 @@ module.exports = {
   // it into one line of chat.
 
   // Validates a bet: casino open, cooldown, min/max, balance. Returns { bet } or { error }.
-  takeBet(user, betArg) {
+  // cooldownMs overrides the casino cooldown (the website's plinko button can be spammed).
+  takeBet(user, betArg, { cooldownMs = null } = {}) {
     const c = this.cfg;
     if (c.casinoEnabled === false) return { error: 'the casino is closed right now.' };
     const now = this.now();
-    const wait = (c.casinoCooldown ?? 5) * 1000 - (now - (this.lastBet.get(user.id) || 0));
+    const wait = (cooldownMs ?? (c.casinoCooldown ?? 5) * 1000) - (now - (this.lastBet.get(user.id) || 0));
     if (wait > 0) {
       // Say it once per cooldown so spamming doesn't flood chat.
       const last = this.lastBet.get(user.id);
@@ -103,7 +104,9 @@ module.exports = {
 
   // One or many balls (the bet is per ball). "all", "half" and "25%" with several balls split that
   // share of your points between them. One drop counts as one bet for the cooldown.
-  playPlinko(user, betArg, risk, ballsArg = 1) {
+  // fast: a website drop, which only waits plinkoDropMs between drops so the button can be spammed
+  // (in chat the normal casino cooldown keeps it from flooding).
+  playPlinko(user, betArg, risk, ballsArg = 1, { fast = false } = {}) {
     const r = casino.riskOf(risk || 'medium');
     if (!r) return { ok: false, error: 'risk must be low, medium, high or extreme.' };
     const maxBalls = this.cfg.plinkoMaxBalls ?? 1000;
@@ -115,7 +118,7 @@ module.exports = {
       const share = casino.parseBet(betArg, this.repo.getUser(user.id).points);
       arg = String(Math.floor((share || 0) / balls));
     }
-    const b = this.takeBet(user, arg);
+    const b = this.takeBet(user, arg, fast ? { cooldownMs: this.cfg.plinkoDropMs ?? 100 } : {});
     if (b.bet === undefined) return { ok: false, ...b };
     const total = b.bet * balls;
     const balance = this.repo.getUser(user.id).points;

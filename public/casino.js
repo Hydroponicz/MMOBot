@@ -5,6 +5,11 @@
   let tab = 'slots';
   let risk = 'medium';
   let plinkoBalls = 1;
+  // Plinko spam: drops in flight, the newest drop whose balance is shown, and the session tally.
+  let plinkoLive = 0;
+  let plinkoSeq = 0;
+  let plinkoShown = 0;
+  const plinkoTally = { balls: 0, bet: 0, won: 0 };
   let rouletteChoice = 'red';
 
   window.MMOCasino = async ($app, { api, toast, esc, fmt, state, route }) => {
@@ -236,6 +241,7 @@
 
     // ---- Plinko --------------------------------------------------------------------
     function renderPlinko() {
+      plinkoLive = 0; // a fresh board has no balls in the air
       const rows = info.plinko.rows;
       const W = 420;
       const gap = W / (rows + 3);
@@ -269,7 +275,7 @@
       $('#cz-pay').innerHTML = `<p class="muted" style="font-size:.85rem">${risk === 'extreme' ? 'Extreme: 1000x on either edge (about 1 ball in 2,000), but the middle nine pay nothing: most balls lose.' : `Higher risk: bigger edges (up to ${Math.max(...mult)}x), smaller middle.`}</p>`;
       $app.querySelectorAll('[data-risk]').forEach((b) => {
         b.onclick = () => {
-          if (busy) return;
+          if (busy || plinkoLive > 0) return;
           risk = b.dataset.risk;
           renderPlinko();
         };
@@ -286,11 +292,40 @@
           setBalls(b.dataset.balls);
         };
       });
+      // The Drop button can be spammed: every click is its own bet and its own ball(s), and many can
+      // be on the board at once. Balls land in any order, so the balance shown is the newest one.
+      const tally = plinkoTally;
+      const showTally = (last) => {
+        if (!tally.balls) return;
+        const net = tally.won - tally.bet;
+        const kind = net > 0 ? 'win' : net < 0 ? 'lose' : '';
+        result(`${last ? `${last} · ` : ''}${fmt(tally.balls)} ball${tally.balls === 1 ? '' : 's'} this session: ${net >= 0 ? '+' : '−'}${fmt(Math.abs(net))} pts <button class="mini" id="cz-tally-reset" style="margin-left:6px">Reset</button>`, kind);
+        const reset = $('#cz-tally-reset');
+        if (reset) reset.onclick = () => {
+          Object.assign(tally, { balls: 0, bet: 0, won: 0 });
+          result('');
+        };
+      };
+      let lastClick = 0;
       $('#cz-go').onclick = async () => {
-        if (busy || needLogin()) return;
-        busy = true;
-        const r = await post('/casino/plinko', { bet: betInput.value, risk, balls: plinkoBalls });
-        if (!r) return (busy = false);
+        if (needLogin()) return;
+        const now = Date.now();
+        // A little slower than the server allows, so network jitter doesn't get drops refused.
+        if (now - lastClick < (info.plinko.dropMs ?? 100) + 40) return;
+        lastClick = now;
+        const seq = ++plinkoSeq;
+        plinkoLive++;
+        let r = null;
+        try {
+          r = await api('/casino/plinko', { method: 'POST', body: { bet: betInput.value, risk, balls: plinkoBalls } });
+        } catch (err) {
+          // A refused drop while spamming is just skipped; real problems (balance, bet size) are shown.
+          if (!/slow down|easy!/i.test(err.message)) toast(err.message);
+        }
+        if (!r) {
+          plinkoLive = Math.max(0, plinkoLive - 1);
+          return;
+        }
         const ns = 'http://www.w3.org/2000/svg';
         const drops = r.balls || [r];
         // Big drops: animate up to 100 balls (the rest land instantly), spread over ~4 seconds.
@@ -303,7 +338,6 @@
           void g.getBBox();
           g.classList.add('hit');
         };
-        result(drops.length > 1 ? `Dropping ${fmt(drops.length)} balls…` : 'Dropping…');
         shown.forEach((d, n) => {
           later(() => {
             const ball = document.createElementNS(ns, 'circle');
@@ -330,14 +364,17 @@
           }, n * stagger);
         });
         later(() => {
-          setBalance(r.balance);
-          if (drops.length === 1) outcome(r);
-          else {
-            const best = Math.max(...drops.map((d) => d.multiplier));
-            const kind = r.net > 0 ? 'win' : r.net < 0 ? 'lose' : '';
-            result(`${fmt(drops.length)} balls × ${fmt(r.perBall)}: ${r.net > 0 ? `🎉 WON <b>${fmt(r.payout)}</b>` : `got back ${fmt(r.payout)}`} of ${fmt(r.bet)} pts · best ${best}x`, kind);
+          plinkoLive = Math.max(0, plinkoLive - 1);
+          if (seq > plinkoShown) {
+            plinkoShown = seq;
+            setBalance(r.balance);
           }
-          busy = false;
+          tally.balls += drops.length;
+          tally.bet += r.bet;
+          tally.won += r.payout;
+          const best = Math.max(...drops.map((d) => d.multiplier));
+          const last = drops.length === 1 ? `${r.net > 0 ? '🎉 ' : ''}${best}x` : `${fmt(drops.length)} balls, best ${best}x`;
+          showTally(last);
         }, (shown.length - 1) * stagger + 110 * (rows + 1) + 200);
       };
     }
