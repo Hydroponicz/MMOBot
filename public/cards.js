@@ -93,10 +93,14 @@
       const el = EL[b.element];
       const finish = c.finish || 'normal';
       const small = size < 140 ? ' sm' : '';
-      return `<div class="tcard r-${b.rarity} f-${finish}${tilt ? ' tilt' : ''}${small}${dim ? ' dim' : ''} ${cls}" style="--w:${size}px;--rc:${r.color};--el:${el.color};--set:${b.setColor}">
+      // Painted art (cardart.js); Legendary and Mythic cards are full-art.
+      const full = b.rarity === 'legendary' || b.rarity === 'mythic';
+      const art = window.MMOCardArt ? window.MMOCardArt.html({ id: b.id, icon: b.icon, element: b.element, rarity: b.rarity }, '', size >= 220 ? 640 : 400) : `<span class="tc-icon">${b.icon}</span>`;
+      return `<div class="tcard r-${b.rarity} f-${finish}${full ? ' full-art' : ''}${tilt ? ' tilt' : ''}${small}${dim ? ' dim' : ''} ${cls}" style="--w:${size}px;--rc:${r.color};--el:${el.color};--set:${b.setColor}">
         <div class="tc-face">
+          ${full ? `<div class="tc-bg">${art}</div>` : ''}
           <div class="tc-head"><span class="tc-name">${esc(b.name)}</span><span class="tc-hp"><small>HP</small>${b.hp}<i>${el.icon}</i></span></div>
-          <div class="tc-art"><span class="tc-icon">${b.icon}</span></div>
+          <div class="tc-art">${full ? '' : art}</div>
           <div class="tc-type"><span class="tc-gem">${r.short}</span>${r.name} · ${el.name}</div>
           <div class="tc-move"><span>⚔️ Power</span><b>${b.power}</b></div>
           <div class="tc-flavor">${esc(b.flavor)}</div>
@@ -271,6 +275,7 @@
       };
       const showCards = () => {
         const cards = r.packs[i];
+        window.MMOCardArt?.warm(cards.map((c) => ({ ...BASE[c.card], id: c.card })), 400);
         $rip.innerHTML = `
           <div class="rip-count muted">${count > 1 ? `Pack ${i + 1} of ${count} · ` : ''}Tap a card to flip it</div>
           <div class="rip-cards">${cards
@@ -428,15 +433,43 @@
             const res = await post(`/cards/${card.id}/grade`);
             if (!res) return;
             setBalance(res.balance);
-            // Grading animation: scan, then the slab.
-            $d.querySelector('.cd-show').innerHTML = `<div class="grading">${cardHtml(card, { size: 250 })}<div class="scan"></div><div class="grading-txt">Grading…</div></div>`;
+            // Grading: a laser scan while the four subgrades fill in, then the grade slams down.
+            const g = res.card;
+            const SUB = [['centering', 'Centering'], ['corners', 'Corners'], ['edges', 'Edges'], ['surface', 'Surface']];
+            $d.querySelector('.cd-show').innerHTML = `<div class="grading">${cardHtml(card, { size: 250 })}<div class="scan"></div>
+              <div class="grade-subs">${SUB.map(([k, l]) => `<div class="gs" data-k="${k}"><span>${l}</span><i><em></em></i><b>–</b></div>`).join('')}</div>
+              <div class="grade-slam" hidden></div></div>`;
             pop = await api(`/cards/pop/${encodeURIComponent(card.card)}`).catch(() => pop);
+            const subs = g.sub || {};
+            SUB.forEach(([k], n) => {
+              setTimeout(() => {
+                const row = $d.querySelector(`.gs[data-k="${k}"]`);
+                if (!row) return;
+                const v = subs[k] ?? g.grade;
+                row.classList.add('on', v >= 10 ? 'ten' : v >= 9 ? 'hi' : v < 7 ? 'lo' : 'mid');
+                row.querySelector('em').style.width = `${v * 10}%`;
+                let shown = 0;
+                const count = setInterval(() => {
+                  shown = Math.min(v, shown + 0.5);
+                  row.querySelector('b').textContent = shown % 1 ? shown.toFixed(1) : String(shown);
+                  if (shown >= v) clearInterval(count);
+                }, 25);
+              }, 350 + n * 450);
+            });
+            setTimeout(() => {
+              const slam = $d.querySelector('.grade-slam');
+              if (!slam) return;
+              slam.hidden = false;
+              slam.className = `grade-slam ${g.black ? 'black' : g.grade >= 10 ? 'ten' : g.grade >= 9 ? 'hi' : ''}`;
+              slam.innerHTML = `<small>${esc(g.black ? 'PRISTINE' : g.gradeLabel)}</small><b>${g.grade}</b>`;
+              $d.querySelector('.grading')?.classList.add('shake');
+              if (g.grade >= 9) burst(slam, g.black ? ['#111', '#fff', '#ffc940'] : g.grade >= 10 ? ['#ffc940', '#fff', '#ff5c7a', '#5ad8ff'] : ['#53fc18', '#fff', '#ffc940']);
+            }, 350 + SUB.length * 450 + 250);
             setTimeout(() => {
               render(res.card, 'slabbed');
-              if (res.card.grade >= 9) burst($d.querySelector('.cd-show'), res.card.black ? ['#111', '#fff', '#ffc940'] : ['#ffc940', '#fff', '#53fc18']);
               toast(res.message);
               refreshQuiet();
-            }, 1600);
+            }, 350 + SUB.length * 450 + 1700);
           };
         }
         if ($('#cd-list')) {
