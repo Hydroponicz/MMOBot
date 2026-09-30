@@ -759,22 +759,46 @@ export function mount(el, appearance, opts = {}) {
   if (withControls) {
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.enablePan = false;
-    controls.minDistance = 1.4;
+    // Shift/Ctrl + drag or right-drag moves the view (two fingers on touch), so any part of the
+    // character can be brought to the middle; scrolling zooms toward the pointer.
+    controls.enablePan = true;
+    controls.screenSpacePanning = true;
+    controls.panSpeed = 0.8;
+    controls.zoomToCursor = true;
+    controls.minDistance = 0.55;
     controls.maxDistance = 6;
-    controls.minPolarAngle = 0.35;
-    controls.maxPolarAngle = 1.62;
+    controls.minPolarAngle = 0.2;
+    controls.maxPolarAngle = 1.66;
     controls.autoRotate = autoRotate;
     controls.autoRotateSpeed = 1.2;
+    // Keep the view on the character.
+    controls.addEventListener('change', () => {
+      const h = char?.group.userData.height || 1.8;
+      const t = controls.target;
+      t.set(THREE.MathUtils.clamp(t.x, -0.7, 0.7), THREE.MathUtils.clamp(t.y, 0.05, h + 0.25), THREE.MathUtils.clamp(t.z, -0.6, 0.6));
+    });
+    // Turning resumes after a pause; once they've moved in or zoomed on a part, it stays put.
     let resume = null;
+    let inspecting = false;
+    const home = () => (char ? camera.position.distanceTo(controls.target) : 0);
+    let homeDist = 0;
     controls.addEventListener('start', () => {
       controls.autoRotate = false;
       clearTimeout(resume);
     });
     controls.addEventListener('end', () => {
       clearTimeout(resume);
-      if (autoRotate) resume = setTimeout(() => (controls.autoRotate = true), 6000);
+      const h = char?.group.userData.height || 1.8;
+      inspecting = Math.abs(controls.target.y - h * 0.5) > 0.05 || Math.abs(controls.target.x) > 0.05 || Math.abs(home() - homeDist) > 0.1;
+      if (autoRotate && !inspecting) resume = setTimeout(() => (controls.autoRotate = true), 6000);
     });
+    // Double-click (or double-tap) puts the camera back.
+    renderer.domElement.addEventListener('dblclick', () => {
+      frame();
+      inspecting = false;
+      if (autoRotate) controls.autoRotate = true;
+    });
+    controls.userData = { setHome: (d) => (homeDist = d) };
   }
 
   let M = materials();
@@ -790,6 +814,7 @@ export function mount(el, appearance, opts = {}) {
     if (controls) {
       controls.target.copy(target);
       controls.update();
+      controls.userData.setHome(camera.position.distanceTo(target));
     }
   };
   function update(app) {

@@ -759,6 +759,7 @@
     return `<div class="char-stage ${cls}" data-stage>
       <div class="char-stage-2d">${window.MMOAvatar.svg(appearance, { size, title })}</div>
       <button class="char-stage-toggle" type="button" data-stage-toggle hidden title="Switch between the 3D model and the portrait">🖼️ 2D</button>
+      <div class="char-stage-hint">Drag: turn<br>Shift-drag: move<br>Scroll: zoom<br>Double-click: reset</div>
     </div>`;
   }
   // Mounts a 3D view into a stage made by charStageHtml. Returns the viewer (or null).

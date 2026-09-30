@@ -1128,3 +1128,7 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 .customize-mini { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px; font-size: 0.8rem; }
 .customize-mini svg { border-radius: 12px; background: var(--panel-2); border: 1px solid var(--border); }
 @media (max-width: 560px) { .char-stage-profile { width: 100%; height: 300px; } }
+.char-stage-hint { position: absolute; left: 8px; top: 8px; max-width: calc(100% - 70px); z-index: 2; padding: 3px 7px; border-radius: 8px; background: rgba(11, 14, 17, 0.72); color: var(--muted); font-size: 0.64rem; line-height: 1.35; pointer-events: none; opacity: 0; transition: opacity 0.25s; }
+.char-stage.is-3d:hover .char-stage-hint { opacity: 1; }
+.char-stage.is-3d:active .char-stage-hint { opacity: 0; }
+@media (hover: none) { .char-stage.is-3d .char-stage-hint { opacity: 0.9; } .char-stage-hint { font-size: 0; } .char-stage-hint::after { content: 'Drag: turn · Two fingers: move & zoom · Double-tap: reset'; font-size: 0.66rem; } }
