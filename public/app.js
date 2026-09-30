@@ -1077,6 +1077,7 @@
   pages.casino = async () => window.MMOCasino($app, { api, toast, esc, fmt, state, route });
   pages.stream = async () => window.MMOStream($app, { api, toast, esc, fmt, state, ago, playerLink });
   pages.pvp = async () => window.MMOPvp($app, { api, toast, esc, fmt, state, ago, playerLink });
+  pages.town = async (params) => window.MMOTown($app, { api, toast, esc, fmt, state, playerLink }, params);
   pages.veil = async () => window.MMOVeil($app, { api, toast, esc, fmt, state, ago, playerLink });
   pages.relics = async (_, query) => window.MMORelics($app, { api, toast, esc, fmt, state, route, ago, playerLink }, query);
   pages.cards = async (_, query) => window.MMOCards($app, { api, toast, esc, fmt, state, route, ago, playerLink }, query);
@@ -1932,6 +1933,16 @@
         ]),
       },
       {
+        id: 'town', tab: 'rewards', icon: '🏘️', title: 'Town & building', summary: 'Build the town, your house and your shop from Construction parts',
+        body: list([
+          `Make building parts with Carpentry and Construction (${c('saw planks')}, ${c('saw nails')}, then ${c('build frame')} / ${c('build door')} / ${c('build wall')} / ${c('build roof')}). Parts are used for three things:`,
+          `<b>The town:</b> ${c('contribute 5 walls')} gives parts to the town building being worked on (or name one: ${c('contribute forge all frames')}). Seven buildings (Sawmill, Great Forge, Harbor, Granary, Tannery, Barracks, Builders' Hall) go up to level 5; <b>every level gives everyone +2% XP</b> in that building's skills. ${c('town')} shows them. Give 25,000+ pts of parts for the title <b>the Builder</b>; the biggest builder is <b>the Town Founder</b>.`,
+          `<b>Your house:</b> instead of paying points, ${c('house build')} builds your next house from parts (a Cottage takes 10 Frames, 8 Wall Panels, 2 Doors and 4 Roof Trusses at Construction 10). Better houses need better wood. Same character level as buying.`,
+          `<b>Your shop:</b> ${c('stall build')} builds a Market Stall, then a Shop and an Emporium: more market listings at once, 1-3% off the market fee on your sales, and your own storefront page. ${c('stall alice')} shows someone's shop.`,
+          'Parts of the needed tier or better count, and the cheapest ones are used first. Everything is on the <a href="#/town">Town</a> page.',
+        ]),
+      },
+      {
         id: 'veil', tab: 'rewards', icon: '🌫️', title: 'The Gloamveil (extraction)', summary: 'Loot the fog and get out alive, or lose it all',
         body: list([
           `${c('veil 1')} walks you into the Mistfen Hollows (1 stamina and a fee; deeper zones need a higher Combat level). You fight with <b>what you're wearing</b>, and bring up to 4 food or health potions (${c('veil 1 light')} brings none).`,
@@ -2049,6 +2060,10 @@
         ['hire [1-3]', 'Hire guards for 24h so robbers fail more'],
         ['arena', 'Ranked fight (arena top for the ladder)'],
         ['veil 1', 'Enter the Gloamveil: then search, deeper, extract, ambush, hide'],
+        ['town', 'The town buildings and their XP bonuses'],
+        ['contribute 5 walls', 'Give building parts to the town (or: contribute forge all frames)'],
+        ['house build', 'Build your next house from parts'],
+        ['stall build', 'Build or upgrade your shop (stall name shows someone\'s)'],
         ['war', 'Guild war standings'],
         ['boost', 'Is an XP boost running?'],
         ['goal', 'Channel goal progress'],

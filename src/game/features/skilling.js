@@ -53,6 +53,9 @@ module.exports = {
     // A bare "!smith" just lists what you can make, so it doesn't need (or use) stamina.
     if (SKILLS[skillId].pickBest === false && !args.length) return this.process(user, skillId, args).reply;
     if (skillId === 'cooking' && String(args[0] || '').toLowerCase() === 'all') return this.cookAll(user);
+    // "!build house" / "!build stall": structures, not parts.
+    if (skillId === 'construction' && /^(house|home)$/i.test(args[0] || '')) return this.buildHouse(user);
+    if (skillId === 'construction' && /^(stall|shop|store|storefront)$/i.test(args[0] || '')) return this.buildStall(user);
     const now = this.now();
     // Cooking is free once a fire is lit: it's limited by the fire's time left and your raw food.
     const free = !!SKILLS[skillId].needsFire;
@@ -530,7 +533,7 @@ module.exports = {
     const skill = SKILLS[skillId];
     // Race perk (e.g. Dwarves +15% Mining XP).
     // Race perk (e.g. Dwarves +15% Mining XP), active pet (+5%) and prestige (+5% each).
-    xpGain = Math.max(1, Math.round(xpGain * this.raceXp(user.id, skillId) * this.petXp(user.id, skillId) * this.prestigeXp(user.id, skillId) * (this.guildWarXp?.(user.id) ?? 1)));
+    xpGain = Math.max(1, Math.round(xpGain * this.raceXp(user.id, skillId) * this.petXp(user.id, skillId) * this.prestigeXp(user.id, skillId) * (this.guildWarXp?.(user.id) ?? 1) * (this.townXp?.(skillId) ?? 1)));
     // Bone Brew: +20% XP while it lasts.
     if (this.hasBuff(user.id, 'focus')) xpGain = Math.round(xpGain * 1.2);
     // Well Fed (monster dishes): +5% XP.

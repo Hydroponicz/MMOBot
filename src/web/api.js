@@ -178,6 +178,18 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     return act((r) => fn(r) || 'Slow down a little!')(req, res, next);
   });
 
+  // ---- Structures: the town, player shops, house building ----------------------------------
+  router.get('/town', (req, res) => {
+    res.json({ ...engine.townPage(req.user?.id ?? null), username: req.user?.username ?? null, points: req.user ? repo.getUser(req.user.id).points : null });
+  });
+  router.post('/town/contribute', requireLogin, act((req) => {
+    const qty = req.body?.qty === 'all' ? 'all' : Math.min(100000, Math.max(1, Number.parseInt(req.body?.qty, 10) || 1));
+    const r = engine.townContribute(req.user, { building: req.body?.building ? String(req.body.building) : null, item: String(req.body?.item || ''), qty });
+    return r.ok ? r.message : r.error;
+  }));
+  router.post('/town/house', requireLogin, act((req) => engine.buildHouse(req.user)));
+  router.post('/town/stall', requireLogin, act((req) => engine.buildStall(req.user)));
+
   // ---- Player market ----------------------------------------------------------------
   router.get('/market', (req, res) => {
     const me = req.user ? repo.getUser(req.user.id) : null;

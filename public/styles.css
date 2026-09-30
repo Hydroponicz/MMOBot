@@ -1228,3 +1228,52 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 .grade-slam[hidden] { display: none; }
 .rtile.is-previewable { cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }
 .rtile.is-previewable:hover { transform: translateY(-3px); box-shadow: 0 6px 18px color-mix(in srgb, var(--rc) 35%, transparent); }
+
+/* ---- Town & building (town.js) ---- */
+.town-page > section + section { margin-top: 14px; }
+.tb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin: 12px 0; }
+.tb-card { padding: 12px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; transition: border-color 0.2s, box-shadow 0.2s; }
+.tb-card.is-target { border-color: #a78bfa; box-shadow: 0 0 0 1px #a78bfa55, 0 6px 20px #7c3aed33; }
+.tb-card.is-done { border-color: #d4a12a88; background: linear-gradient(160deg, #d4a12a18, var(--panel-2) 60%); }
+.tb-head { display: flex; align-items: center; gap: 10px; }
+.tb-head h3 { margin: 0; font-size: 1rem; }
+.tb-head .badge { margin-left: auto; white-space: nowrap; font-size: 0.68rem; }
+.tb-icon { font-size: 2rem; line-height: 1; }
+.tb-pips { display: flex; gap: 3px; margin-top: 4px; }
+.tb-pips i { width: 16px; height: 6px; border-radius: 3px; background: var(--border); }
+.tb-pips i.on { background: linear-gradient(90deg, #f0c24a, #d4a12a); }
+.tb-bonus { font-size: 0.85rem; }
+.tb-bonus b { color: #6ee7a0; }
+.tb-finished { font-weight: 700; color: #f0c24a; }
+.tb-foot { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; flex-wrap: wrap; }
+.tb-foot .btn { margin-left: auto; }
+.tc-give { padding: 12px; border-radius: 12px; border: 1px dashed var(--border); margin-bottom: 12px; }
+.tc-give select { max-width: 100%; }
+.bp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin: 10px 0; }
+.bp-card { padding: 12px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+.bp-card.owned { border-color: #22c55e88; }
+.bp-card.below { opacity: 0.55; }
+.bp-title { display: flex; flex-direction: column; gap: 2px; }
+.bp-title .muted { font-size: 0.8rem; }
+.bp-state { font-weight: 700; }
+.bp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 0.85rem; }
+.bp-list li { display: flex; justify-content: space-between; padding: 2px 8px; border-radius: 6px; background: var(--panel); }
+.bp-list li.ok b { color: #6ee7a0; }
+.bp-list li.miss b { color: #fca5a5; }
+.bp-meta { font-size: 0.78rem; }
+.bp-meta .bad { color: #fca5a5; }
+.part-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.part-chips .cchip { font-size: 0.8rem; }
+.sf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.sf-card { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--border); color: inherit; text-decoration: none; }
+.sf-card:hover { border-color: #a78bfa; }
+.sf-icon { font-size: 1.8rem; }
+.sf-icon.big { font-size: 3rem; }
+.sf-hero { display: flex; gap: 14px; align-items: center; margin-bottom: 14px; }
+.sf-shelf { display: grid; gap: 8px; }
+.sf-item { display: grid; grid-template-columns: auto 1fr auto auto; gap: 10px; align-items: center; padding: 8px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--border); }
+.sf-item-icon { font-size: 1.5rem; }
+.sf-item-name { display: flex; flex-direction: column; }
+.sf-item-name .muted { font-size: 0.8rem; }
+.sf-price { white-space: nowrap; }
+@media (max-width: 560px) { .sf-item { grid-template-columns: auto 1fr; } .sf-price, .sf-item .btn { grid-column: 2; justify-self: start; } }

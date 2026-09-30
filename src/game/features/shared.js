@@ -76,6 +76,9 @@ const INFO_COMMANDS = {
   raid: ['raidInfo', 'raid'], boss: ['raidInfo', 'raid'], attack: ['raidAttack', 'raid'],
   duel: ['duel', 'duel'], accept: ['duelAccept', 'duel'], decline: ['duelDecline', 'duel'],
   house: ['houseCommand', 'house'], home: ['houseCommand', 'house'],
+  // Structures from Construction parts: the town and player shops.
+  town: ['townCommand', 'town'], contribute: ['contributeCommand', 'town'], donateparts: ['contributeCommand', 'town'],
+  stall: ['stallCommand', 'stall'], storefront: ['stallCommand', 'stall'],
   rob: ['rob', 'rob'], heist: ['rob', 'rob'], guards: ['guards', 'rob'], guard: ['guards', 'rob'], hire: ['guards', 'rob'],
   arena: ['arenaFight', 'arena'], ranked: ['arenaFight', 'arena'],
   // The Gloamveil (extraction minigame).

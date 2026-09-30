@@ -77,12 +77,13 @@ module.exports = {
     const p = this.cfg.prefix;
     if (this.cfg.housesEnabled === false) return 'houses are switched off right now.';
     if (/^(buy|upgrade|move)$/i.test(args[0] || '')) return this.buyHouse(user);
+    if (/^(build|construct)$/i.test(args[0] || '')) return this.buildHouse(user);
     const mine = this.house(user.id);
     const list = this.houses();
     const next = list[this.repo.getEquipment(user.id).house || 0];
     const have = mine ? `you live in a ${mine.icon} ${mine.name} (+${mine.charges} stamina)` : "you don't own a house yet";
     const nextText = next
-      ? ` Next: ${next.icon} ${next.name} (+${next.charges} stamina) for ${fmt(next.cost)} pts at character level ${next.level} (you are ${this.characterLevel(user.id)}): ${p}house buy.`
+      ? ` Next: ${next.icon} ${next.name} (+${next.charges} stamina) at character level ${next.level} (you are ${this.characterLevel(user.id)}): ${p}house buy for ${fmt(next.cost)} pts${this.houseBlueprint(next.id) ? `, or build it yourself from ${this.partsText(this.houseBlueprint(next.id).parts, this.houseBlueprint(next.id).minTier)} (Construction ${this.houseBlueprint(next.id).construction}): ${p}house build` : ''}.`
       : ' It is the finest house there is! 👑';
     return `🏠 ${have}.${nextText} All houses: ${this.siteUrl}/#/shop`;
   },

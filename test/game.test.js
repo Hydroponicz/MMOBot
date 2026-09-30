@@ -2541,7 +2541,7 @@ test('houses: end-game homes add stamina charges, need a character level and go 
   const { repo, say, engine } = setup();
   const u = repo.upsertUser({ kickUserId: '1', username: 'Alice' });
   const base = engine.stamina(u.id).max;
-  assert.match(say('!house'), /don't own a house yet.*Cottage \(\+1 stamina\) for 150,000 pts at character level 25/);
+  assert.match(say('!house'), /don't own a house yet.*Cottage \(\+1 stamina\) at character level 25.*!house buy for 150,000 pts, or build it yourself from 10 Frames, 8 Wall Panels, 2 Doors, 4 Roof Trusses \(Wooden or better\) \(Construction 10\): !house build/);
   repo.addPoints(u.id, 1_000_000);
   assert.match(say('!house buy'), /Cottage needs character level 25/);
   const before = repo.getUser(u.id).points;

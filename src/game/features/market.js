@@ -175,7 +175,8 @@ module.exports = {
     if (!(price >= 1)) return { ok: false, error: 'set a price of at least 1 point.' };
     const max = this.marketMaxUnitPrice(id) * qty;
     if (price > max) return { ok: false, error: `that's too expensive: at most ${fmt(max)} pts for ${qty} ${ITEMS[id].name}.` };
-    if (this.repo.marketCount(user.id) >= MAX_LISTINGS) return { ok: false, error: `you can have ${MAX_LISTINGS} listings at once. Cancel one first.` };
+    const slots = this.marketSlots(user.id, MAX_LISTINGS);
+    if (this.repo.marketCount(user.id) >= slots) return { ok: false, error: `you can have ${slots} listings at once. Cancel one first${this.stallTier(user.id) < 3 ? ` (a shop gives you more: ${this.cfg.prefix}stall)` : ''}.` };
     // (Worn gear isn't in the backpack, so it can't be listed by accident.)
     const listingId = this.repo.transaction(() => {
       this.repo.removeItem(user.id, id, qty);
@@ -204,7 +205,8 @@ module.exports = {
     const excess = Math.max(0, l.price - 2 * this.baseSellValue(l.item) * l.qty);
     const capped = this.giftAllowanceError(user.id, excess);
     if (capped) return { ok: false, error: `this listing costs much more than the item is worth, and ${capped}` };
-    const fee = Math.floor(l.price * (this.cfg.marketFee ?? 0.05));
+    // Sellers with a shop pay less.
+    const fee = Math.floor(l.price * this.sellerFee(l.seller_id));
     const ok = this.repo.transaction(() => {
       if (!this.repo.marketDelete(l.id)) return false;
       this.repo.addPoints(user.id, -l.price);
