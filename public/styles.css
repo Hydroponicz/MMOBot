@@ -1129,9 +1129,9 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 .customize-mini svg { border-radius: 12px; background: var(--panel-2); border: 1px solid var(--border); }
 @media (max-width: 560px) { .char-stage-profile { width: 100%; height: 300px; } }
 .char-stage-hint { position: absolute; left: 8px; top: 8px; max-width: calc(100% - 70px); z-index: 2; padding: 3px 7px; border-radius: 8px; background: rgba(11, 14, 17, 0.72); color: var(--muted); font-size: 0.64rem; line-height: 1.35; pointer-events: none; opacity: 0; transition: opacity 0.25s; }
-.char-stage.is-3d:hover .char-stage-hint { opacity: 1; }
-.char-stage.is-3d:active .char-stage-hint { opacity: 0; }
-@media (hover: none) { .char-stage.is-3d .char-stage-hint { opacity: 0.9; } .char-stage-hint { font-size: 0; } .char-stage-hint::after { content: 'Drag: turn · Two fingers: move & zoom · Double-tap: reset'; font-size: 0.66rem; } }
+.char-stage.is-3d:hover .char-stage-hint, .is-3d:hover > .char-stage-hint { opacity: 1; }
+.char-stage.is-3d:active .char-stage-hint, .is-3d:active > .char-stage-hint { opacity: 0; }
+@media (hover: none) { .char-stage.is-3d .char-stage-hint, .is-3d > .char-stage-hint { opacity: 0.9; } .char-stage-hint { font-size: 0; } .char-stage-hint::after { content: 'Drag: turn · Two fingers: move & zoom · Double-tap: reset'; font-size: 0.66rem; } }
 
 /* ---- Relic art (relicart.js) and 3D relics (relic3d.js) ---- */
 .relic-img { width: 100%; height: auto; aspect-ratio: 12 / 5; display: block; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.55)); opacity: 0; transition: opacity 0.25s; }
@@ -1141,8 +1141,6 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 .relic3d-canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; cursor: grab; }
 .ins-art.is-3d { min-height: 260px; }
 .ins-art.is-3d > .relic-img, .sp-hero-art.is-3d > .relic-img { visibility: hidden; }
-.ins-3d-hint { position: absolute; left: 10px; bottom: 8px; font-size: 0.7rem; color: var(--muted); display: none; pointer-events: none; }
-.ins-art.is-3d .ins-3d-hint { display: block; }
 .sp-hero { --rc: #4b69ff; margin: 6px auto 12px; max-width: 640px; border-radius: 14px; overflow: hidden; background: radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--rc) 45%, transparent), transparent 68%), #0b0e11; border: 1px solid color-mix(in srgb, var(--rc) 60%, transparent); box-shadow: 0 0 40px color-mix(in srgb, var(--rc) 35%, transparent); animation: slabIn 0.5s; }
 .sp-hero-art { height: 260px; padding: 20px 40px; display: grid; place-items: center; }
 .sp-hero-art::before { content: ''; position: absolute; inset: -50%; background: conic-gradient(from 0deg, transparent 0 20deg, color-mix(in srgb, var(--rc) 30%, transparent) 30deg, transparent 40deg 80deg, color-mix(in srgb, var(--rc) 25%, transparent) 90deg, transparent 100deg 140deg, color-mix(in srgb, var(--rc) 30%, transparent) 150deg, transparent 160deg 200deg, color-mix(in srgb, var(--rc) 25%, transparent) 210deg, transparent 220deg 260deg, color-mix(in srgb, var(--rc) 30%, transparent) 270deg, transparent 280deg 320deg, color-mix(in srgb, var(--rc) 25%, transparent) 330deg, transparent 340deg); animation: rays 14s linear infinite; pointer-events: none; }

@@ -298,6 +298,12 @@
       const stage = document.createElement('div');
       stage.className = 'relic3d-stage';
       box.appendChild(stage);
+      if (opts.controls !== false) {
+        const hint = document.createElement('div');
+        hint.className = 'char-stage-hint';
+        hint.innerHTML = 'Drag: turn<br>Shift-drag: move<br>Scroll: zoom<br>Double-click: reset';
+        box.appendChild(hint);
+      }
       const view = mod.mount(stage, r, { glow: r.color, ...opts });
       cleanups.push(() => view.dispose());
       return view;
@@ -538,7 +544,7 @@
         actions = tradeLock('buy relics from other players') || `<div class="cd-act"><button class="btn btn-primary" id="ins-buy" ${data.points < r.price ? 'disabled' : ''}>Buy for ${fmt(r.price)} pts</button><p class="muted">Sold by ${esc(r.owner)}. Value ${fmt(r.value)} pts.</p></div>`;
       }
       $d.innerHTML = `
-        <div class="ins-art r-${r.rarity}" style="--rc:${r.color}">${relicSvg(r, 'big')}<span class="ins-3d-hint">Drag to turn · scroll to zoom</span></div>
+        <div class="ins-art r-${r.rarity}" style="--rc:${r.color}">${relicSvg(r, 'big')}</div>
         <div class="ins-info">
           <div class="muted">${esc(r.caseName)}${r.origin === 'tradeup' ? ' · from a trade-up contract' : ''}</div>
           <h2 style="margin:4px 0;color:${r.color}">${esc(r.fullName)}</h2>

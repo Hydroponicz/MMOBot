@@ -175,25 +175,44 @@ export function mount(el, relic, opts = {}) {
   if (withControls) {
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.enablePan = false;
-    controls.minDistance = 1.6;
+    // Same as the character viewer: shift/ctrl + drag or right-drag moves the view (two fingers
+    // on touch) so any part of the weapon can be brought to the middle; scrolling zooms toward
+    // the pointer.
+    controls.enablePan = true;
+    controls.screenSpacePanning = true;
+    controls.panSpeed = 0.8;
+    controls.zoomToCursor = true;
+    controls.minDistance = 0.5;
     controls.maxDistance = 9;
     controls.autoRotate = autoRotate;
     controls.autoRotateSpeed = 2.2;
+    // Keep the view on the weapon.
+    controls.addEventListener('change', () => {
+      if (!half) return;
+      const t = controls.target;
+      t.set(THREE.MathUtils.clamp(t.x, -half.x, half.x), THREE.MathUtils.clamp(t.y, -half.y, half.y), THREE.MathUtils.clamp(t.z, -half.z, half.z));
+    });
+    // Turning resumes after a pause; once they've moved in on a part, it stays put.
     let resume = null;
+    let inspecting = false;
     controls.addEventListener('start', () => {
       controls.autoRotate = false;
       clearTimeout(resume);
     });
     controls.addEventListener('end', () => {
       clearTimeout(resume);
-      if (autoRotate) resume = setTimeout(() => (controls.autoRotate = true), 5000);
+      inspecting = controls.target.length() > 0.05 || Math.abs(camera.position.distanceTo(controls.target) - HOME.length() * fitK) > 0.15;
+      if (autoRotate && !inspecting) resume = setTimeout(() => (controls.autoRotate = true), 5000);
     });
+    // Double-click (or double-tap) puts the camera back.
     renderer.domElement.addEventListener('dblclick', () => {
       camera.position.copy(HOME).multiplyScalar(fitK);
       controls.target.set(0, 0, 0);
+      inspecting = false;
+      if (autoRotate) controls.autoRotate = true;
     });
   }
+  let half = null;
 
   const built = buildWeapon(relic);
   const turn = new THREE.Group();
@@ -202,6 +221,7 @@ export function mount(el, relic, opts = {}) {
   // Fit the camera to the weapon (tall ones like bows and shields need to back off).
   const box = new THREE.Box3().setFromObject(turn);
   const size = box.getSize(new THREE.Vector3());
+  half = size.clone().multiplyScalar(0.55).max(new THREE.Vector3(0.1, 0.1, 0.1));
   const aspect0 = (el.clientWidth || 400) / (el.clientHeight || 220);
   const fitK = Math.max(0.6, size.x / (2.3 * Math.min(1, aspect0 / 1.8)), size.y / 1.05);
   camera.position.multiplyScalar(fitK);
