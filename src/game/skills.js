@@ -1333,3 +1333,5 @@ module.exports = {
 require('./content');
 // Gathering stations (crab pots, ore drills...) add themselves to ITEMS and SHOP.
 require('./stations');
+// The Gloamveil's loot items (the extraction minigame).
+require('./veil');

@@ -450,6 +450,7 @@ module.exports = {
 
   // !equip <item>: wear gear from the backpack (whatever was in that slot goes back in the backpack).
   equip(user, args) {
+    if (this.inVeil(user.id)) return "you can't change gear in the Gloamveil: what you walked in with is what you fight with.";
     if (!args.length) return 'usage: !equip <item>, e.g. !equip bronze sword. !equipped shows what you wear.';
     const inv = this.repo.getInventory(user.id);
     const id = findItem(args.join(' '), Object.keys(inv).filter((i) => ITEMS[i]?.gear));
@@ -476,6 +477,7 @@ module.exports = {
 
   // !unequip <slot or item>: put it back in the backpack.
   unequip(user, args) {
+    if (this.inVeil(user.id)) return "you can't change gear in the Gloamveil: what you walked in with is what you fight with.";
     const worn = this.repo.getWorn(user.id);
     const q = args.join(' ').toLowerCase();
     let slot = SLOT_ALIASES[q];

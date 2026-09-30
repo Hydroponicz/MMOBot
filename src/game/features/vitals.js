@@ -224,6 +224,7 @@ module.exports = {
   // !drink [potion]: with no name, drinks what you need most — the weakest health potion that tops
   // you up (or your strongest if none does), else a mana potion.
   drink(user, args) {
+    if (this.inVeil(user.id)) return "your backpack is outside the fog. !mend uses the supplies you brought in.";
     const now = this.now();
     const inv = this.repo.getInventory(user.id);
     const owned = Object.keys(inv).filter((id) => ITEMS[id]?.potion && inv[id] > 0);

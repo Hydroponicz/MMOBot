@@ -77,6 +77,10 @@ const INFO_COMMANDS = {
   house: ['houseCommand', 'house'], home: ['houseCommand', 'house'],
   rob: ['rob', 'rob'], heist: ['rob', 'rob'], guards: ['guards', 'rob'], guard: ['guards', 'rob'], hire: ['guards', 'rob'],
   arena: ['arenaFight', 'arena'], ranked: ['arenaFight', 'arena'],
+  // The Gloamveil (extraction minigame).
+  veil: ['veilCommand', 'veil'], gloamveil: ['veilCommand', 'veil'], delve: ['veilCommand', 'veil'],
+  search: ['veilSearch', 'veil'], loot: ['veilSearch', 'veil'], deeper: ['veilDeeper', 'veil'], descend: ['veilDeeper', 'veil'],
+  extract: ['veilExtract', 'veil'], mend: ['veilMend', 'veil'], ambush: ['veilAmbush', 'veil'], hide: ['veilHide', 'veil'],
   war: ['guildWarInfo', 'war'], guildwar: ['guildWarInfo', 'war'], wars: ['guildWarInfo', 'war'],
   boost: ['boostInfo', 'boost'],
   museum: ['museumInfo', 'museum'], donate: ['donate', 'museum'],

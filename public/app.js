@@ -1009,6 +1009,7 @@
   pages.casino = async () => window.MMOCasino($app, { api, toast, esc, fmt, state, route });
   pages.stream = async () => window.MMOStream($app, { api, toast, esc, fmt, state, ago, playerLink });
   pages.pvp = async () => window.MMOPvp($app, { api, toast, esc, fmt, state, ago, playerLink });
+  pages.veil = async () => window.MMOVeil($app, { api, toast, esc, fmt, state, ago, playerLink });
   pages.relics = async (_, query) => window.MMORelics($app, { api, toast, esc, fmt, state, route, ago, playerLink }, query);
   pages.cards = async (_, query) => window.MMOCards($app, { api, toast, esc, fmt, state, route, ago, playerLink }, query);
 
@@ -1847,6 +1848,16 @@
         ]),
       },
       {
+        id: 'veil', tab: 'rewards', icon: '🌫️', title: 'The Gloamveil (extraction)', summary: 'Loot the fog and get out alive, or lose it all',
+        body: list([
+          `${c('veil 1')} walks you into the Mistfen Hollows (1 stamina and a fee; deeper zones need a higher Combat level). You fight with <b>what you're wearing</b>, and bring up to 4 food or health potions (${c('veil 1 light')} brings none).`,
+          `Inside: ${c('search')} loots the room (and makes noise, which draws monsters), ${c('deeper')} moves to the next room (rarer loot, harder monsters), ${c('mend')} eats a supply. Only ${c('extract')} at a 🔮 Waystone (rooms 3 and 6, or one you uncover) makes the loot yours.`,
+          `Other players are in there too. When you spot one: ${c('ambush')} to attack (they may slip away; Agility helps) or ${c('hide')}. The winner takes the loser's bag and a piece of their gear, and still has to get it out.`,
+          '<b>Death is final</b>: a monster, a player or the fog closing (15 minutes) takes your worn weapon and armor, your supplies and your bag, and knocks you out. You can\'t change gear, !eat or !drink from your backpack while inside.',
+          'Play it on the <a href="#/veil">Gloamveil</a> page: a map of the rooms, the timer, your bag, and who got out (or didn\'t) this week.',
+        ]),
+      },
+      {
         id: 'raids', tab: 'events', icon: '🐉', title: 'Raid bosses', summary: 'Everyone fights a giant boss together',
         body: list([`When a ⚔️ raid boss appears, type ${c('attack')} to hit it (each attack uses stamina). ${c('raid')} shows its HP.`, 'Beat it in time and the reward pool is split by damage. The top hitter is MVP and gets extra loot.']),
       },
@@ -1953,6 +1964,7 @@
         ['rob @name', 'Heist a richer player'],
         ['hire [1-3]', 'Hire guards for 24h so robbers fail more'],
         ['arena', 'Ranked fight (arena top for the ladder)'],
+        ['veil 1', 'Enter the Gloamveil: then search, deeper, extract, ambush, hide'],
         ['war', 'Guild war standings'],
         ['boost', 'Is an XP boost running?'],
         ['goal', 'Channel goal progress'],

@@ -48,6 +48,8 @@ module.exports = {
   // ---- Skilling ----------------------------------------------------------
 
   runAction(user, skillId, args) {
+    // In the Gloamveil, fights come to you (and your gear stays as it went in).
+    if (COMBAT_SKILLS.includes(skillId) && this.inVeil(user.id)) return "you're in the Gloamveil: monsters find you in there. !search, !deeper or !extract.";
     // A bare "!smith" just lists what you can make, so it doesn't need (or use) stamina.
     if (SKILLS[skillId].pickBest === false && !args.length) return this.process(user, skillId, args).reply;
     if (skillId === 'cooking' && String(args[0] || '').toLowerCase() === 'all') return this.cookAll(user);
@@ -454,6 +456,7 @@ module.exports = {
   // !eat [food]: cooked food heals HP. With no name, eats the smallest food that fills you up (or
   // your biggest). Food can't get you up from a knockout; only health potions can.
   eat(user, args) {
+    if (this.inVeil(user.id)) return "your backpack is outside the fog. !mend uses the supplies you brought in.";
     const now = this.now();
     const inv = this.repo.getInventory(user.id);
     const owned = Object.keys(inv).filter((id) => ITEMS[id]?.food && inv[id] > 0).sort((a, b) => ITEMS[a].food.heal - ITEMS[b].food.heal);

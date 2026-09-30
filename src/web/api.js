@@ -159,6 +159,25 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   router.post('/pvp/guards', requireLogin, act((req) => engine.guards(req.user, [String(req.body?.guards || '')])));
   router.post('/pvp/arena', requireLogin, act((req) => engine.arenaFight(req.user, []) || 'Slow down a little!'));
 
+  // ---- The Gloamveil (extraction minigame) --------------------------------------------------
+  router.get('/veil', (req, res) => {
+    res.json({ ...engine.veilPage(req.user?.id ?? null), username: req.user?.username ?? null });
+  });
+  const VEIL_ACTIONS = {
+    enter: (req) => engine.veilEnter(req.user, Number(req.body?.zone) || 1, { light: !!req.body?.light }),
+    search: (req) => engine.veilSearch(req.user),
+    deeper: (req) => engine.veilDeeper(req.user),
+    extract: (req) => engine.veilExtract(req.user),
+    mend: (req) => engine.veilMend(req.user),
+    ambush: (req) => engine.veilAmbush(req.user),
+    hide: (req) => engine.veilHide(req.user),
+  };
+  router.post('/veil/:action', requireLogin, (req, res, next) => {
+    const fn = VEIL_ACTIONS[req.params.action];
+    if (!fn) return res.status(404).json({ error: 'unknown action' });
+    return act((r) => fn(r) || 'Slow down a little!')(req, res, next);
+  });
+
   // ---- Player market ----------------------------------------------------------------
   router.get('/market', (req, res) => {
     const me = req.user ? repo.getUser(req.user.id) : null;

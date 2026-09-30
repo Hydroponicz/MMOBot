@@ -1070,3 +1070,44 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 .crop-tier-pills { display: flex; flex-wrap: wrap; gap: 4px; }
 .crop-tier-pills span { font-size: .75rem; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
 .skill-intro { margin: 0 0 1em; line-height: 1.55; }
+
+/* ---- The Gloamveil (#/veil) ---- */
+.veil-zones { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); }
+.veil-zones > .panel { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+.veil-zone.locked { opacity: 0.6; }
+.veil-zone .btn { margin-top: auto; }
+.veil-zone-head { display: flex; gap: 12px; align-items: flex-start; }
+.veil-zone-head h3 { margin: 0 0 2px; }
+.veil-zone-ic { font-size: 2rem; line-height: 1; }
+.veil-facts { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.85rem; color: var(--muted); }
+.veil-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.veil-pill { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border); font-size: 0.82rem; }
+.veil-pill small { color: var(--muted); }
+.veil-pill.rare { border-color: var(--rare); color: var(--rare); }
+.veil-warn { color: var(--danger); }
+.veil-check { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; font-size: 0.9rem; }
+.veil-steps { margin: 0 0 12px; padding-left: 20px; }
+.veil-steps li + li { margin-top: 6px; }
+.veil-run-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.veil-run-head h2 { margin: 0; }
+.veil-timer { white-space: nowrap; }
+.veil-timer { font-size: 1.4rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.veil-timer.low { color: var(--danger); }
+.veil-map { display: flex; align-items: center; margin: 18px 0; overflow-x: auto; padding-bottom: 4px; }
+.veil-room { flex: none; width: 48px; height: 48px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel-2); display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 1.1rem; line-height: 1.1; }
+.veil-room small { font-size: 0.65rem; color: var(--muted); }
+.veil-room.past { opacity: 0.45; }
+.veil-room.ahead { border-style: dashed; color: var(--muted); }
+.veil-room.here { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(83, 252, 24, 0.25); }
+.veil-path { flex: 1 1 8px; min-width: 8px; height: 2px; background: var(--border); }
+.veil-meters { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.veil-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.veil-actions[hidden] { display: none; }
+.veil-encounter { margin-top: 14px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--danger); background: rgba(255, 92, 122, 0.08); }
+.veil-encounter .veil-actions { margin-top: 10px; }
+.veil-log { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; font-size: 0.88rem; }
+.veil-log > div { padding: 8px 10px; border-radius: 10px; background: var(--panel-2); }
+.veil-log > div:first-child { border-left: 3px solid var(--accent); }
+.veil-item { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+.veil-feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 0.88rem; }
+@media (max-width: 560px) { .veil-meters { grid-template-columns: 1fr; } .veil-room { width: 40px; height: 40px; } }
