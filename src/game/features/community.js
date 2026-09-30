@@ -12,7 +12,7 @@ const MAX_ACTIVE = 3;
 function matches(m, entry) {
   const is = (want, got) => want === undefined || (Array.isArray(want) ? want.includes(got) : want === got);
   if (!is(m.kind ?? (m.monster || m.skill || m.item ? ACTION_KINDS : undefined), entry.kind)) return false;
-  if (!is(m.skill, entry.skill) || !is(m.item, entry.item) || !is(m.monster, entry.monster)) return false;
+  if (!is(m.skill, entry.skill) || !is(m.item, entry.item) || !is(m.monster, entry.monster) || !is(m.zone, entry.zone)) return false;
   return !m.text || new RegExp(m.text).test(entry.text || '');
 }
 
@@ -24,6 +24,11 @@ function stepCounts(quest, pr) {
   if (Array.isArray(pr.counts)) return quest.steps.map((s, i) => Math.min(s.qty, pr.counts[i] || 0));
   return quest.steps.map((s, i) => (i < (pr.step || 0) ? s.qty : i === (pr.step || 0) ? Math.min(s.qty, pr.count || 0) : 0));
 }
+
+// A quest's prerequisites (after: 'id' or ['id', ...]) that aren't done yet.
+const lockedBy = (quest, done) => [].concat(quest.after || []).filter((id) => !done.includes(id)).map((id) => QUESTS.find((q) => q.id === id)).filter(Boolean);
+// "+5,000 pts, 3x Health Potion and the title "X""
+const rewardText = (q) => `+${fmt(q.reward)} pts${q.items ? `, ${Object.entries(q.items).map(([i, n]) => `${n}x ${ITEMS[i].icon} ${ITEMS[i].name}`).join(', ')}` : ''} and the title "${q.title}"`;
 
 module.exports = {
   // ---- Quests ---------------------------------------------------------------------------
@@ -76,11 +81,14 @@ module.exports = {
         st.active = st.active.filter((x) => x !== id);
         delete st.progress[id];
         this.repo.addPoints(user.id, quest.reward);
+        // Item rewards skip the backpack limit: they're a prize, not loot.
+        for (const [item, n] of Object.entries(quest.items || {})) this.repo.addItem(user.id, item, n);
         this.track('rewards', quest.reward);
         this.emitActivity(user, { kind: 'quest', text: `completed the quest ${quest.icon} ${quest.name}! (title: ${quest.title})` });
-        this.notify?.(user.id, `${quest.icon} Quest complete: ${quest.name}! +${fmt(quest.reward)} pts and the title "${quest.title}".`);
+        this.notify?.(user.id, `${quest.icon} Quest complete: ${quest.name}! ${rewardText(quest)}.`);
         const more = QUESTS.filter((q) => !st.done.includes(q.id) && !st.active.includes(q.id)).length;
-        this.announce(`📜 @${user.username} completed the quest ${quest.icon} ${quest.name}! +${fmt(quest.reward)} pts and the title "${quest.title}".${more ? ` Pick another: ${this.cfg.prefix}quests` : ''}`);
+        const unlocked = QUESTS.filter((q) => [].concat(q.after || []).includes(quest.id) && !lockedBy(q, st.done).length);
+        this.announce(`📜 @${user.username} completed the quest ${quest.icon} ${quest.name}! ${rewardText(quest)}.${unlocked.length ? ` New quest unlocked: ${unlocked.map((q) => `${q.icon} ${q.name}`).join(', ')}!` : more ? ` Pick another: ${this.cfg.prefix}quests` : ''}`);
       } else if (finished.length) {
         const done = quest.steps.length - left.length;
         const rest = left.map((s) => `${s.text} (${counts[quest.steps.indexOf(s)]}/${s.qty})`).join(' · ');
@@ -97,6 +105,8 @@ module.exports = {
     const st = this.questState(user.id);
     if (st.done.includes(quest.id)) return { ok: false, error: `you've already finished ${quest.icon} ${quest.name}.` };
     if (st.active.includes(quest.id)) return { ok: false, error: `${quest.icon} ${quest.name} is already one of your active quests.` };
+    const locked = lockedBy(quest, st.done);
+    if (locked.length) return { ok: false, error: `🔒 ${quest.icon} ${quest.name} unlocks after ${locked.map((q) => `${q.icon} ${q.name}`).join(' and ')}.` };
     if (st.active.length >= MAX_ACTIVE) {
       return { ok: false, error: `you can have ${MAX_ACTIVE} quests going at once. Pause one first: ${this.cfg.prefix}quest pause <name>.` };
     }
@@ -137,8 +147,10 @@ module.exports = {
         icon: q.icon,
         intro: q.intro,
         reward: q.reward,
+        items: q.items ? Object.entries(q.items).map(([id, qty]) => ({ id, qty, name: ITEMS[id].name, icon: ITEMS[id].icon })) : [],
         title: q.title,
-        status,
+        after: lockedBy(q, st.done).map((x) => ({ id: x.id, name: x.name, icon: x.icon })),
+        status: status === 'available' && lockedBy(q, st.done).length ? 'locked' : status,
         steps: (() => {
           const counts = stepCounts(q, pr);
           return q.steps.map((s, i) => ({ text: s.text, qty: s.qty, have: done ? s.qty : counts[i] }));
@@ -159,12 +171,17 @@ module.exports = {
       // "!quest relic hunter": start it if they can, otherwise show why not.
       return reply(this.questStart(user, args.join(' ')));
     }
-    const available = QUESTS.filter((q) => !st.done.includes(q.id) && !st.active.includes(q.id));
+    const available = QUESTS.filter((q) => !st.done.includes(q.id) && !st.active.includes(q.id) && !lockedBy(q, st.done).length);
     if (cmd === 'quests' || sub) {
-      return `📜 Quests: ${QUESTS.map((q) => `${st.done.includes(q.id) ? '✅' : st.active.includes(q.id) ? '▶️' : st.progress[q.id] ? '⏸️' : '•'} ${q.icon} ${q.name}`).join(' · ')}. ${p}quest start <name> (up to ${MAX_ACTIVE} at once).`;
+      // Only what can be worked on now; finished and locked quests are just counted.
+      const open = QUESTS.filter((q) => !st.done.includes(q.id) && !lockedBy(q, st.done).length);
+      const locked = QUESTS.filter((q) => !st.done.includes(q.id) && lockedBy(q, st.done).length).length;
+      const tail = [st.done.length && `✅ ${st.done.length} done`, locked && `🔒 ${locked} unlock later`].filter(Boolean).join(' · ');
+      return `📜 Quests: ${open.map((q) => `${st.active.includes(q.id) ? '▶️' : st.progress[q.id] ? '⏸️' : '•'} ${q.icon} ${q.name}`).join(' · ')}${tail ? ` · ${tail}` : ''}. ${p}quest start <name> (up to ${MAX_ACTIVE} at once). All quests: ${this.siteUrl}/#/me`;
     }
     if (!st.active.length) {
-      if (!available.length) return `📜 you've finished all ${QUESTS.length} quests! 🏆 Titles: ${this.questTitles(user.id).join(', ')}`;
+      if (st.done.length >= QUESTS.length) return `📜 you've finished all ${QUESTS.length} quests! 🏆 Titles: ${this.questTitles(user.id).join(', ')}`;
+      if (!available.length) return `📜 no active quest, and the rest are still locked. ${p}quests shows them.`;
       return `📜 no active quest. Pick one: ${available.map((q) => `${q.icon} ${q.name}`).join(' · ')}. ${p}quest start <name>`;
     }
     const lines = st.active.map((id) => {

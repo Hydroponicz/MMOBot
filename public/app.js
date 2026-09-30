@@ -558,15 +558,18 @@
     if (!quests) return '';
     const done = quests.filter((q) => q.status === 'done').length;
     const active = quests.filter((q) => q.status === 'active');
-    const others = quests.filter((q) => q.status !== 'active');
+    // Startable first, then the ones still locked behind another quest, finished ones last.
+    const order = { paused: 0, available: 0, locked: 1, done: 2 };
+    const others = quests.filter((q) => q.status !== 'active').sort((a, b) => order[a.status] - order[b.status]);
     const full = active.length >= 3;
+    const prize = (q) => `${fmt(q.reward)} pts${(q.items || []).map((i) => ` + ${i.qty}× ${i.icon} ${esc(i.name)}`).join('')}`;
     const steps = (q) => `<ul class="tasks">${q.steps
       .map(
         (s) => `<li class="${s.have >= s.qty ? 'done' : ''}"><span>${esc(s.text)}</span><span>${Math.min(s.have, s.qty)}/${s.qty}${s.have >= s.qty ? ' ✅' : ''}</span>
           <div class="task-bar"><span style="width:${Math.min(100, Math.round((s.have / s.qty) * 100))}%"></span></div></li>`
       )
       .join('')}</ul>`;
-    const label = { done: '✅ Done', paused: '⏸️ Paused', available: '' };
+    const label = { done: '✅ Done', paused: '⏸️ Paused', available: '', locked: '' };
     return `<section class="panel" style="margin-top:16px">
       <div class="panel-head"><h2>📜 Quests</h2><span class="muted">${done}/${quests.length} done · ${active.length}/3 active</span></div>
       ${
@@ -577,7 +580,7 @@
                   <div class="panel-head" style="margin-bottom:4px"><h3 style="margin:0">${q.icon} ${esc(q.name)}</h3>${isMe ? `<button class="mini" data-act="quest-pause" data-item="${esc(q.id)}">Pause</button>` : ''}</div>
                   <p class="muted" style="margin:0 0 10px">${esc(q.intro)}</p>
                   ${steps(q)}
-                  <p class="muted" style="margin:8px 0 0;font-size:.85rem">Reward: ${fmt(q.reward)} pts + the title “${esc(q.title)}”.</p>
+                  <p class="muted" style="margin:8px 0 0;font-size:.85rem">Reward: ${prize(q)} + the title “${esc(q.title)}”.</p>
                 </div>`
               )
               .join('')}</div>`
@@ -587,10 +590,11 @@
         .map(
           (q) => `<div class="quest-card ${q.status}" title="${esc(q.intro)}">
             <b>${q.icon} ${esc(q.name)}</b>
-            <small class="muted">${q.steps.length} steps · ${fmt(q.reward)} pts · “${esc(q.title)}”</small>
+            <small class="muted">${q.steps.length} step${q.steps.length === 1 ? '' : 's'} · ${prize(q)} · “${esc(q.title)}”</small>
             ${label[q.status] ? `<small>${label[q.status]}</small>` : ''}
+            ${q.status === 'locked' ? `<small class="quest-lock">🔒 After ${q.after.map((a) => `${a.icon} ${esc(a.name)}`).join(' + ')}</small>` : ''}
             ${
-              isMe && q.status !== 'done'
+              isMe && q.status !== 'done' && q.status !== 'locked'
                 ? `<button class="mini" data-act="quest-start" data-item="${esc(q.id)}" ${full ? 'disabled title="Pause one of your 3 active quests first"' : ''}>${q.status === 'paused' ? 'Resume' : 'Start'}</button>`
                 : ''
             }
@@ -1811,8 +1815,8 @@
       ...g.skills.filter((s) => s.type === 'combat').map((s) => skillTopic(s, 'combat')),
       {
         id: 'quests', tab: 'rewards', icon: '📜', title: 'Quests', summary: `${g.quests.length} short storylines with points and titles`,
-        body: `<p>Pick any quests you like, up to 3 at once: they all count what you already do, and a quest's objectives can be done in any order (they all fill up at the same time). ${c('quest start relic hunter')} starts one, ${c('quest pause relic hunter')} pauses it (progress is kept), ${c('quest')} shows your active ones and ${c('quests')} lists them all. Or use the buttons on your character page.</p>${list(
-          g.quests.map((q) => `${q.icon} <b>${esc(q.name)}</b>: ${q.steps.map(esc).join(' · ')}. <span class="muted">Reward ${fmt(q.reward)} pts + “${esc(q.title)}”</span>`)
+        body: `<p>Pick any quests you like, up to 3 at once: they all count what you already do, and a quest's objectives can be done in any order (they all fill up at the same time). ${c('quest start relic hunter')} starts one, ${c('quest pause relic hunter')} pauses it (progress is kept), ${c('quest')} shows your active ones and ${c('quests')} lists them all. Or use the buttons on your character page. Some quests continue a story and unlock once you finish the one before (🔒).</p>${list(
+          g.quests.map((q) => `${q.icon} <b>${esc(q.name)}</b>${q.after?.length ? ` <span class="muted">🔒 after ${q.after.map(esc).join(' + ')}</span>` : ''}: ${q.steps.map(esc).join(' · ')}. <span class="muted">Reward ${fmt(q.reward)} pts${(q.items || []).map((i) => ` + ${esc(i)}`).join('')} + “${esc(q.title)}”</span>`)
         )}`,
       },
       {

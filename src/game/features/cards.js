@@ -171,6 +171,7 @@ module.exports = {
       }
     });
     this.track('cardPacks', cost);
+    for (let i = 0; i < count; i++) this.questProgress?.(user, { kind: 'pack' });
     const views = packs.map((ids) => ids.map((id) => this.cardView({ ...this.repo.cardGet(id), owner: user.username })));
     const all = views.flat();
     // Big pulls go on the feed (the best one per opening), and mythics are announced in chat.

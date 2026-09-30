@@ -135,6 +135,7 @@ module.exports = {
       return Array.from({ length: count }, () => this.repo.relicInsert(user.id, R.openCase(c.id, this.rng), 'case', now));
     });
     this.track('relicCases', cost);
+    for (let i = 0; i < count; i++) this.questProgress?.(user, { kind: 'case' });
     const relics = ids.map((id) => this.relicView({ ...this.repo.relicGet(id), owner: user.username }));
     // The best unboxing goes on the feed after the reel has had time to stop spinning.
     const best = relics.filter((r) => notable({ skin: r.skin, seed: r.seed })).sort((a, b) => b.value - a.value)[0];

@@ -1277,3 +1277,5 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 .sf-item-name .muted { font-size: 0.8rem; }
 .sf-price { white-space: nowrap; }
 @media (max-width: 560px) { .sf-item { grid-template-columns: auto 1fr; } .sf-price, .sf-item .btn { grid-column: 2; justify-self: start; } }
+.quest-card.locked { opacity: 0.6; border-style: dotted; }
+.quest-lock { color: var(--muted); }

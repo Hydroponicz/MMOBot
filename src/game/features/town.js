@@ -282,6 +282,7 @@ module.exports = {
       this.saveTown(st);
     });
     this.track?.('town', value);
+    this.questProgress?.(user, { kind: 'contribute' });
     const gave = used.map(([id, n]) => itemLabel(id, n)).join(', ');
     const lvl = st.levels[b.id] || 0;
     if (lvl > levelsBefore) {

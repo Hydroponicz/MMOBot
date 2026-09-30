@@ -389,6 +389,7 @@ module.exports = {
     }
     room.searches--;
     run.noise = Math.min(100, run.noise + 12);
+    this.questProgress?.(user, { kind: 'veilsearch', zone: run.zone });
     const parts = [];
     if (this.rng() < 0.8) {
       // Rarer finds the deeper you are.
@@ -471,6 +472,7 @@ module.exports = {
     });
     this.veilLog({ kind: 'extract', name: user.username, zone: z.name, value, kills: run.kills || 0 });
     this.veilStat(user.id, 'extracts', 1);
+    this.questProgress?.(user, { kind: 'extract', zone: run.zone });
     if (value) this.veilStat(user.id, 'value', value);
     if (value >= run.fee * 4) this.emitActivity(user, { kind: 'event', text: `escaped the ${z.name} with ${fmt(value)} pts of loot` });
     const got = Object.keys(run.bag).length ? `You got out with ${bagText(run.bag)} (worth ${fmt(value)} pts).` : 'You got out with empty hands, but alive.';

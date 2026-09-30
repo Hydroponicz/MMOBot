@@ -174,6 +174,11 @@ for (const r of RACE_ITEMS) {
 // ---- Quest chains: short storylines done in order. Each step counts matching actions from the
 // activity feed. Finishing a chain pays points and gives a title. ---------------------------
 //   match: { skill, item, monster, kind, text (regex) } — every field given must match.
+// Every item id matching a test, for quest steps ("any plank").
+function questItems(test) {
+  return Object.keys(ITEMS).filter((id) => test(ITEMS[id]));
+}
+
 const QUESTS = [
   {
     id: 'apprentice',
@@ -270,6 +275,217 @@ const QUESTS = [
     ],
     reward: 5000,
     title: 'the Scavenger',
+  },
+
+  // ---- Wave 2: every newer system gets a story. `after` chains quests: they unlock once the named
+  // quest is done. `items` are extra rewards.
+  {
+    id: 'carpenter',
+    name: "The Carpenter's Bench",
+    icon: '🪚',
+    intro: 'The town is growing and the old carpenter needs hands. Learn to turn trees and metal into building parts.',
+    steps: [
+      { text: 'Chop logs', qty: 20, match: { skill: 'woodcutting' } },
+      { text: 'Saw planks (!saw planks)', qty: 10, match: { skill: 'carpentry', item: questItems((i) => i.material === 'plank') } },
+      { text: 'Hammer nails (!saw nails)', qty: 5, match: { skill: 'carpentry', item: questItems((i) => i.material === 'nails') } },
+      { text: 'Build frames (!build frame)', qty: 3, match: { skill: 'construction', item: questItems((i) => i.buildPart === 'frame') } },
+    ],
+    reward: 3000,
+    items: { oak_logs: 20 },
+    title: 'the Carpenter',
+  },
+  {
+    id: 'townmaker',
+    name: 'Raise the Town',
+    icon: '🏘️',
+    after: 'carpenter',
+    intro: 'A town needs walls, roofs and people willing to build them. Lend your hammer and open a stall of your own.',
+    steps: [
+      { text: 'Build wall panels (!build wall)', qty: 5, match: { skill: 'construction', item: questItems((i) => i.buildPart === 'wall_panel') } },
+      { text: 'Build roof trusses (!build roof)', qty: 2, match: { skill: 'construction', item: questItems((i) => i.buildPart === 'roof_truss') } },
+      { text: 'Give parts to the town (!contribute)', qty: 3, match: { kind: 'contribute' } },
+      { text: 'Open a Market Stall (!stall build)', qty: 1, match: { kind: 'build', text: '^opened a' } },
+    ],
+    reward: 8000,
+    title: 'the Townmaker',
+  },
+  {
+    id: 'homebuilder',
+    name: 'A Home of My Own',
+    icon: '🏡',
+    after: 'townmaker',
+    intro: 'Anyone can buy a house. Build yours with your own two hands.',
+    steps: [
+      { text: 'Build doors (!build door)', qty: 3, match: { skill: 'construction', item: questItems((i) => i.buildPart === 'door') } },
+      { text: 'Build your house by hand (!house build)', qty: 1, match: { kind: 'build', text: '^built their own' } },
+    ],
+    reward: 15000,
+    title: 'the Homebuilder',
+  },
+  {
+    id: 'angler',
+    name: 'The Old Angler',
+    icon: '🎣',
+    intro: 'An old fisherman swears the big ones only bite for people who have earned it.',
+    steps: [
+      { text: 'Catch Trout', qty: 10, match: { skill: 'fishing', item: 'trout' } },
+      { text: 'Catch Salmon', qty: 10, match: { skill: 'fishing', item: 'salmon' } },
+      { text: 'Catch Lobsters', qty: 5, match: { skill: 'fishing', item: 'lobster' } },
+      { text: 'Cook food', qty: 20, match: { skill: 'cooking' } },
+    ],
+    reward: 5000,
+    title: 'the Angler',
+  },
+  {
+    id: 'delver',
+    name: 'Deep Delver',
+    icon: '⛏️',
+    after: 'apprentice',
+    intro: 'The smith has a bigger order: steel and gold, and plenty of it.',
+    steps: [
+      { text: 'Mine Iron Ore', qty: 20, match: { skill: 'mining', item: 'iron_ore' } },
+      { text: 'Mine Coal', qty: 20, match: { skill: 'mining', item: 'coal' } },
+      { text: 'Mine Gold Ore', qty: 10, match: { skill: 'mining', item: 'gold_ore' } },
+      { text: 'Smelt Steel Alloys', qty: 10, match: { skill: 'smelting', item: 'steel_bar' } },
+      { text: 'Smelt Gold Ingots', qty: 5, match: { skill: 'smelting', item: 'gold_bar' } },
+    ],
+    reward: 7000,
+    title: 'the Delver',
+  },
+  {
+    id: 'herbalist',
+    name: 'The Herbalist',
+    icon: '🌿',
+    intro: 'The healer is out of potions and the Barracks are restless. Grow the herbs and brew the cures.',
+    steps: [
+      { text: 'Harvest your plots', qty: 3, match: { skill: 'farming', text: '^harvested' } },
+      { text: 'Brew health potions', qty: 5, match: { skill: 'alchemy', item: ['minor_health_potion', 'health_potion', 'greater_health_potion', 'super_health_potion'] } },
+      { text: 'Brew mana potions', qty: 3, match: { skill: 'alchemy', item: ['minor_mana_potion', 'mana_potion', 'greater_mana_potion'] } },
+    ],
+    reward: 5000,
+    items: { health_potion: 3 },
+    title: 'the Herbalist',
+  },
+  {
+    id: 'warden',
+    name: 'Warden of the Wilds',
+    icon: '🐺',
+    after: 'hunter',
+    intro: 'Wolves and bandits are raiding the roads. Clear them out and make use of what they leave behind.',
+    steps: [
+      { text: 'Defeat Wolves', qty: 10, match: { monster: 'wolf' } },
+      { text: 'Defeat Bandits', qty: 10, match: { monster: 'bandit' } },
+      { text: 'Skin animals', qty: 20, match: { skill: 'skinning' } },
+      { text: 'Craft anything', qty: 3, match: { skill: 'crafting' } },
+    ],
+    reward: 6000,
+    title: 'the Warden',
+  },
+  {
+    id: 'runner',
+    name: 'Rooftop Runner',
+    icon: '🏃',
+    intro: 'The couriers guild is hiring. Show them you can cross the town without touching the ground.',
+    steps: [
+      { text: 'Run laps (!run)', qty: 30, match: { skill: 'agility' } },
+      { text: 'Run the Castle Walls', qty: 5, match: { skill: 'agility', text: 'Castle Walls' } },
+    ],
+    reward: 6000,
+    title: 'the Courier',
+  },
+  {
+    id: 'fogwalker',
+    name: 'Into the Gloamveil',
+    icon: '🌫️',
+    intro: 'Scavengers come back from the fog rich, or not at all. Go in, loot, and find a Waystone.',
+    steps: [
+      { text: 'Search rooms in the Gloamveil (!veil 1, then !search)', qty: 10, match: { kind: 'veilsearch' } },
+      { text: 'Get out alive through a Waystone (!extract)', qty: 3, match: { kind: 'extract' } },
+    ],
+    reward: 6000,
+    items: { health_potion: 4 },
+    title: 'the Fogwalker',
+  },
+  {
+    id: 'veilwalker',
+    name: 'Heart of the Fog',
+    icon: '🔮',
+    after: 'fogwalker',
+    intro: 'The deeper zones hold the real treasure, and the real danger. Other scavengers included.',
+    steps: [
+      { text: 'Extract from the Drowned Choir or deeper', qty: 3, match: { kind: 'extract', zone: [2, 3, 4] } },
+      { text: 'Beat another player in the fog (!ambush)', qty: 1, match: { kind: 'duel', text: '^killed @' } },
+    ],
+    reward: 25000,
+    title: 'the Veilwalker',
+  },
+  {
+    id: 'gladiator',
+    name: 'The Arena Calls',
+    icon: '🏟️',
+    intro: 'The crowd wants blood and the ladder wants a new name at the top. Fight for rating.',
+    steps: [{ text: 'Win ranked arena fights (!arena)', qty: 5, match: { kind: 'duel', text: 'ranked arena' } }],
+    reward: 8000,
+    items: { greater_health_potion: 2 },
+    title: 'the Gladiator',
+  },
+  {
+    id: 'rogue',
+    name: 'Shadows of the Market',
+    icon: '🦹',
+    intro: 'Some make their fortune honestly. Some sell on the market. Some take it from other people.',
+    steps: [
+      { text: 'Put items up on the market', qty: 3, match: { kind: 'market' } },
+      { text: 'Pull off a heist (!rob)', qty: 3, match: { kind: 'heist', text: 'snuck into|made off with' } },
+    ],
+    reward: 6000,
+    title: 'the Rogue',
+  },
+  {
+    id: 'collector',
+    name: 'The Collector',
+    icon: '🃏',
+    intro: 'A wealthy collector wants someone to open, catalogue and donate. Their cabinet has room for more.',
+    steps: [
+      { text: 'Open card packs', qty: 10, match: { kind: 'pack' } },
+      { text: 'Open relic cases', qty: 5, match: { kind: 'case' } },
+      { text: 'Donate finds to the museum', qty: 5, match: { kind: 'donate' } },
+    ],
+    reward: 7000,
+    title: 'the Collector',
+  },
+  {
+    id: 'dragonsbane',
+    name: "The Dragon's Bane",
+    icon: '🐉',
+    after: 'champion',
+    intro: 'The king has a new problem, and it breathes fire. Climb the food chain to the top.',
+    steps: [
+      { text: 'Defeat Wyverns', qty: 10, match: { monster: 'wyvern' } },
+      { text: 'Defeat Hydras', qty: 5, match: { monster: 'hydra' } },
+      { text: 'Defeat Dragons', qty: 3, match: { monster: 'dragon' } },
+    ],
+    reward: 75000,
+    title: 'the Dragonsbane',
+  },
+  {
+    id: 'polymath',
+    name: 'Master of All Trades',
+    icon: '🌟',
+    after: ['apprentice', 'hearth', 'hunter', 'initiate', 'carpenter'],
+    intro: 'The guildmasters of every craft have heard of you. Now prove you can do it all, in one go.',
+    steps: [
+      { text: 'Fish', qty: 25, match: { skill: 'fishing' } },
+      { text: 'Mine', qty: 25, match: { skill: 'mining' } },
+      { text: 'Chop', qty: 25, match: { skill: 'woodcutting' } },
+      { text: 'Smith', qty: 10, match: { skill: 'smithing' } },
+      { text: 'Cook', qty: 25, match: { skill: 'cooking' } },
+      { text: 'Brew', qty: 10, match: { skill: 'alchemy' } },
+      { text: 'Build', qty: 5, match: { skill: 'construction' } },
+      { text: 'Run laps', qty: 10, match: { skill: 'agility' } },
+    ],
+    reward: 30000,
+    title: 'the Jack of All Trades',
   },
 ];
 
@@ -369,5 +585,15 @@ MUSEUM.push(
   { id: 'trophies', name: 'Trophy Hall', icon: '🏆', items: ['golden_egg', 'goblin_crown', 'bandit_mask', 'troll_club'], reward: 15000, title: 'the Monster Hunter' },
   { id: 'legends', name: 'Legendary Relics', icon: '🐉', items: ['dragon_egg', 'phylactery', 'soul_gem', 'elder_heart'], reward: 150000, title: 'the Dragonslayer' },
 );
+
+// Every item, monster and prerequisite a quest names must exist.
+for (const q of QUESTS) {
+  for (const s of q.steps) {
+    for (const i of [].concat(s.match.item || [])) if (!ITEMS[i]) throw new Error(`quest ${q.id} names unknown item ${i}`);
+    for (const m of [].concat(s.match.monster || [])) if (!SKILLS.swords.monsters.some((x) => x.id === m)) throw new Error(`quest ${q.id} names unknown monster ${m}`);
+  }
+  for (const a of [].concat(q.after || [])) if (!QUESTS.some((x) => x.id === a)) throw new Error(`quest ${q.id} comes after unknown quest ${a}`);
+  for (const i of Object.keys(q.items || {})) if (!ITEMS[i]) throw new Error(`quest ${q.id} rewards unknown item ${i}`);
+}
 
 module.exports = { CONTAINERS, MONSTER_DISHES, MONSTER_POTIONS, MONSTER_ARROWS, MONSTER_COSMETICS, COSMETICS, COSMETIC_SLOTS, SEASON_COSMETICS, LIMITED_COSMETICS, LIMITED_SHOP, PETS, PET_BONUS, RACE_ITEMS, QUESTS };
