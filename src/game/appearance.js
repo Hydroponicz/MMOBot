@@ -33,8 +33,8 @@ const RACES = {
     plural: 'Dwarves',
     icon: '🧔',
     text: 'Stout miners and master smiths, hard to knock down.',
-    perks: { xp: { mining: 1.15, smelting: 1.15, smithing: 1.15, archery: 0.85, magic: 0.85 }, hp: 1.15, defence: 1.1 },
-    pros: ['+15% Mining, Smelting and Smithing XP', '+15% max HP', '+10% defence'],
+    perks: { xp: { mining: 1.15, smelting: 1.15, smithing: 1.15, brawling: 1.15, archery: 0.85, magic: 0.85 }, hp: 1.15, defence: 1.1 },
+    pros: ['+15% Mining, Smelting, Smithing and Brawling XP', '+15% max HP', '+10% defence'],
     cons: ['-15% Archery and Magic XP'],
   },
   orc: {
@@ -42,8 +42,8 @@ const RACES = {
     plural: 'Orcs',
     icon: '👹',
     text: 'Fierce warriors who hit hard and haggle badly.',
-    perks: { xp: { swords: 1.15, skinning: 1.15, cooking: 0.9, crafting: 0.9, alchemy: 0.9 }, attack: 1.15, hp: 1.1, sell: 0.9 },
-    pros: ['+15% attack', '+15% Swords and Skinning XP', '+10% max HP'],
+    perks: { xp: { swords: 1.15, axes: 1.15, skinning: 1.15, cooking: 0.9, crafting: 0.9, alchemy: 0.9 }, attack: 1.15, hp: 1.1, sell: 0.9 },
+    pros: ['+15% attack', '+15% Swords, Axes and Skinning XP', '+10% max HP'],
     cons: ['-10% Cooking, Crafting and Alchemy XP', '-10% sell prices'],
   },
   halfling: {
@@ -53,8 +53,8 @@ const RACES = {
     text: 'Small, cheerful and tireless, happiest near water and a warm meal.',
     // Was +1 stamina charge (a third more actions than everyone else); now refills 10% faster, which
     // stacks with Agility. Farming XP swapped for Agility XP.
-    perks: { xp: { fishing: 1.15, cooking: 1.15, agility: 1.15 }, refill: 0.9, attack: 0.9, hp: 0.9 },
-    pros: ['Stamina refills 10% faster', '+15% Fishing, Cooking and Agility XP'],
+    perks: { xp: { fishing: 1.15, cooking: 1.15, agility: 1.15, daggers: 1.15 }, refill: 0.9, attack: 0.9, hp: 0.9 },
+    pros: ['Stamina refills 10% faster', '+15% Fishing, Cooking, Agility and Daggers XP'],
     cons: ['-10% attack', '-10% max HP'],
   },
   undead: {
@@ -62,8 +62,8 @@ const RACES = {
     plural: 'the Undead',
     icon: '💀',
     text: 'Risen from the grave, steeped in dark magic and unnaturally lucky.',
-    perks: { xp: { magic: 1.15, alchemy: 1.15 }, mana: 1.25, luck: 1.15, food: 0.5 },
-    pros: ['+15% Magic and Alchemy XP', '+25% max mana', '+15% rare find chance'],
+    perks: { xp: { magic: 1.15, necromancy: 1.15, alchemy: 1.15 }, mana: 1.25, luck: 1.15, food: 0.5 },
+    pros: ['+15% Magic, Necromancy and Alchemy XP', '+25% max mana', '+15% rare find chance'],
     cons: ['Food heals only half as much'],
   },
 };

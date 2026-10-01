@@ -23,8 +23,8 @@ function setup() {
   return { repo, engine, say, u };
 }
 
-test('there are 22 quests and every chained quest names a real one', () => {
-  assert.equal(QUESTS.length, 22);
+test('there are 28 quests and every chained quest names a real one', () => {
+  assert.equal(QUESTS.length, 28);
   assert.equal(new Set(QUESTS.map((q) => q.id)).size, QUESTS.length);
 });
 

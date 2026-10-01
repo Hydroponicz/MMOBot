@@ -13,7 +13,7 @@
 // Dying (to a monster, a player, or the fog closing when time runs out) is harsh: you lose your
 // worn weapon and armor, your supplies and everything in your bag, and you're knocked out.
 // Mixed into GameEngine.prototype by engine.js.
-const { ITEMS, SKILLS, SPELLS, GEAR_SLOTS, WEAPON_SKILL, skillLevel, fmt, itemLabel, clamp, minutesLeft } = require('./shared');
+const { ITEMS, SKILLS, SPELLS, MINIONS, GEAR_SLOTS, WEAPON_SKILL, skillLevel, fmt, itemLabel, clamp, minutesLeft } = require('./shared');
 const { ZONES, ROOMS, WAYSTONES } = require('../veil');
 
 const SUPPLY_UNITS = 4;
@@ -112,7 +112,8 @@ module.exports = {
         .sort((a, b) => ITEMS[b].attack - ITEMS[a].attack)[0] || null;
     }
     const spell = skillId === 'magic' ? [...SPELLS].reverse().find((sp) => sp.level <= level) : null;
-    return { weapon, skillId, level, arrow, spell };
+    const minion = skillId === 'necromancy' && arrow ? [...MINIONS].reverse().find((mn) => mn.level <= level) : null;
+    return { weapon, skillId, level, arrow, spell, minion };
   },
 
   // A fighter for pvpCombat, from worn gear and current HP.
@@ -131,6 +132,7 @@ module.exports = {
       weapon: pick?.weapon || null,
       attack: stats.attack,
       defence: stats.defence,
+      style: stats.style || null,
       maxHp: vit.maxHp,
       hp: vit.hp,
       label: pick ? `${SKILLS[pick.skillId].name} ${pick.level}, ${ITEMS[pick.weapon].name}` : 'Fists',

@@ -937,7 +937,7 @@
       line.tiers.push(i);
     }
     for (const l of seedLines) l.tiers.sort((a, b) => a.crop.tier - b.crop.tier);
-    const top = items.filter((i) => !i.category || i.category === 'farming');
+    const top = items.filter((i) => !i.category || i.category === 'farming' || i.category === 'weapons');
     const stationItems = items.filter(isStation);
     const potions = items.filter((i) => i.category === 'potions');
     const arrows = items.filter((i) => i.category === 'arrows');
@@ -1589,7 +1589,16 @@
           .join('')}</tbody></table></div></details>`;
       }
       if (s.type === 'combat' && s.id !== g.skills.find((x) => x.type === 'combat').id) {
-        return `<p class="muted">Same monsters as ${esc(g.skills.find((x) => x.type === 'combat').name)} (above). Fight them ${s.id === 'magic' ? 'with a staff' : 'with a bow'} using <code>${esc(s.command)}</code>; each fight uses ${s.id === 'magic' ? 'a Magic Rune and 1 mana' : 'one arrow from your quiver'}.</p>`;
+        const how = {
+          magic: ['with a staff', '; each fight uses a Magic Rune and 1 mana'],
+          archery: ['with a bow', '; each fight uses one arrow from your quiver'],
+          axes: ['with a battleaxe', ''],
+          daggers: ['with a dagger', ''],
+          spears: ['with a spear', ''],
+          brawling: ['bare-handed or with knuckles', ''],
+          necromancy: ['with a scythe and your raised undead', '; each fight uses one Bone Shard'],
+        }[s.id] || ['with its weapon', ''];
+        return `<p class="muted">Same monsters as ${esc(g.skills.find((x) => x.type === 'combat').name)} (above). Fight them ${how[0]} using <code>${esc(s.command)}</code>${how[1]}.</p>`;
       }
       if (s.type === 'combat') {
         return `
@@ -1693,6 +1702,11 @@
       swords: `With a sword, ${c('fight')} monsters for Swords XP and loot. ${c('fight goblin')} picks a target; a plain ${c('fight')} picks your best safe match.`,
       archery: `With a bow, a 🧺 quiver and arrows, ${c('shoot')} monsters for Archery XP. Each fight uses one arrow; better arrows hit harder. ${c('quiver')} shows your arrows, ${c('buy arrows 50')} buys more.`,
       agility: `${c('run')} runs a lap of your best obstacle course (or name one: ${c('run rooftops')}). Laps give XP and points but no items, so they never fill your backpack. The reward is stamina: every level makes your stamina refill ${((g.agilityRefillPerLevel ?? 0.001) * 100).toFixed(1)}% faster, up to ${Math.round((g.agilityRefillMax ?? 0.5) * 100)}% faster at the top (half the wait). You sometimes slip (a little XP) and now and then find a shortcut that makes the lap free. ${c('stamina')} shows your refill speed.`,
+      axes: `With a battleaxe, ${c('cleave')} monsters for Axes XP (or ${c('hack')}). Battleaxes hit harder than swords and 15% of swings land a second blow, but they take both hands: <b>your shield doesn't count</b>. ${c('buy battleaxe')} or ${c('smith bronze battleaxe')} (3 Bronze Alloy). Orcs get +15% Axes XP.`,
+      daggers: `With a dagger, ${c('stab')} monsters for Daggers XP. Daggers are light, but a quarter of your hits are <b>critical hits for double damage</b> and you sometimes dodge. Every Daggers level also makes you a better thief: +0.1% stealth per level (up to +20%) on ${c('rob')}, ${c('pickpocket')}, ${c('burgle')}, ${c('poach')} and jailbreaks. Halflings get +15% Daggers XP.`,
+      spears: `With a spear, ${c('thrust')} at monsters for Spears XP. A spear's reach means <b>monsters can't hit you in the first round</b>, and in PvP you always strike first. Spears are smithed from a bar plus two planks from Carpentry: ${c('smith bronze spear')} (1 Bronze Alloy + 2 Wooden Planks).`,
+      brawling: `${c('punch')} monsters for Brawling XP, <b>bare-handed from day one</b>, no weapon needed. Knuckles (${c('buy knuckles')} or ${c('smith bronze knuckles')}) hit harder. One haymaker in five <b>stuns</b>: the monster loses its next swing (in PvP, the other player does). Dwarves get +15% Brawling XP.`,
+      necromancy: `With a scythe, ${c('raise')} the dead to fight with you for Necromancy XP. Each fight uses one 🦴 Bone Shard (${c('buy bone shards 50')}, or ${c('craft bone shards')}: 1 Raw Chicken + 1 Ashes makes 10; Bone Dust, Cursed Skulls and Dragon Bones make more). Your undead <b>take a quarter of every hit</b> and add their own damage; stronger ones rise as you level (Skeleton, Zombie, Ghoul… up to the Avatar of Death). Scythes are two-handed. The Undead get +15% Necromancy XP.`,
       magic: `With a staff, ${c('cast')} spells for Magic XP. Each cast uses a Magic Rune and 1 mana. Stronger spells unlock as you level. ${c('heal')} also trains Magic.`,
     };
     const skillTopic = (s, tab) => ({
@@ -1764,7 +1778,8 @@
       {
         id: 'fighting', tab: 'combat', icon: '🗡️', title: 'How fighting works', summary: 'Pick monsters your size; fights cost HP',
         body: list([
-          `${c('fight')} uses whichever combat skill you're best at (Swords, Archery or Magic) with your best weapon.`,
+          `${c('fight')} uses whichever combat skill you're best at with your best weapon. Eight fighting styles: Swords (${c('fight')}), Archery (${c('shoot')}), Magic (${c('cast')}), Axes (${c('cleave')}), Daggers (${c('stab')}), Spears (${c('thrust')}), Brawling (${c('punch')}, no weapon needed) and Necromancy (${c('raise')}). Each style's own command always uses that style.`,
+          `Every style fights its own way: axes sometimes hit twice but leave no hand for a shield, daggers land critical hits, spears keep monsters at bay, punches stun, and the undead you raise soak up hits. They're balanced to cost about the same HP at your level; your Combat level is your best one.`,
           `${c('targets')} lists the best monsters for your level, gear and HP. ${c('monsters')} rates them: ⚪ too easy · 🟢 good match · 🟠 tough · 🔴 hard · ☠️ deadly.`,
           `${c('scout troll')} shows how a fight would go without fighting. You're warned before a fight that would likely knock you out.`,
           `${c('equip')} gear for attack and defence. ${c('equipped')} shows it, ${c('unequip helmet')} takes it off.`,
@@ -2016,6 +2031,11 @@
         ['enchant <item>', 'Enchant gear (+1 to +5)'],
         ['shoot [monster]', 'Fight with a bow (1 arrow)'],
         ['cast [monster]', 'Fight with magic (staff + rune)'],
+        ['cleave [monster]', 'Fight with a battleaxe (Axes)'],
+        ['stab [monster]', 'Fight with a dagger (Daggers)'],
+        ['thrust [monster]', 'Fight with a spear (Spears)'],
+        ['punch [monster]', 'Fight bare-handed or with knuckles (Brawling)'],
+        ['raise [monster]', 'Fight with a scythe + undead (1 Bone Shard)'],
         ['targets', 'Best monsters for you right now'],
         ['monsters', 'Monster ratings for you'],
         ['scout <monster>', 'How a fight would go'],

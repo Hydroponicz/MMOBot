@@ -107,6 +107,33 @@
         line('M102,136 L112,26', '#8a5d36', 3.6);
         line('M104,110 L106,96 M107,78 L109,64', '#c9a86b', 1.4, 'opacity=".7"');
         out.push(`<circle cx="112" cy="24" r="12" fill="${orbC}" opacity=".18"/><circle cx="112" cy="24" r="7.5" fill="${orb}"/><path d="M104,30 Q108,18 112,15 M120,30 Q116,18 112,15" fill="none" stroke="#c9a86b" stroke-width="1.6"/>`);
+      } else if (G.weapon.type === 'battleaxe') {
+        // Battleaxe on the back: a long haft and a double-bitted head.
+        line('M98,136 L114,30', '#3e2a17', 5.5);
+        line('M98,136 L114,30', '#8a5d36', 3.4);
+        p('M113,40 Q126,30 128,48 Q124,60 111,54Z', m.fill, `stroke="${m.dark}" stroke-width=".9"`);
+        p('M113,40 Q100,28 96,44 Q99,57 111,54Z', m.fill, `stroke="${m.dark}" stroke-width=".9"`);
+        line('M126,36 Q130,48 125,58 M98,34 Q94,46 98,56', m.light, 1, 'opacity=".8"');
+        out.push(`<circle cx="112" cy="47" r="2.6" fill="#c9a23a" stroke="#7a5a1a" stroke-width=".7"/>`);
+      } else if (G.weapon.type === 'spear') {
+        // Spear on the back: a tall shaft and a leaf-shaped head.
+        line('M100,138 L116,10', '#3e2a17', 4.5);
+        line('M100,138 L116,10', '#9a6b3e', 2.8);
+        p('M116.5,-6 L121,12 L116,18 L111.5,10Z', m.fill, `stroke="${m.dark}" stroke-width=".8"`);
+        line('M114,22 L118.5,22', '#c9a23a', 2.4);
+      } else if (G.weapon.type === 'scythe') {
+        // Scythe on the back: a long snath and a curved blade over the shoulder.
+        line('M100,138 L112,18', '#2a1d12', 5);
+        line('M100,138 L112,18', '#5e4a3a', 3);
+        p('M112,18 Q86,4 66,22 Q90,14 110,26Z', m.fill, `stroke="${m.dark}" stroke-width=".9"`);
+        line('M108,20 Q88,10 72,20', m.light, 0.8, 'opacity=".8"');
+      } else if (G.weapon.type === 'dagger') {
+        // Dagger at the hip.
+        p('M94,104 L104,128 L101,129 L91,106Z', m.fill, `stroke="${m.dark}" stroke-width=".7"`);
+        line('M88,104 L98,100', '#c9a23a', 2.4);
+        line('M90,100 L86,92', '#2a1d12', 3.2);
+      } else if (G.weapon.type === 'knuckles') {
+        // Knuckles are too small to show on the portrait.
       } else {
         // Sword on the back: blade with a fuller, crossguard, wrapped grip and pommel.
         p('M96.5,124 L111.5,55 L116.5,56 L101.5,125Z', m.fill, `stroke="${m.dark}" stroke-width=".8"`);

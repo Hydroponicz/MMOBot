@@ -62,7 +62,9 @@ module.exports = {
     const potions = potion ? `, potions from ${fmt(potion.cost)} (!buy ${potion.name.toLowerCase()})` : '';
     const arrows = this.shopItems().find((x) => x.category === 'arrows');
     const arrowText = arrows ? `, arrows from ${fmt(arrows.cost)} each (!buy arrows 50)` : '';
-    return `🛒 Shop: ${list} pts${stations}${potions}${arrowText}, plus seeds (e.g. !buy carrot seeds 5) — ${this.siteUrl}/#/shop`;
+    const weapons = this.shopItems().filter((x) => x.category === 'weapons');
+    const weaponText = weapons.length ? `, starter weapons ${weapons.map((x) => x.icon).join('')} from ${fmt(Math.min(...weapons.map((x) => x.cost)))} (!buy dagger)` : '';
+    return `🛒 Shop: ${list} pts${weaponText}${stations}${potions}${arrowText}, plus seeds (e.g. !buy carrot seeds 5) — ${this.siteUrl}/#/shop`;
   },
 
   // Shared by "!buy" and the website shop. Returns the reply text.
@@ -121,6 +123,8 @@ module.exports = {
           ? ' Now try !smith bronze sword.'
           : found.weaponType === 'bow'
             ? ` Now get a quiver and arrows, then !shoot.`
+            : found.weaponType && found.weaponType !== 'sword' && WEAPON_SKILL[found.weaponType]
+            ? ` Now try !${SKILLS[WEAPON_SKILL[found.weaponType]].command}.${found.weaponType === 'scythe' ? ' It needs Bone Shards: !buy bone shards 50.' : ''}`
             : found.weaponType
             ? ' Now try !fight.'
             : found.item === 'quiver'
@@ -129,6 +133,8 @@ module.exports = {
               ? ` 🧺 Quiver: ${fmt(this.quiver(user.id).arrows)}/${fmt(this.quiver(user.id).capacity)}. !shoot away!`
             : found.ammo === 'staff'
               ? ' Now !cast with a staff.'
+            : found.ammo === 'scythe'
+              ? ' Now !raise the dead with a scythe.'
             : found.item === 'flint_and_steel'
               ? ` Good for ${ITEMS.flint_and_steel.uses} fires: !lightfire.`
             : found.item === 'skinning_knife'

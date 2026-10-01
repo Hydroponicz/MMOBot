@@ -171,11 +171,11 @@ module.exports = {
     return { note: '' };
   },
 
-  // A stealth roll like a heist's: your Agility against theirs, minus 12% per guard and any locks.
+  // A stealth roll like a heist's: your Agility against theirs (plus your Daggers skill), minus 12% per guard and any locks.
   crimeChance(userId, targetId, base, minus = 0) {
     const hc = this.heistCfg();
     const diff = this.agilityLevel(userId) - this.agilityLevel(targetId);
-    return clamp(base + diff * hc.stealthPerLevel - this.guardLevel(targetId) * 0.12 - minus, 0.05, 0.9);
+    return clamp(base + diff * hc.stealthPerLevel + this.daggerStealth(userId) - this.guardLevel(targetId) * 0.12 - minus, 0.05, 0.9);
   },
 
   // Caught in the act (pickpocketing, poaching, burgling): no fight, the victim's people grab you.
@@ -432,7 +432,7 @@ module.exports = {
     const tired = this.staminaCheck(user, now);
     if (tired !== null) return tired || null;
     const sameGuild = this.repo.guildOf(user.id)?.id && this.repo.guildOf(user.id)?.id === this.repo.guildOf(target.id)?.id;
-    const chance = clamp(0.35 + this.agilityLevel(user.id) * 0.002 + (sameGuild ? 0.1 : 0), 0.1, 0.8);
+    const chance = clamp(0.35 + this.agilityLevel(user.id) * 0.002 + this.daggerStealth(user.id) + (sameGuild ? 0.1 : 0), 0.1, 0.8);
     this.spendStamina(user, now);
     this.repo.setActionAt(user.id, now);
     if (this.rng() < chance) {

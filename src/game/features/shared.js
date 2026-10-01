@@ -19,10 +19,20 @@ const {
   maxManaFor,
   BUFFS,
   SPELLS,
+  MINIONS,
   MUSEUM,
   findItem,
 } = require('../skills');
-const weaponWords = { archery: /^(bows?|archery|shoot|arrows?|ranged)$/, swords: /^(swords?|fight|melee)$/, magic: /^(magic|staff|staves|cast|spells?|mage)$/ };
+const weaponWords = {
+  archery: /^(bows?|archery|shoot|arrows?|ranged)$/,
+  swords: /^(swords?|fight|melee)$/,
+  magic: /^(magic|staff|staves|cast|spells?|mage)$/,
+  axes: /^(axes?|battleaxes?|cleave|hack)$/,
+  daggers: /^(daggers?|knives|knife|stab|backstab)$/,
+  spears: /^(spears?|polearms?|thrust|lunge)$/,
+  brawling: /^(brawl(ing)?|punch|fists?|knuckles|unarmed)$/,
+  necromancy: /^(necro(mancy)?|scythes?|raise|undead|minions?)$/,
+};
 const { levelForXp, progress, characterProgress } = require('../xp');
 const casino = require('../casino');
 const emotes = require('../emotes');
@@ -183,6 +193,7 @@ const unlockName = (r) => (r.item ? ITEMS[r.item].name : r.name);
 
 module.exports = {
   SPELLS,
+  MINIONS,
   MUSEUM,
   ITEMS,
   SKILLS,

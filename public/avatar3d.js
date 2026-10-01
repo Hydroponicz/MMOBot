@@ -268,6 +268,96 @@ function buildCharacter(appearance, M) {
       });
       staff.rotation.set(0.05, 0, -0.08);
       holder.add(staff);
+    } else if (type === 'battleaxe') {
+      // Battleaxe: a long haft and a double-bitted head with a collar.
+      const axe = new THREE.Group();
+      const haft = M.std('#6b4226', { rough: 0.65 });
+      axe.add(mesh(cyl(0.02, 0.024, 0.95, 10), haft, [0, 0.3, 0]));
+      const bit = new THREE.Shape();
+      bit.moveTo(0, 0.07);
+      bit.quadraticCurveTo(0.12, 0.1, 0.2, 0.17);
+      bit.quadraticCurveTo(0.25, 0, 0.2, -0.17);
+      bit.quadraticCurveTo(0.12, -0.1, 0, -0.07);
+      bit.closePath();
+      const bitGeo = new THREE.ExtrudeGeometry(bit, { depth: 0.014, bevelEnabled: true, bevelThickness: 0.006, bevelSize: 0.008, bevelSegments: 2 });
+      bitGeo.translate(0, 0, -0.007);
+      for (const side of [1, -1]) axe.add(mesh(bitGeo, M.metal(wc), [0, 0.66, 0], [0, side === 1 ? 0 : Math.PI, 0]));
+      axe.add(mesh(cyl(0.034, 0.034, 0.16, 10), M.metal(shade(wc, -0.2)), [0, 0.66, 0]));
+      axe.add(mesh(cone(0.024, 0.08, 8), M.metal(wc), [0, 0.8, 0]));
+      axe.add(mesh(cyl(0.026, 0.026, 0.14, 10), leather, [0, -0.05, 0]));
+      axe.add(mesh(sphere(0.03, 12, 10), gold, [0, -0.15, 0]));
+      axe.rotation.set(0.35, 0, -0.35);
+      holder.add(axe);
+    } else if (type === 'spear') {
+      // Spear: a tall shaft, a leaf-shaped head and a binding.
+      const spear = new THREE.Group();
+      spear.add(mesh(cyl(0.017, 0.02, 1.25, 10), M.std('#8a5d36', { rough: 0.65 }), [0, 0.3, 0]));
+      const leaf = new THREE.Shape();
+      leaf.moveTo(0, 0);
+      leaf.quadraticCurveTo(0.055, 0.08, 0, 0.24);
+      leaf.quadraticCurveTo(-0.055, 0.08, 0, 0);
+      const leafGeo = new THREE.ExtrudeGeometry(leaf, { depth: 0.01, bevelEnabled: true, bevelThickness: 0.006, bevelSize: 0.006, bevelSegments: 2 });
+      leafGeo.translate(0, 0, -0.005);
+      spear.add(mesh(leafGeo, M.metal(wc), [0, 0.93, 0]));
+      spear.add(mesh(cyl(0.024, 0.02, 0.07, 10), gold, [0, 0.91, 0]));
+      spear.add(mesh(cyl(0.022, 0.022, 0.12, 10), leather, [0, 0, 0]));
+      spear.rotation.set(0.12, 0, -0.08);
+      spear.position.set(0, -0.15, 0);
+      holder.add(spear);
+    } else if (type === 'scythe') {
+      // Scythe: a long dark snath with a grip and a sweeping curved blade at the top.
+      const scythe = new THREE.Group();
+      scythe.add(mesh(cyl(0.02, 0.024, 1.6, 10), M.std('#3b2a20', { rough: 0.7 }), [0, 0.4, 0]));
+      scythe.add(mesh(cyl(0.012, 0.012, 0.12, 8), M.std('#3b2a20', { rough: 0.7 }), [0, 0.3, 0.06], [Math.PI / 2, 0, 0]));
+      const blade = new THREE.Shape();
+      blade.moveTo(0, 0.03);
+      blade.quadraticCurveTo(0.3, 0.1, 0.48, -0.14);
+      blade.quadraticCurveTo(0.26, -0.02, 0, -0.05);
+      blade.closePath();
+      const bladeGeo = new THREE.ExtrudeGeometry(blade, { depth: 0.008, bevelEnabled: true, bevelThickness: 0.004, bevelSize: 0.005, bevelSegments: 1 });
+      bladeGeo.translate(0, 0, -0.004);
+      scythe.add(mesh(bladeGeo, M.metal(wc), [0, 1.18, 0], [0, Math.PI + 1.0, 0]));
+      scythe.add(mesh(cyl(0.03, 0.03, 0.06, 10), M.metal(shade(wc, -0.3)), [0, 1.18, 0]));
+      const glow = mesh(sphere(0.035, 12, 10), M.std('#7dffb0', { emissive: '#7dffb0', ei: 1.4 }), [0, 1.23, 0]);
+      scythe.add(glow);
+      anim.push((t) => glow.scale.setScalar(0.85 + 0.2 * Math.sin(t * 3)));
+      scythe.rotation.set(0.1, 0, -0.06);
+      scythe.position.set(0, -0.15, 0);
+      holder.add(scythe);
+    } else if (type === 'dagger') {
+      // Dagger: a short double-edged blade held point-forward.
+      const shape = new THREE.Shape();
+      shape.moveTo(-0.022, 0);
+      shape.lineTo(0.022, 0);
+      shape.lineTo(0.016, 0.2);
+      shape.lineTo(0, 0.26);
+      shape.lineTo(-0.016, 0.2);
+      shape.closePath();
+      const blade = new THREE.ExtrudeGeometry(shape, { depth: 0.006, bevelEnabled: true, bevelThickness: 0.004, bevelSize: 0.004, bevelSegments: 2 });
+      blade.translate(0, 0, -0.003);
+      const dagger = new THREE.Group();
+      dagger.add(mesh(blade, M.metal(wc), [0, 0.05, 0]));
+      dagger.add(mesh(new RoundedBoxGeometry(0.1, 0.022, 0.03, 2, 0.008), gold, [0, 0.045, 0]));
+      dagger.add(mesh(cyl(0.015, 0.017, 0.09, 10), leather, [0, -0.01, 0]));
+      dagger.add(mesh(sphere(0.02, 10, 8), gold, [0, -0.06, 0]));
+      dagger.rotation.set(0.35, 0, -0.35);
+      dagger.scale.setScalar(1.25);
+      holder.add(dagger);
+    } else if (type === 'knuckles') {
+      // Knuckles: a studded metal band across each fist.
+      for (const side of [1, -1]) {
+        const band = new THREE.Group();
+        band.add(mesh(new RoundedBoxGeometry(0.1, 0.035, 0.05, 2, 0.012), M.metal(wc), [0, 0, 0]));
+        for (const x of [-0.033, -0.011, 0.011, 0.033]) band.add(mesh(cone(0.012, 0.03, 6), M.metal(shade(wc, 0.2)), [x, 0, 0.035], [Math.PI / 2, 0, 0]));
+        if (side === 1) {
+          band.position.set(0, -0.01, 0.04);
+          holder.add(band);
+        } else {
+          const left = arms[-1].hand;
+          band.position.set(left.position.x, left.position.y - 0.01, left.position.z + 0.04);
+          left.parent.add(band);
+        }
+      }
     } else {
       // Sword: an extruded blade with a fuller line, crossguard, grip and pommel.
       const shape = new THREE.Shape();
@@ -725,6 +815,11 @@ const SKILL_ACTIONS = {
   swords: { tool: 'weapon', prop: 'emoji', emoji: '👹', motion: 'swing', bits: '#ff5c7a' },
   archery: { tool: 'weapon', prop: 'emoji', emoji: '👹', motion: 'shoot', bits: '#ff5c7a' },
   magic: { tool: 'weapon', prop: 'emoji', emoji: '👹', motion: 'spell', bits: '#b58cf0' },
+  axes: { tool: 'weapon', prop: 'emoji', emoji: '👹', motion: 'swing', bits: '#ff5c7a' },
+  daggers: { tool: 'weapon', prop: 'emoji', emoji: '👹', motion: 'stab', bits: '#ff5c7a' },
+  spears: { tool: 'weapon', prop: 'emoji', emoji: '👹', motion: 'stab', bits: '#ff5c7a' },
+  brawling: { tool: 'weapon', prop: 'emoji', emoji: '👹', motion: 'attack', bits: '#ffcf4a' },
+  necromancy: { tool: 'weapon', prop: 'emoji', emoji: '👹', motion: 'swing', bits: '#7dffb0' },
 };
 const KIND_MOTION = { levelup: 'cheer', charlevel: 'cheer', achievement: 'cheer', jackpot: 'cheer', pet: 'cheer', task: 'cheer', death: 'fall', duel: 'attack', raid: 'attack', follow: 'wave', sub: 'wave', gift: 'wave', kicks: 'cheer' };
 

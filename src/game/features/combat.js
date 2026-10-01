@@ -3,6 +3,7 @@
 const {
   ITEMS,
   SPELLS,
+  MINIONS,
   MUSEUM,
   SKILLS,
   SKILL_IDS,
@@ -75,8 +76,10 @@ module.exports = {
     const worn = this.repo.getWorn(userId);
     const inv = this.repo.getInventory(userId);
     const owned = [...new Set([worn.weapon, ...Object.keys(inv)])].filter(
-      (id) => ITEMS[id]?.weaponType && (!only || WEAPON_SKILL[ITEMS[id].weaponType] === only)
+      (id) => ITEMS[id]?.weaponType && !ITEMS[id].virtual && (!only || WEAPON_SKILL[ITEMS[id].weaponType] === only)
     );
+    // !punch works bare-handed (knuckles, if you have them, hit harder).
+    if (only && SKILLS[only].bareHanded) owned.push('fists');
     if (!owned.length) return { weapon: null, reason: 'none' };
     const bySkill = {};
     for (const id of owned) {
@@ -108,7 +111,9 @@ module.exports = {
         continue;
       }
       const spell = skillId === 'magic' ? [...SPELLS].reverse().find((sp) => sp.level <= level) : null;
-      return { weapon: usable[0], skillId, level, arrow, spell, wasWorn: usable[0] === worn.weapon };
+      const minion = skillId === 'necromancy' ? [...MINIONS].reverse().find((mn) => mn.level <= level) : null;
+      // Bare fists are never "equipped": whatever you wear stays put.
+      return { weapon: usable[0], skillId, level, arrow, spell, minion, wasWorn: usable[0] === worn.weapon || ITEMS[usable[0]].virtual === true };
     }
     if (noAmmo) return noAmmo;
     const easiest = owned.sort((a, b) => ITEMS[a].level - ITEMS[b].level)[0];
@@ -118,14 +123,19 @@ module.exports = {
   // Attack and defence for a fight with this weapon pick (bow attack includes the arrows).
   fightStats(userId, pick) {
     const st = this.combatStats(userId);
-    // Arrows, spells, and leather armor's archery bonus add to the weapon's attack.
+    // Arrows, spells, raised minions, and leather armor's archery bonus add to the weapon's attack.
     const attack =
-      ITEMS[pick.weapon].attack * this.enchantMult(userId, pick.weapon) * (st.set ? st.set.attack : 1) + (pick.arrow ? ITEMS[pick.arrow].attack : 0) + (pick.spell ? pick.spell.attack : 0) + (pick.skillId === 'archery' ? st.archeryBonus : 0) + (pick.skillId === 'magic' ? st.magicBonus : 0);
+      ITEMS[pick.weapon].attack * this.enchantMult(userId, pick.weapon) * (st.set ? st.set.attack : 1) + (pick.arrow ? ITEMS[pick.arrow].attack : 0) + (pick.spell ? pick.spell.attack : 0) + (pick.minion ? pick.minion.attack : 0) + (pick.skillId === 'archery' ? st.archeryBonus : 0) + (pick.skillId === 'magic' ? st.magicBonus : 0);
     const perk = this.perks(userId);
+    const style = SKILLS[pick.skillId]?.style || null;
+    // Two-handed weapons (battleaxes, scythes): your shield doesn't count.
+    let defence = st.defence;
+    if (style?.twoHanded && ITEMS[st.worn.shield]) defence = Math.max(0, defence - Math.round((ITEMS[st.worn.shield].defence || 0) * this.enchantMult(userId, st.worn.shield) * (st.set ? st.set.defence : 1)));
     return {
       // Banshee Fury +25% and Venom Coating +20% attack, Stoneskin +25% defence. Race perks scale both.
       attack: Math.round(attack * (this.hasBuff(userId, 'fury') ? 1.25 : 1) * (this.hasBuff(userId, 'venom') ? 1.2 : 1) * perk.attack),
-      defence: Math.round(st.defence * (this.hasBuff(userId, 'stoneskin') ? 1.25 : 1) * perk.defence),
+      defence: Math.round(defence * (this.hasBuff(userId, 'stoneskin') ? 1.25 : 1) * perk.defence),
+      style,
     };
   },
 
@@ -150,6 +160,10 @@ module.exports = {
   noArrowsMessage(user, pick = null) {
     const p = this.cfg.prefix;
     if (pick?.reason === 'mana') return `🔮 you're out of mana for spells! It refills over time, or ${p}drink a mana potion.`;
+    if (pick?.skillId === 'necromancy') {
+      const shard = this.shopItems().find((x) => x.item === 'bone_shard');
+      return `💀 you have no Bone Shards to raise the dead with! ${p}buy bone shards 50${shard ? ` (${fmt(shard.cost)} pts each)` : ''} or ${p}craft bone shards (1 Raw Chicken + 1 Ashes makes 10).`;
+    }
     if (pick?.skillId === 'magic') {
       const rune = this.shopItems().find((x) => x.item === 'magic_rune');
       return `🔮 you have no Magic Runes! ${p}buy runes 50${rune ? ` (${fmt(rune.cost)} pts each)` : ''} or ${p}craft runes (1 Ashes + 1 Tin Ore makes 10).`;
@@ -164,6 +178,18 @@ module.exports = {
     const staff = this.shopItems().find((x) => x.item === 'oak_staff');
     const buy = staff ? `🛒 !buy staff (${fmt(staff.cost)} pts, you have ${fmt(points)}) or ` : '';
     return `🔮 you need a staff! ${buy}!fletch oak staff (2 Oak Logs). Plus Magic Runes: !buy runes 50.`;
+  },
+
+  // What the bot says when someone tries a newer fighting style without its weapon.
+  howToGetStyleWeapon(user, skillId) {
+    const skill = SKILLS[skillId];
+    const points = this.repo.getUser(user.id).points;
+    const starter = this.shopItems().find((x) => ITEMS[x.item]?.weaponType === skill.weaponType);
+    const smith = SKILLS.smithing.recipes.find((r) => ITEMS[r.item].weaponType === skill.weaponType);
+    const buy = starter ? `🛒 !buy ${ITEMS[starter.item].name.toLowerCase().split(' ').pop()} (${fmt(starter.cost)} pts, you have ${fmt(points)}) or ` : '';
+    const inputs = Object.entries(smith.inputs).map(([i, q]) => `${q} ${ITEMS[i].name}`).join(' + ');
+    const extra = skillId === 'necromancy' ? ' Plus Bone Shards: !buy bone shards 50.' : '';
+    return `${skill.icon} you need a ${ITEMS[smith.item].name.split(' ').pop().toLowerCase()} for ${skill.name}! ${buy}⚒️ !smith ${ITEMS[smith.item].name.toLowerCase()} (${inputs}, needs a Smithing Hammer).${extra}`;
   },
 
   // What the bot says when someone tries to !shoot without a bow.
@@ -183,6 +209,7 @@ module.exports = {
       if (pick.reason === 'ammo' || pick.reason === 'mana') return { consumed: false, reply: this.noArrowsMessage(user, pick) };
       if (only === 'archery' && pick.reason === 'none') return { consumed: false, reply: this.howToGetBow(user) };
       if (only === 'magic' && pick.reason === 'none') return { consumed: false, reply: this.howToGetStaff(user) };
+      if (only && !['swords', 'archery', 'magic'].includes(only) && pick.reason === 'none') return { consumed: false, reply: this.howToGetStyleWeapon(user, only) };
       if (pick.reason === 'level') {
         const it = ITEMS[pick.item];
         const sk = SKILLS[WEAPON_SKILL[it.weaponType]];
@@ -313,7 +340,7 @@ module.exports = {
     }
     return {
       consumed: true,
-      reply: `${pick.spell ? `${pick.spell.icon} your ${pick.spell.name}` : weapon.icon} ${pick.spell ? 'defeated' : 'you defeated'} a ${tag}${swapped} and looted ${rare ? 'a RARE ' : ''}${itemLabel(loot)}! ${gained.text} | ${hpText()}${f.taken >= 0.5 ? ` (-${fmt(Math.round(f.taken))})` : ''}${drained}${low}${easy}${ammoNote}${this.fullBagNote(user.id)}`,
+      reply: `${pick.spell ? `${pick.spell.icon} your ${pick.spell.name}` : pick.minion ? `${pick.minion.icon} you and your ${pick.minion.name}` : weapon.icon} ${pick.spell || pick.minion ? 'defeated' : `you ${skill.verb === 'defeated' || skill.verb === 'shot' || skill.verb === 'blasted' ? 'defeated' : skill.verb}`} a ${tag}${swapped}${this.styleNote(f)} and looted ${rare ? 'a RARE ' : ''}${itemLabel(loot)}! ${gained.text} | ${hpText()}${f.taken >= 0.5 ? ` (-${fmt(Math.round(f.taken))})` : ''}${drained}${low}${easy}${ammoNote}${this.fullBagNote(user.id)}`,
     };
   },
 
@@ -321,7 +348,12 @@ module.exports = {
   // the monster hits for 50-100% of its attack, more if your armor is weaker than its level calls
   // for (up to 1.4x; less if stronger) and more the further it outlevels you. At your level with
   // matching gear a win costs ~10% HP. After 100 rounds you back off.
+  //
+  // Fighting styles change that (stats.style, from the skill): see the comment above SKILLS.axes.
   simulateFight(level, stats, monster, hp) {
+    const s = stats.style || {};
+    const lo = s.lo ?? 0.5;
+    const hi = s.hi ?? 1;
     const offence = level + stats.attack;
     const armor = clamp((monster.damage + 1) / (stats.defence + 1), 0.35, 1.4);
     // Monsters above your level hit harder the further above they are (see outlevelFactor).
@@ -329,28 +361,74 @@ module.exports = {
     let monsterHp = monster.hp;
     let dealt = 0;
     let taken = 0;
+    const moves = { crit: 0, cleave: 0, stun: 0, dodge: 0, reach: 0 };
+    const result = (outcome) => ({ outcome, dealt, taken: outcome === 'died' ? hp : taken, moves });
     for (let round = 0; round < 100; round++) {
-      const hit = Math.max(1, Math.round(offence * (0.5 + 0.5 * this.rng())));
+      let hit = Math.max(1, Math.round(offence * (lo + (hi - lo) * this.rng())));
+      if (s.crit && this.rng() < s.crit) {
+        hit = Math.round(hit * (s.critMul ?? 2));
+        moves.crit++;
+      }
+      if (s.cleave && this.rng() < s.cleave) {
+        hit += Math.round(hit * 0.6);
+        moves.cleave++;
+      }
+      if (s.minionHit) hit += Math.max(1, Math.round(offence * s.minionHit));
       dealt += Math.min(hit, monsterHp);
       monsterHp -= hit;
-      if (monsterHp <= 0) return { outcome: 'won', dealt, taken };
-      taken += monster.attack * armor * outlevel * (0.5 + 0.5 * this.rng());
-      if (taken >= hp) return { outcome: 'died', dealt, taken: hp };
+      if (monsterHp <= 0) return result('won');
+      if (round < (s.reach || 0)) {
+        moves.reach++;
+        continue;
+      }
+      if (s.stun && this.rng() < s.stun) {
+        moves.stun++;
+        continue;
+      }
+      if (s.dodge && this.rng() < s.dodge) {
+        moves.dodge++;
+        continue;
+      }
+      taken += monster.attack * armor * outlevel * (0.5 + 0.5 * this.rng()) * (1 - (s.soak || 0));
+      if (taken >= hp) return result('died');
     }
-    return { outcome: 'fled', dealt, taken };
+    return result('fled');
+  },
+
+  // How much harder (or softer) a style hits on average than a plain swing, and what share of the
+  // monster's blows still land.
+  styleFactors(style) {
+    const s = style || {};
+    const hitMul = (((s.lo ?? 0.5) + (s.hi ?? 1)) / 2) * (1 + (s.crit || 0) * ((s.critMul ?? 2) - 1)) * (1 + (s.cleave || 0) * 0.6) + (s.minionHit || 0);
+    const landed = (1 - (s.stun || 0)) * (1 - (s.dodge || 0)) * (1 - (s.soak || 0));
+    return { hitMul, landed, reach: s.reach || 0 };
+  },
+
+  // "(3 crits)", "(stunned it twice)": what the style did in a fight, for the reply.
+  styleNote(f) {
+    const m = f.moves || {};
+    const n = (x, one, many) => (x === 1 ? one : `${many.replace('#', x)}`);
+    const parts = [
+      m.crit && n(m.crit, 'a critical hit', '# critical hits'),
+      m.cleave && n(m.cleave, 'a double swing', '# double swings'),
+      m.stun && n(m.stun, 'a stun', '# stuns'),
+      m.dodge && n(m.dodge, 'a dodge', '# dodges'),
+    ].filter(Boolean);
+    return parts.length ? ` (${parts.join(', ')})` : '';
   },
 
   // What a fight would look like on average, from the same numbers simulateFight uses:
   // rounds to win, expected damage taken, and a difficulty rating.
   assessFight(level, stats, monster, maxHp) {
+    const sf = this.styleFactors(stats.style);
     const offence = level + stats.attack;
     const armor = clamp((monster.damage + 1) / (stats.defence + 1), 0.35, 1.4);
     const outlevel = outlevelFactor(monster.level, level);
-    const hit = Math.max(1, offence * 0.75);
+    const hit = Math.max(1, offence * sf.hitMul);
     const rounds = Math.ceil(monster.hp / hit);
     const canWin = rounds <= 100;
-    const perRound = monster.attack * armor * outlevel * 0.75;
-    const taken = perRound * (Math.min(rounds, 100) - 1);
+    const perRound = monster.attack * armor * outlevel * 0.75 * sf.landed;
+    const taken = perRound * Math.max(0, Math.min(rounds, 100) - 1 - sf.reach);
     const cost = taken / maxHp;
     const rating = !canWin || cost >= 0.9 ? RATINGS.deadly : cost >= 0.45 ? RATINGS.hard : cost >= 0.15 ? RATINGS.tough : monster.level >= level * 0.5 || cost >= 0.02 ? RATINGS.fair : RATINGS.easy;
     return { hit, rounds, canWin, taken, cost, rating };
@@ -398,7 +476,7 @@ module.exports = {
     const pick = this.chooseWeapon(user.id, only);
     if (!pick.weapon) {
       if (['ammo', 'mana'].includes(pick.reason)) return this.noArrowsMessage(user, pick);
-      return only === 'archery' ? this.howToGetBow(user) : only === 'magic' ? this.howToGetStaff(user) : this.howToGetSword(user);
+      return only === 'archery' ? this.howToGetBow(user) : only === 'magic' ? this.howToGetStaff(user) : only && only !== 'swords' ? this.howToGetStyleWeapon(user, only) : this.howToGetSword(user);
     }
     const skill = SKILLS[pick.skillId];
     const stats = this.fightStats(user.id, pick);
@@ -445,7 +523,7 @@ module.exports = {
     const buy = sword ? `🛒 !buy sword (${fmt(sword.cost)} pts, you have ${fmt(points)})` : '';
     const hammer = inv.smithing_hammer ? 'hammer ✅' : '!buy hammer';
     const craft = `⚒️ ${hammer} → !smelt bronze (${have}/${need}) → !smith bronze sword`;
-    return `⚔️ you need a sword! ${buy}${buy ? ' or ' : ''}${craft}. Then !equip bronze sword.`;
+    return `⚔️ you need a sword! ${buy}${buy ? ' or ' : ''}${craft}. Then !equip bronze sword. (Or fight bare-handed: !punch)`;
   },
 
   // !equip <item>: wear gear from the backpack (whatever was in that slot goes back in the backpack).

@@ -37,6 +37,8 @@ const TOWN_BUILDINGS = [
   { id: 'tannery', name: 'Tannery', icon: '🧵', skills: ['skinning', 'crafting', 'agility'], text: 'Skinning, Crafting and Agility' },
   { id: 'barracks', name: 'Barracks', icon: '🛡️', skills: ['swords', 'archery', 'magic'], text: 'Swords, Archery and Magic' },
   { id: 'guildhall', name: "Builders' Hall", icon: '🏗️', skills: ['construction'], text: 'Construction' },
+  { id: 'warcamp', name: 'War Camp', icon: '⛺', skills: ['axes', 'spears', 'brawling'], text: 'Axes, Spears and Brawling' },
+  { id: 'crypt', name: 'Shadow Crypt', icon: '⚰️', skills: ['daggers', 'necromancy'], text: 'Daggers and Necromancy' },
 ];
 // Parts value needed for each level (1..5).
 const TOWN_GOALS = [3000, 12000, 40000, 120000, 350000];

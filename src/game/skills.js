@@ -682,6 +682,77 @@ const SKILLS = {
     manaCost: 1,
     monsters: [], // shared with swords, below
   },
+  // Five more fighting styles, same monsters as Swords. Each has a `style`: how its fights play out
+  // (see simulateFight in features/combat.js): lo/hi = hit range (x your offence; swords 0.5-1),
+  // crit/critMul = critical hits, cleave = chance of a second, 60% hit, twoHanded = your shield
+  // doesn't count, reach = rounds the monster can't reach you, dodge/stun = chance a monster's hit
+  // misses / it loses its turn, soak = share of every hit your minions take, minionHit = extra
+  // damage they deal (x your offence).
+  axes: {
+    name: 'Axes',
+    icon: '🪓',
+    command: 'cleave',
+    verb: 'cleaved',
+    type: 'combat',
+    maxLevel: 500,
+    // !cleave fights with your best battleaxe: heavy two-handed swings that sometimes hit twice.
+    weaponType: 'battleaxe',
+    style: { lo: 0.55, hi: 1.15, cleave: 0.15, twoHanded: true },
+    monsters: [], // shared with swords, below
+  },
+  daggers: {
+    name: 'Daggers',
+    icon: '🔪',
+    command: 'stab',
+    verb: 'stabbed',
+    type: 'combat',
+    maxLevel: 500,
+    // !stab fights with your best dagger: quick, light hits that often find a weak spot. Daggers
+    // levels also make you a better thief (pickpocketing, burglary, heists).
+    weaponType: 'dagger',
+    style: { crit: 0.25, critMul: 2, dodge: 0.06 },
+    monsters: [], // shared with swords, below
+  },
+  spears: {
+    name: 'Spears',
+    icon: '🔱',
+    command: 'thrust',
+    verb: 'skewered',
+    type: 'combat',
+    maxLevel: 500,
+    // !thrust fights with your best spear: its reach keeps monsters off you for the first rounds.
+    // Spears are smithed from a bar and planks (Carpentry).
+    weaponType: 'spear',
+    style: { reach: 1, dodge: 0.05 },
+    monsters: [], // shared with swords, below
+  },
+  brawling: {
+    name: 'Brawling',
+    icon: '👊',
+    command: 'punch',
+    verb: 'punched out',
+    type: 'combat',
+    maxLevel: 500,
+    // !punch works bare-handed from day one; smithed knuckles hit harder. Haymakers can stun.
+    weaponType: 'knuckles',
+    bareHanded: true,
+    style: { stun: 0.2 },
+    monsters: [], // shared with swords, below
+  },
+  necromancy: {
+    name: 'Necromancy',
+    icon: '💀',
+    command: 'raise',
+    verb: 'reaped',
+    type: 'combat',
+    maxLevel: 500,
+    // !raise fights with a scythe and the undead you raise from Bone Shards (one per fight; they
+    // don't take backpack slots). Your minions take part of every hit and add their own.
+    weaponType: 'scythe',
+    ammo: true,
+    style: { soak: 0.25, minionHit: 0.1, twoHanded: true },
+    monsters: [], // shared with swords, below
+  },
 };
 
 // Smithing XP: what smelting the alloys gave, plus 20%.
@@ -750,8 +821,7 @@ SKILLS.swords.monsters = MONSTER_LIST.map(([id, name, icon, level, xp, loot, rar
   };
 });
 
-SKILLS.archery.monsters = SKILLS.swords.monsters;
-SKILLS.magic.monsters = SKILLS.swords.monsters;
+for (const id of ['archery', 'magic', 'axes', 'daggers', 'spears', 'brawling', 'necromancy']) SKILLS[id].monsters = SKILLS.swords.monsters;
 
 // ---- Fletching: bows, arrows and the quiver ------------------------------------------------
 // Bows follow the same attack ladder as swords (level = Archery level to wield). Arrows add damage
@@ -869,6 +939,72 @@ SKILLS.construction.recipes.sort((a, b) => a.level - b.level);
 // A Saw: bought, or smithed from bronze.
 SKILLS.smithing.recipes.push({ item: 'saw', level: 5, kind: 'tool', xp: 30, inputs: { bronze_bar: 2 } });
 SKILLS.smithing.recipes.sort((a, b) => a.level - b.level);
+
+// ---- Weapons for the newer fighting styles -----------------------------------------------------
+// One of each per alloy, like swords: same level to wield (in that style's skill), attack scaled
+// from the sword's (each style makes up the difference its own way, see the skill's `style`).
+// Spears take planks of the wood that pairs with the metal (the Construction tiers) for the shaft.
+const STYLE_WEAPONS = [
+  // piece, name, icon, weaponType, bars, planks, attack x sword
+  ['battleaxe', 'Battleaxe', '🪓', 'battleaxe', 3, 0, 1.2],
+  ['dagger', 'Dagger', '🔪', 'dagger', 1, 0, 0.75],
+  ['spear', 'Spear', '🔱', 'spear', 1, 2, 0.85],
+  ['knuckles', 'Knuckles', '🥊', 'knuckles', 1, 0, 0.7],
+  ['scythe', 'Scythe', '⚰️', 'scythe', 2, 0, 0.85],
+];
+for (const [metal, metalName, alloy, smithLevel, wearLevel, swordAttack] of METALS) {
+  const planks = plankId(BUILD_TIERS.find((t) => t[2] === metal)[1]);
+  for (const [piece, pieceName, icon, weaponType, bars, p, mult] of STYLE_WEAPONS) {
+    const id = `${metal}_${piece}`;
+    if (ITEMS[id]) throw new Error(`weapon ${id} already exists`);
+    const inputs = { [alloy]: bars, ...(p ? { [planks]: p } : {}) };
+    ITEMS[id] = {
+      name: `${metalName} ${pieceName}`,
+      icon,
+      value: Math.round((ITEMS[alloy].value * bars + (p ? ITEMS[planks].value * p : 0)) * 1.3),
+      keep: true,
+      gear: true,
+      slot: 'weapon',
+      level: wearLevel,
+      weaponType,
+      attack: Math.max(1, Math.round(swordAttack * mult)),
+    };
+    SKILLS.smithing.recipes.push({ item: id, level: smithLevel, kind: 'weapon', xp: Math.round(barXp(alloy) * bars * 1.2 + (p ? carpXp(planks) * p : 0)), inputs });
+  }
+}
+SKILLS.smithing.recipes.sort((a, b) => a.level - b.level);
+// Bare hands for !punch (never in a backpack: the fight code uses it when you have no knuckles).
+ITEMS.fists = { name: 'Bare Fists', icon: '👊', value: 0, slot: 'weapon', level: 1, weaponType: 'knuckles', attack: 2, virtual: true };
+
+// ---- Necromancy: bone shards and the undead you raise ---------------------------------------
+// One Bone Shard per !raise (they don't take backpack slots). Bought, or crafted from bones.
+ITEMS.bone_shard = { name: 'Bone Shards', icon: '🦴', value: 3, keep: true, ammo: 'scythe', level: 1, attack: 0 };
+for (const [input, qty, level, yieldQty] of [
+  ['raw_chicken', 1, 1, 10],
+  ['old_bone', 1, 1, 15],
+  ['bone_dust', 1, 30, 30],
+  ['cursed_skull', 1, 40, 45],
+  ['dragon_bone', 1, 150, 150],
+]) {
+  if (!ITEMS[input]) throw new Error(`bone shard input ${input} missing`);
+  SKILLS.crafting.recipes.push({ item: 'bone_shard', level, kind: 'ammo', group: 'bones', yield: yieldQty, xp: Math.max(8, Math.round(ITEMS[input].value * 0.4)), inputs: input === 'raw_chicken' ? { raw_chicken: 1, ashes: 1 } : { [input]: qty } });
+}
+SKILLS.crafting.recipes.sort((a, b) => a.level - b.level);
+// The undead you raise, by Necromancy level; the best one fights with you. attack adds to your
+// scythe's, like a spell.
+const MINIONS = [
+  // name, icon, Necromancy level, bonus attack
+  ['Skeleton', '💀', 1, 1],
+  ['Zombie', '🧟', 20, 3],
+  ['Ghoul', '👹', 40, 6],
+  ['Wraith', '👻', 60, 10],
+  ['Bone Golem', '🦴', 80, 15],
+  ['Death Knight', '⚔️', 100, 20],
+  ['Banshee', '😱', 150, 28],
+  ['Lich', '🧙', 250, 40],
+  ['Bone Dragon', '🐉', 350, 55],
+  ['Avatar of Death', '☠️', 450, 75],
+].map(([name, icon, level, attack]) => ({ name, icon, level, attack }));
 
 // ---- Magic --------------------------------------------------------------------------------
 // Spells you know by Magic level; the best one is used. attack is added to your staff's.
@@ -1310,6 +1446,13 @@ const SHOP = [
   // Always add new shop items at the end (see above).
   { item: 'flint_and_steel', cost: 50, description: 'Lights fires with !lightfire (burns one log from your backpack for Firemaking XP and Ashes). Good for 250 fires, then it wears out.' },
   { item: 'saw', cost: 500, description: 'Lets you !saw logs into planks for Carpentry (nails need a Smithing Hammer). Keep it in your backpack. Or smith one at Smithing 5 from 2 Bronze Alloy.' },
+  // Starter weapons for the newer fighting styles, and Bone Shards for Necromancy.
+  { item: 'bronze_battleaxe', category: 'weapons', cost: 1000, description: 'A ready-made battleaxe for Axes: !cleave monsters. Two-handed (your shield doesn\'t count) but it hits hard and sometimes twice. Or !smith bronze battleaxe from 3 Bronze Alloy.' },
+  { item: 'bronze_dagger', category: 'weapons', cost: 750, description: 'A ready-made dagger for Daggers: !stab monsters. Light, quick, lots of critical hits, and Daggers levels make you a better thief. Or !smith bronze dagger from 1 Bronze Alloy.' },
+  { item: 'bronze_spear', category: 'weapons', cost: 1000, description: 'A ready-made spear for Spears: !thrust at monsters, which can\'t reach you for the first rounds. Or !smith bronze spear from 1 Bronze Alloy + 2 Wooden Planks.' },
+  { item: 'bronze_knuckles', category: 'weapons', cost: 600, description: 'Brass knuckles for Brawling: !punch hits harder with them (you can also !punch bare-handed). Or !smith bronze knuckles from 1 Bronze Alloy.' },
+  { item: 'bronze_scythe', category: 'weapons', cost: 1000, description: 'A ready-made scythe for Necromancy: !raise the dead to fight with you (uses Bone Shards). Or !smith bronze scythe from 2 Bronze Alloy.' },
+  { item: 'bone_shard', cost: 8, category: 'arrows', description: 'One per !raise. Bone Shards don\'t take backpack slots. Or !craft bone shards: 1 Raw Chicken + 1 Ashes makes 10; Bone Dust, Cursed Skulls and Dragon Bones make more.' },
 ];
 
 // Backpack: how many items (total, across all stacks) a player can carry. Upgrade with
@@ -1380,6 +1523,14 @@ COMMAND_TO_SKILL.agility ??= 'agility'; // !agility works like !run
 for (const w of ['carpentry', 'carpenter', 'planks', 'plank']) COMMAND_TO_SKILL[w] ??= 'carpentry';
 for (const w of ['nails', 'nail']) COMMAND_TO_SKILL[w] ??= 'crafting';
 for (const w of ['construct', 'construction']) COMMAND_TO_SKILL[w] ??= 'construction';
+// Other words for the newer fighting styles.
+for (const [skill, words] of [
+  ['axes', ['hack', 'axefight']],
+  ['daggers', ['backstab', 'shank']],
+  ['spears', ['lunge', 'impale']],
+  ['brawling', ['brawl', 'uppercut']],
+  ['necromancy', ['necro', 'summon']],
+]) for (const w of words) COMMAND_TO_SKILL[w] ??= skill;
 // "!planks" means "!saw planks" and "!nails iron" means "!craft iron nails".
 const COMMAND_ARGS = { planks: 'planks', plank: 'planks', nails: 'nails', nail: 'nails' };
 const COMBAT_SKILLS = SKILL_IDS.filter((id) => SKILLS[id].type === 'combat');
@@ -1425,6 +1576,7 @@ module.exports = {
   maxManaFor,
   BUFFS,
   SPELLS,
+  MINIONS,
   MUSEUM,
   findItem,
   PLANT_LINES,

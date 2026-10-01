@@ -33,6 +33,11 @@ module.exports = {
     return skillLevel('agility', this.repo.getSkills(userId).agility || 0);
   },
 
+  // Daggers make a better thief: +0.1% stealth per Daggers level past 1, up to +20%.
+  daggerStealth(userId) {
+    return Math.min(0.2, (skillLevel('daggers', this.repo.getSkills(userId).daggers || 0) - 1) * 0.001);
+  },
+
   // ---- Heists --------------------------------------------------------------------------------
   heistCfg() {
     const c = this.cfg;
@@ -76,11 +81,11 @@ module.exports = {
   },
 
   // Stealth: the chance to rob someone without being noticed. Your Agility against theirs decides it
-  // (+0.4% per level you're ahead); each guard they've hired cuts it by 12%. Always 5% to 90%.
+  // (+0.4% per level you're ahead), plus your Daggers skill; each guard they've hired cuts it by 12%. Always 5% to 90%.
   heistChance(robberId, victimId) {
     const hc = this.heistCfg();
     const diff = this.agilityLevel(robberId) - this.agilityLevel(victimId);
-    const chance = hc.stealthBase + diff * hc.stealthPerLevel - this.guardLevel(victimId) * 0.12;
+    const chance = hc.stealthBase + diff * hc.stealthPerLevel + this.daggerStealth(robberId) - this.guardLevel(victimId) * 0.12;
     return Math.min(0.9, Math.max(0.05, chance));
   },
 
