@@ -27,6 +27,31 @@
       return t;
     };
 
+    // The 3D casino (casino3d.js): every game gets a three.js scene. Without WebGL the 2D tables stay.
+    let C3 = null;
+    try {
+      const m = await import('/casino3d.js');
+      if (m.supported()) C3 = m;
+    } catch {}
+    let view = null;
+    let viewKind = null;
+    const disposeView = () => {
+      view?.dispose();
+      view = null;
+      viewKind = null;
+    };
+    // Puts a 3D scene on the stage (with optional HUD html on top) and returns its controller.
+    const mount3d = (kind, opts = {}, hud = '') => {
+      disposeView();
+      const st = $('#cz-stage');
+      st.classList.add('is-3d');
+      st.innerHTML = `<div class="cz3d" id="cz3d"></div>${hud}`;
+      view = C3.mount($('#cz3d'), kind, opts);
+      viewKind = kind;
+      return view;
+    };
+    const has3d = (kind) => view && viewKind === kind && $('#cz3d');
+
     // A crash round or mines board left running (e.g. after a refresh) opens its tab.
     if (info.crash.state?.status === 'running') tab = 'crash';
     else if (info.mines.state?.status === 'playing') tab = 'mines';
@@ -130,7 +155,8 @@
     const sym = Object.fromEntries(info.slots.map((s) => [s.id, s]));
     const tile = (id) => `<div class="sym sym-${id}"><span>${sym[id].icon}</span><small>${esc(sym[id].label)}</small></div>`;
     function renderSlots() {
-      $('#cz-stage').innerHTML = `
+      if (C3) mount3d('slots', { symbols: info.slots });
+      else $('#cz-stage').innerHTML = `
         <div class="slot-machine">
           <div class="slot-title">KICK <span>SLOTS</span></div>
           <div class="reels">${['live', 'kick', 'gift'].map((id, i) => `<div class="reel" id="reel${i}">${tile(id)}</div>`).join('')}</div>
@@ -149,6 +175,14 @@
         if (!r) return (busy = false);
         const ids = info.slots.map((s) => s.id);
         result('Spinning…');
+        if (has3d('slots')) {
+          await view.spin(r.reels, { win: r.net > 0 });
+          setBalance(r.balance);
+          outcome(r);
+          if (r.line) $('#cz-result').insertAdjacentHTML('afterbegin', `<div>${esc(r.line)}</div>`);
+          busy = false;
+          return;
+        }
         r.reels.forEach((final, i) => {
           const reel = $(`#reel${i}`);
           reel.classList.add('spinning');
@@ -193,7 +227,9 @@
     }
     let wheelAngle = 0;
     function renderRoulette() {
-      $('#cz-stage').innerHTML = `
+      if (C3) mount3d('roulette', { wheel: info.wheel }, '<div class="rl-last cz3d-hud-bottom" id="cz-last"></div>');
+      else
+        $('#cz-stage').innerHTML = `
         <div class="wheel-wrap"><div class="wheel-pointer">▼</div>${wheelSvg()}</div>
         <div class="rl-last" id="cz-last"></div>`;
       const choices = [
@@ -223,6 +259,15 @@
         busy = true;
         const r = await post('/casino/roulette', { bet: betInput.value, choice });
         if (!r) return (busy = false);
+        if (has3d('roulette')) {
+          result('Spinning…');
+          await view.spin(r.number);
+          $('#cz-last').innerHTML = `<span class="rl-ball rl-${r.color}">${r.number}</span> ${esc(r.betLabel)}`;
+          setBalance(r.balance);
+          outcome(r);
+          busy = false;
+          return;
+        }
         const idx = info.wheel.findIndex((w) => w.n === r.number);
         // Spin several turns and stop with the winning slice under the pointer at the top.
         const target = 360 * 5 - (idx / info.wheel.length) * 360;
@@ -262,7 +307,8 @@
             <text x="${x.toFixed(1)}" y="${by + 15}" font-size="${m >= 1000 ? 6.5 : m >= 100 ? 8 : 9}" font-weight="800" text-anchor="middle" fill="#0b0e11">${m}x</text></g>`;
         })
         .join('');
-      $('#cz-stage').innerHTML = `<svg viewBox="0 0 ${W} ${by + 30}" class="plinko" id="cz-plinko" role="img" aria-label="Plinko board">${pegs.join('')}${buckets}<g id="cz-balls"></g></svg>`;
+      if (C3) mount3d('plinko', { rows, mults: mult });
+      else $('#cz-stage').innerHTML = `<svg viewBox="0 0 ${W} ${by + 30}" class="plinko" id="cz-plinko" role="img" aria-label="Plinko board">${pegs.join('')}${buckets}<g id="cz-balls"></g></svg>`;
       const maxBalls = info.plinko.maxBalls || 1;
       $('#cz-controls').innerHTML = `
         <div class="rl-choices">${['low', 'medium', 'high', 'extreme']
@@ -340,6 +386,7 @@
         };
         shown.forEach((d, n) => {
           later(() => {
+            if (has3d('plinko')) return void view.drop(d.path, d.bucket, { gold: d.multiplier >= 10 });
             const ball = document.createElementNS(ns, 'circle');
             ball.setAttribute('r', '6');
             ball.setAttribute('fill', d.multiplier >= 10 ? '#ffc940' : '#53fc18');
@@ -385,9 +432,27 @@
       c
         ? `<div class="card ${SUIT_RED.has(c.suit) ? 'red' : ''}"><span>${esc(c.rank)}</span><b>${c.suit}</b></div>`
         : `<div class="card back"><span>KICK</span></div>`;
+    // The 3D table: totals and hand results float over the scene.
+    function bjLabels(g) {
+      if (!g || !g.dealer) return '';
+      const hands = g.hands && g.hands.length > 1 ? g.hands : null;
+      return `<div class="bj3d-dealer">Dealer <b>${g.dealerTotal ?? ''}</b></div>
+        <div class="bj3d-you">${
+          hands
+            ? hands.map((h, i) => `<span class="${i === g.active && g.status === 'playing' ? 'active' : ''}">Hand ${i + 1} <b>${h.total}</b>${HAND_RESULT[h.status] ? ` · ${HAND_RESULT[h.status]}` : ''}</span>`).join('')
+            : `<span>You <b>${g.playerTotal ?? ''}</b>${g.stake ? ` · stake ${fmt(g.stake)}` : ''}</span>`
+        }</div>`;
+    }
     function drawTable(g) {
       const playing = g && g.status === 'playing';
-      $('#cz-stage').innerHTML = `
+      if (C3) {
+        if (!has3d('blackjack')) mount3d('blackjack', {}, '<div class="bj3d-labels" id="bj3d-labels"></div>');
+        $('#bj3d-labels').innerHTML = '';
+        view.show(g).then(() => {
+          const el = $('#bj3d-labels');
+          if (el) el.innerHTML = bjLabels(g);
+        });
+      } else $('#cz-stage').innerHTML = `
         <div class="felt">
           <div class="bj-row"><div class="bj-label">Dealer ${g && g.status !== 'none' ? `<b>${g.dealerTotal}</b>` : ''}</div>
             <div class="cards">${g && g.dealer ? g.dealer.map(card).join('') : ''}</div></div>
@@ -459,7 +524,10 @@
     const growth = info.crash.growth;
     const multAt = (ms) => Math.max(1, Math.floor(Math.exp(growth * Math.max(0, ms)) * 100) / 100);
     function renderCrash() {
-      $('#cz-stage').innerHTML = `
+      if (C3)
+        mount3d('crash', {}, `<div class="crash-mult" id="cz-mult">1.00x</div><div class="crash-sub" id="cz-crash-sub">Cash out before it crashes!</div><div class="crash-history" id="cz-crash-hist"></div>`);
+      else
+        $('#cz-stage').innerHTML = `
         <div class="crash">
           <svg viewBox="0 0 400 240" class="crash-graph" preserveAspectRatio="none" aria-hidden="true">
             <path id="cz-crash-path" d="M0,240" fill="none" stroke="#53fc18" stroke-width="4" stroke-linecap="round"/>
@@ -497,6 +565,7 @@
     }
     function resumeCrash(state) {
       crashRound = { startLocal: performance.now() - state.elapsed, target: state.target, stake: state.stake };
+      if (has3d('crash')) view.reset();
       busy = true;
       const go = $('#cz-go');
       go.textContent = '💰 Cash out';
@@ -509,11 +578,14 @@
         const mult = $('#cz-mult');
         if (!mult) return;
         mult.textContent = `${m.toFixed(2)}x`;
-        const p = crashPath(ms);
-        $('#cz-crash-path').setAttribute('d', p.d);
-        const r = $('#cz-rocket');
-        r.style.left = `${(p.last[0] / 400) * 100}%`;
-        r.style.top = `${(p.last[1] / 240) * 100}%`;
+        if (has3d('crash')) view.update(ms, m);
+        else {
+          const p = crashPath(ms);
+          $('#cz-crash-path').setAttribute('d', p.d);
+          const r = $('#cz-rocket');
+          r.style.left = `${(p.last[0] / 400) * 100}%`;
+          r.style.top = `${(p.last[1] / 240) * 100}%`;
+        }
         go.textContent = `💰 Cash out ${fmt(Math.floor(Number(betInputValue()) * m) || 0)}`;
         requestAnimationFrame(frame);
       };
@@ -563,12 +635,14 @@
         mult.textContent = `${r.multiplier.toFixed(2)}x`;
         mult.className = 'crash-mult win';
         $('#cz-crash-sub').textContent = `Cashed out! It crashed at ${r.crash}x`;
+        if (has3d('crash')) view.cashout();
         result(`🚀 Cashed out at ${r.multiplier}x: WON <b>${fmt(r.payout)}</b> pts`, 'win');
       } else {
         mult.textContent = `${r.crash.toFixed(2)}x`;
         mult.className = 'crash-mult boom';
         $('#cz-crash-sub').textContent = '💥 CRASHED';
-        $('#cz-rocket').textContent = '💥';
+        if (has3d('crash')) view.boom();
+        else $('#cz-rocket').textContent = '💥';
         result(`💥 Crashed at ${r.crash}x. Lost ${fmt(r.stake)} pts`, 'lose');
       }
       later(() => {
@@ -594,7 +668,10 @@
         }
         return `<button class="${cls}" data-tile="${i}" ${playing && !g.revealed.includes(i) ? '' : 'disabled'} aria-label="Tile ${i + 1}">${face}</button>`;
       }).join('');
-      $('#cz-stage').innerHTML = `<div class="mines-board">${tiles}</div>`;
+      if (C3) {
+        if (!has3d('mines')) mount3d('mines', { tiles: info.mines.tiles });
+        view.show(g, { onPick: (i) => pickTile(i) });
+      } else $('#cz-stage').innerHTML = `<div class="mines-board">${tiles}</div>`;
       $('#cz-controls').innerHTML = playing
         ? `<div class="mines-info"><div><span class="muted">Now</span><b>${g.multiplier}x</b></div><div><span class="muted">Next gem</span><b>${g.next ?? '—'}x</b></div></div>
            <button class="btn btn-primary big-btn" id="cz-cashout" ${g.revealed.length ? '' : 'disabled'}>💰 Cash out ${g.revealed.length ? fmt(Math.floor(g.stake * g.multiplier + 1e-6)) : ''}</button>`
@@ -625,18 +702,19 @@
           renderMines(r);
         };
       }
+      async function pickTile(i, b = null) {
+        if (busy) return;
+        busy = true;
+        b?.classList.add('flip');
+        const r = await post('/casino/mines/reveal', { tile: i });
+        busy = false;
+        if (!r) return;
+        setBalance(r.balance);
+        info.mines.state = r.status === 'playing' ? r : null;
+        renderMines(r);
+      }
       $app.querySelectorAll('[data-tile]').forEach((b) => {
-        b.onclick = async () => {
-          if (busy) return;
-          busy = true;
-          b.classList.add('flip');
-          const r = await post('/casino/mines/reveal', { tile: Number(b.dataset.tile) });
-          busy = false;
-          if (!r) return;
-          setBalance(r.balance);
-          info.mines.state = r.status === 'playing' ? r : null;
-          renderMines(r);
-        };
+        b.onclick = () => pickTile(Number(b.dataset.tile), b);
       });
       const co = $('#cz-cashout');
       if (co) {
@@ -654,6 +732,8 @@
     }
 
     function render() {
+      disposeView();
+      $('#cz-stage').classList.remove('is-3d');
       result('');
       ({ slots: renderSlots, roulette: renderRoulette, plinko: renderPlinko, blackjack: renderBlackjack, crash: renderCrash, mines: () => renderMines() })[tab]();
     }
@@ -661,6 +741,7 @@
     return () => {
       alive = false;
       timers.forEach(clearTimeout);
+      disposeView();
     };
   };
 })();
