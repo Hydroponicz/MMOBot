@@ -50,7 +50,7 @@ test('ensureChatSubscription resolves the channel and subscribes with an app tok
   // Channel events (follows, subs, gifts, live status), then chat.
   assert.deepEqual(
     posts[0].body.events.map((e) => e.name),
-    ['channel.followed', 'channel.subscription.new', 'channel.subscription.renewal', 'channel.subscription.gifts', 'livestream.status.updated']
+    ['channel.followed', 'channel.subscription.new', 'channel.subscription.renewal', 'channel.subscription.gifts', 'livestream.status.updated', 'kicks.gifted']
   );
   assert.deepEqual(posts[1].body, { broadcaster_user_id: 777, events: [{ name: 'chat.message.sent', version: 1 }], method: 'webhook' });
 

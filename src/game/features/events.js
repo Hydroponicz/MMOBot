@@ -116,6 +116,9 @@ module.exports = {
       return `🎁 ${name} gifted ${count} sub${count > 1 ? 's' : ''}!${gifter && c.giftPointsPerSub ? ` +${fmt(c.giftPointsPerSub * count)} pts to them` : ''}${giftees.length && c.subPoints ? `, +${fmt(c.subPoints)} each to the lucky ones` : ''}.${seeds ? ` ☕ +${seeds} Coffee Seed${seeds === 1 ? '' : 's'} for the gifter!` : ''}${boost}`;
     }
 
+    // KICKs (Kick's tipping currency): see kicks.js.
+    if (type === 'kicks.gifted') return this.kicksGifted(payload, who);
+
     if (type === 'livestream.status.updated') {
       const live = Boolean(payload.is_live);
       const was = this.repo.getSetting('stream');

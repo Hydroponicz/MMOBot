@@ -14,9 +14,9 @@ twIDAQAB
 -----END PUBLIC KEY-----`;
 
 const CHAT_EVENT = 'chat.message.sent';
-// Channel events the game reacts to (follows, subs, gifted subs, going live). Optional: if Kick
+// Channel events the game reacts to (follows, subs, gifted subs, going live, KICKs). Optional: if Kick
 // refuses them, chat still works.
-const CHANNEL_EVENTS = ['channel.followed', 'channel.subscription.new', 'channel.subscription.renewal', 'channel.subscription.gifts', 'livestream.status.updated'];
+const CHANNEL_EVENTS = ['channel.followed', 'channel.subscription.new', 'channel.subscription.renewal', 'channel.subscription.gifts', 'livestream.status.updated', 'kicks.gifted'];
 
 class KickApi {
   constructor({ config, repo, logger = console }) {

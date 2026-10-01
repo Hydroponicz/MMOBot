@@ -117,6 +117,36 @@
         </section>`;
     }
 
+    // KICKs supporters: what a gift does, and the leaderboards.
+    let kicksPeriod = 'week';
+    function kicksHtml() {
+      const k = data.kicks;
+      if (!k || !k.on) return '';
+      const c = k.cfg;
+      const tiers = [
+        [1, `+${fmt(c.pointsPer)} pts per KICK for you`],
+        c.rainAt && [c.rainAt, `💰 loot rain: ${fmt(c.rainPer)} pts per KICK shared between up to 10 chatters`],
+        c.boostAt && [c.boostAt, `⚡ double XP for everyone for ${c.boostMinutes} min`],
+        c.bossAt && [c.bossAt, '🌍 wakes the world boss'],
+      ].filter(Boolean);
+      const list = k[kicksPeriod];
+      return `
+        <section class="panel kicks-panel">
+          <div class="panel-head"><h2>💎 KICKs supporters</h2><span class="muted">Send KICKs on Kick to set these off</span></div>
+          <div class="grid grid-2">
+            <div>
+              <h3 style="margin-top:0">What a gift does</h3>
+              <ul class="kick-tiers">${tiers.map(([at, text]) => `<li><b>${at === 1 ? 'Any' : `${fmt(at)}+`}</b><span>${text}</span></li>`).join('')}</ul>
+              <p class="muted" style="font-size:.85rem">Bigger gifts set off everything below them too. Lifetime titles: <b>the Kick Supporter</b> (100), <b>the Kick Patron</b> (1,000), <b>the Kick Legend</b> (10,000). In chat: <code>!kicks</code>.</p>
+            </div>
+            <div>
+              <div class="tabs" style="margin-bottom:8px">${[['week', 'This week'], ['month', 'This month'], ['all', 'All time']].map(([id, l]) => `<button class="tab ${id === kicksPeriod ? 'active' : ''}" data-kperiod="${id}">${l}</button>`).join('')}</div>
+              ${list.length ? `<ol class="donors">${list.map((x) => `<li><a href="${playerLink(x.username)}">${esc(x.username)}</a> <b>💎 ${fmt(x.amount)}</b></li>`).join('')}</ol>` : '<p class="muted">No KICKs yet. Be the first!</p>'}
+            </div>
+          </div>
+        </section>`;
+    }
+
     function draw() {
       $app.innerHTML = `
         <div class="panel-head cards-head" style="margin-bottom:4px">
@@ -125,8 +155,15 @@
         </div>
         <p class="muted">Spend your points on things the whole stream sees, or pool them with chat to unlock something big together.</p>
         ${projectHtml()}
+        ${kicksHtml()}
         ${redeemHtml()}
         ${hallHtml()}`;
+      $app.querySelectorAll('[data-kperiod]').forEach((b) => {
+        b.onclick = () => {
+          kicksPeriod = b.dataset.kperiod;
+          draw();
+        };
+      });
       const form = $app.querySelector('#fund-form');
       if (form) {
         const give = async (amount) => {

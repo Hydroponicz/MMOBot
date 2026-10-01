@@ -726,7 +726,7 @@ const SKILL_ACTIONS = {
   archery: { tool: 'weapon', prop: 'emoji', emoji: '👹', motion: 'shoot', bits: '#ff5c7a' },
   magic: { tool: 'weapon', prop: 'emoji', emoji: '👹', motion: 'spell', bits: '#b58cf0' },
 };
-const KIND_MOTION = { levelup: 'cheer', charlevel: 'cheer', achievement: 'cheer', jackpot: 'cheer', pet: 'cheer', task: 'cheer', death: 'fall', duel: 'attack', raid: 'attack', follow: 'wave', sub: 'wave', gift: 'wave' };
+const KIND_MOTION = { levelup: 'cheer', charlevel: 'cheer', achievement: 'cheer', jackpot: 'cheer', pet: 'cheer', task: 'cheer', death: 'fall', duel: 'attack', raid: 'attack', follow: 'wave', sub: 'wave', gift: 'wave', kicks: 'cheer' };
 
 // A tool held in the right hand: the handle runs on from the arm (local -y), the head at the end.
 function buildTool(kind, M) {

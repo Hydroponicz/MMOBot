@@ -333,6 +333,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       projects: engine.projectGoals().map(({ id, name, icon, goal, text }) => ({ id, name, icon, goal, text })),
       monuments: engine.monuments(),
       history: engine.projectHistory(),
+      kicks: engine.kicksPublic(),
       points: me ? me.points : null,
       now: Date.now(),
     });

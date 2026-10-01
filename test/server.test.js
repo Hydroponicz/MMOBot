@@ -376,7 +376,9 @@ test('webhook: follows and subscriber badges reach the game', async (t) => {
     sender: { user_id: 51, username: 'SubGuy', identity: { badges: [{ text: 'Subscriber', type: 'subscriber', count: 3 }] } },
     content: 'hello there',
   });
+  await deliver('kicks.gifted', 'k1', { broadcaster: { user_id: 99 }, sender: { user_id: 52, username: 'Kicker' }, gift: { amount: 25, name: 'Hype', type: 'BASIC', tier: 'LOW' } });
   await new Promise((r) => setTimeout(r, 50));
+  assert.equal(s.repo.getUserByKickId('52').points, 50, 'KICKs pay the sender 2 pts each');
   assert.equal(s.repo.getUserByKickId('50').points, 100);
   assert.equal(s.repo.getUserByKickId('51').subscriber, 1);
   assert.equal(s.repo.getUserByKickId('51').points, 10, 'subscribers earn 2x chat points');

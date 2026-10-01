@@ -1375,3 +1375,8 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 
 /* The spinning 2D wheel: its rotated corners must not cover the tabs. */
 .wheel { pointer-events: none; clip-path: circle(50%); }
+
+/* ---- KICKs supporters (stream.js) ---- */
+.kick-tiers { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.kick-tiers li { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--border); }
+.kick-tiers b { min-width: 56px; color: #53fc18; }

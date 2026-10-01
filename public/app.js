@@ -39,7 +39,7 @@
   };
   const skillIcon = (id) => state.site?.skills.find((s) => s.id === id)?.icon || '✨';
   const feedIcon = (a) =>
-    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒', jackpot: '🎰', death: '💀', achievement: '🏆', task: '📋', trade: '🤝', follow: '💚', sub: '⭐', gift: '🎁', raid: '⚔️', duel: '⚔️', event: '📣', pull: '🃏', unbox: '🧰', redeem: '📣', fund: '🏛️' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
+    ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒', jackpot: '🎰', death: '💀', achievement: '🏆', task: '📋', trade: '🤝', follow: '💚', sub: '⭐', gift: '🎁', kicks: '💎', raid: '⚔️', duel: '⚔️', event: '📣', pull: '🃏', unbox: '🧰', redeem: '📣', fund: '🏛️' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
 
   // ---- live activity (SSE) ----------------------------------------------
   const listeners = new Set();
@@ -1979,10 +1979,11 @@
         body: list([`A 👺 treasure goblin (${c('catch')}) or 📦 supply drop (${c('grab')}) sometimes pops up in chat. Be quick!`]),
       },
       {
-        id: 'boosts', tab: 'events', icon: '🚀', title: 'Follows, subs & XP boosts', summary: 'Supporting the channel pays off for everyone',
+        id: 'boosts', tab: 'events', icon: '🚀', title: 'Follows, subs, KICKs & XP boosts', summary: 'Supporting the channel pays off for everyone',
         body: list([
           'Following or subscribing earns points.',
           `Gifted subs start ⚡ double XP for everyone. ${c('boost')} shows if one is running.`,
+          `💎 <b>KICKs</b> (Kick's tipping currency): every KICK pays the sender points, 100+ KICKs make it rain points on recent chatters, 500+ start double XP for everyone, and 2,500+ wake the world boss. ${c('kicks')} shows the top supporters (also on the <a href="#/stream">Stream</a> page); lifetime totals earn titles at 100, 1,000 and 10,000.`,
           g.xpMultiplier !== 1 ? `<b>🔥 A ${g.xpMultiplier}× XP event is on right now!</b>` : 'The streamer can also run XP events.',
         ]),
       },

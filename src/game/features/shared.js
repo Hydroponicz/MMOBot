@@ -85,6 +85,7 @@ const INFO_COMMANDS = {
   wanted: ['wantedCommand', 'wanted'], jailbreak: ['jailbreak', 'jailbreak'], breakout: ['jailbreak', 'jailbreak'],
   bail: ['bail', 'jailbreak'], jail: ['jailCommand', 'jailbreak'],
   tipoff: ['tipoff', 'tipoff'], snitch: ['tipoff', 'tipoff'], racket: ['racketCommand', 'racket'], protection: ['racketCommand', 'racket'],
+  kicks: ['kicksCommand', 'kicks'], supporters: ['kicksCommand', 'kicks'],
   rob: ['rob', 'rob'], heist: ['rob', 'rob'], guards: ['guards', 'rob'], guard: ['guards', 'rob'], hire: ['guards', 'rob'],
   arena: ['arenaFight', 'arena'], ranked: ['arenaFight', 'arena'],
   // The Gloamveil (extraction minigame).
