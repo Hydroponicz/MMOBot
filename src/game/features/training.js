@@ -30,9 +30,10 @@ module.exports = {
       const pick = this.chooseWeapon(userId, skillId);
       const vit = this.vitals(userId);
       const stats = pick.weapon ? this.fightStats(userId, pick) : null;
-      return upTo(skill.monsters).map((m) => {
+      // Any monster can be fought (like in chat); the rating says how it would go.
+      return skill.monsters.map((m) => {
         const r = stats ? this.assessFight(pick.level, stats, m, vit.maxHp).rating : null;
-        return { ...opt(m.name, `${m.icon} ${m.name}`, m.level), rating: r ? { id: r.id, icon: r.icon, label: r.label } : null };
+        return { ...opt(m.name, `${m.icon} ${m.name} · ${m.level}`, m.level), locked: false, ready: true, rating: r ? { id: r.id, icon: r.icon, label: r.label } : null };
       });
     }
     if (skill.type === 'farm') {
@@ -236,6 +237,8 @@ module.exports = {
       reply = t === 'harvest' ? this.harvest(user) : this.plant(user, args);
     } else if (skill.type === 'combat') {
       reply = this.runAction(user, skillId, args, { only: true });
+      // The "will probably knock you out" warning: on the website you confirm by clicking again.
+      if (reply) reply = reply.replace(/Type !\S+ .+? again within 2 min to fight anyway\./, 'Click Fight again within 2 min to fight anyway.');
     } else if (skill.type === 'process' && t) {
       // Nails are made with !craft, not !saw: use the command the recipe says.
       const recipe = skill.recipes.find((r) => ITEMS[r.item].name.toLowerCase() === t.toLowerCase());

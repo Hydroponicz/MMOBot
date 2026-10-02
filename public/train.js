@@ -172,7 +172,7 @@
     }
 
     // ---- skills
-    const optLabel = (t) => `${t.locked ? `🔒 ` : t.rating ? `${t.rating.icon} ` : t.ready === false ? '· ' : ''}${t.label}${t.locked ? ` (level ${t.level})` : ''}`;
+    const optLabel = (t) => `${t.locked ? `🔒 ` : t.rating ? `${t.rating.icon} ` : t.ready === false ? '· ' : ''}${t.label}${t.locked ? ` (level ${t.level})` : ''}${t.rating ? ` — ${t.rating.label}` : ''}`;
 
     function selectHtml(s) {
       if (!s.targets.length && s.type !== 'farm') return '';

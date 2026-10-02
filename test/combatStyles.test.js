@@ -281,3 +281,15 @@ test('Train page: "Best I can do" gathers your best resource; "mix" works like c
   }
   assert.match(engine.trainAction(u, 'mining', '*mix').message, /mined/);
 });
+
+test('Train page: every monster can be picked, with a rating; risky fights need a second click', () => {
+  const { repo, engine, u } = setup();
+  repo.addItem(u.id, 'bronze_sword', 1);
+  const swords = engine.trainingPage(u.id).groups.flatMap((g) => g.skills).find((s) => s.id === 'swords');
+  assert.equal(swords.targets.length, SKILLS.swords.monsters.length);
+  assert.ok(swords.targets.every((t) => !t.locked && t.rating));
+  assert.equal(swords.targets.at(-1).rating.id, 'deadly');
+  const warn = engine.trainAction(u, 'swords', 'Elder Dragon').message;
+  assert.match(warn, /will probably knock you out.*Click Fight again within 2 min/);
+  assert.match(engine.trainAction(u, 'swords', 'Elder Dragon').message, /knocked you out/);
+});
