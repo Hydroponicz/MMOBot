@@ -77,7 +77,7 @@ module.exports = {
     const result = this.repo.transaction(() => {
       const r =
         skill.type === 'combat'
-          ? this.fight(user, args, skill.command === 'fight' ? null : skillId) // !fight picks, !shoot means archery
+          ? this.fight(user, args, skill.command === 'fight' && !opts.only ? null : skillId) // !fight picks, !shoot means archery (the website names the skill)
           : skill.type === 'burn'
             ? this.burn(user, args)
           : skill.type === 'process'

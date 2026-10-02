@@ -1380,3 +1380,29 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 .kick-tiers { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .kick-tiers li { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--border); }
 .kick-tiers b { min-width: 56px; color: #53fc18; }
+
+/* ---- Train page ---- */
+.tr-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: center; }
+.tr-head > div:first-child { flex: 1 1 320px; }
+.tr-stats { display: flex; gap: 10px; flex-wrap: wrap; }
+.tr-stats > div { background: var(--panel-2); border-radius: 10px; padding: 8px 12px; min-width: 92px; }
+.tr-stats small { display: block; color: var(--muted); font-size: 0.75rem; }
+.tr-stats b { font-size: 1rem; }
+.tr-pips { display: inline-flex; gap: 3px; vertical-align: middle; }
+.tr-pips i { width: 9px; height: 14px; border-radius: 3px; background: var(--border); }
+.tr-pips i.on { background: var(--accent); }
+.tr-full { color: #f87171; }
+.tr-tabs { margin-top: 16px; }
+.tr-group { margin: 22px 0 10px; font-size: 1.1rem; }
+.tr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.tr-grid > .tr-card { margin: 0; padding: 14px; display: flex; flex-direction: column; }
+.tr-card.is-off { opacity: 0.55; }
+.tr-card header { display: flex; align-items: center; gap: 10px; }
+.tr-card header > div { flex: 1; min-width: 0; }
+.tr-icon { font-size: 1.7rem; }
+.tr-cmd { font-size: 0.75rem; color: var(--muted); }
+.tr-card .bar { margin: 10px 0 10px; height: 6px; }
+.tr-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: auto; }
+.tr-target { flex: 1 1 140px; min-width: 0; max-width: 100%; padding: 6px 8px; border-radius: 8px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); font: inherit; font-size: 0.85rem; }
+.tr-need { font-size: 0.82rem; color: #fbbf24; margin: 0 0 8px; }
+.tr-said { font-size: 0.82rem; margin: 10px 0 0; padding: 8px 10px; background: var(--panel-2); border-radius: 8px; line-height: 1.4; overflow-wrap: anywhere; }

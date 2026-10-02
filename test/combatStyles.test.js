@@ -166,3 +166,30 @@ test('the Tavern Brawler quest: punch chickens and goblins, smith knuckles', () 
   say('!smith bronze knuckles');
   assert.ok(announced.some((x) => /Tavern Brawler/.test(x) && /the Brawler/.test(x)), announced.join('\n'));
 });
+
+test('Train page: targets per skill type, and each button runs the chat command', () => {
+  const { repo, engine, u } = setup();
+  const page = engine.trainingPage(u.id);
+  const all = page.groups.flatMap((g) => g.skills);
+  assert.equal(all.length, 24);
+  const by = Object.fromEntries(all.map((s) => [s.id, s]));
+  assert.ok(by.mining.targets.some((t) => t.id === 'Copper Ore' && t.ready));
+  assert.ok(by.mining.targets.some((t) => t.locked), 'the next unlock is shown, locked');
+  assert.ok(by.swords.targets[0].rating === null, 'no sword, no rating');
+  assert.ok(by.brawling.targets[0].rating, 'fists always work');
+  assert.equal(by.skinning.needs.item, 'skinning_knife');
+  assert.equal(by.smithing.pickBest, false);
+  // Nails are made with !craft: the Carpentry button still makes them.
+  repo.addItem(u.id, 'smithing_hammer', 1);
+  repo.addItem(u.id, 'bronze_bar', 1);
+  assert.match(engine.trainAction(u, 'carpentry', 'Bronze Nails').message, /Bronze Nails/);
+  // Swords on the website means swords, even when another style is better.
+  repo.addItem(u.id, 'bronze_sword', 1);
+  repo.addXp(u.id, 'brawling', 50000);
+  assert.match(engine.trainAction(u, 'swords', 'Chicken').message, /🗡️ you defeated a 🐔 Chicken/);
+  assert.match(engine.trainAction(u, 'farming', 'harvest').message, /plot|harvest|grow/i);
+  // Out of stamina: the website always says so (chat only warns once).
+  for (let i = 0; i < 12; i++) engine.trainAction(u, 'agility', '');
+  assert.match(engine.trainAction(u, 'agility', '').message, /out of stamina/);
+  assert.equal(engine.trainAction(u, 'nope', '').error, 'no such skill');
+});

@@ -555,3 +555,27 @@ test('with PUBLIC_URL set, pages on other addresses redirect there (login needs 
   assert.equal((await get('/api/site', 'www.hydroponicz.wtf')).status, 200, 'the API is left alone');
   assert.equal((await get('/healthz', 'something.internal')).status, 200);
 });
+
+test('Train page API: every skill listed, a button trains it like the chat command, login and bans respected', async (t) => {
+  const { createSessions } = require('../src/web/session');
+  const config = makeConfig({ game: { ...makeConfig().game, staminaMax: 5 } });
+  const s = await start(config);
+  t.after(s.close);
+  assert.equal((await fetch(`${s.url}/api/train`)).status, 401);
+  const u = s.repo.upsertUser({ kickUserId: '7', username: 'Clicker' });
+  let cookie;
+  createSessions({ secret: config.sessionSecret, secure: false }).write({ cookie: (n, v) => (cookie = `${n}=${v}`) }, 'mmo_session', { uid: u.id }, 60_000);
+  const call = (path, body) => fetch(`${s.url}/api${path}`, { method: body ? 'POST' : 'GET', headers: { cookie, 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
+  const page = await (await call('/train')).json();
+  const ids = page.groups.flatMap((g) => g.skills.map((x) => x.id));
+  assert.equal(ids.length, 24, 'every skill has a card');
+  const r = await (await call('/train', { skill: 'mining', target: 'Copper Ore' })).json();
+  // (Mining can miss, like in chat; either way it's a mining reply.)
+  assert.match(r.message, /mined 🟠 Copper Ore|pickaxe|vein|dust/);
+  assert.equal(r.train.stamina.charges, 4, 'used one stamina, like chat');
+  const punch = await (await call('/train', { skill: 'brawling', target: 'Chicken' })).json();
+  assert.match(punch.message, /punched out a 🐔 Chicken/);
+  assert.equal((await call('/train', { skill: 'nope' })).status, 400);
+  s.repo.setUserField(u.id, 'banned', 1);
+  assert.equal((await call('/train', { skill: 'mining' })).status, 403);
+});

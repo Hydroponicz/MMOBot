@@ -367,7 +367,7 @@
         </div>
       </section>
 
-      <h2 style="margin:28px 0 12px">Skills</h2>
+      <h2 style="margin:28px 0 12px">Skills${isMe ? ' <a class="btn btn-sm btn-primary" href="#/train" style="margin-left:8px;vertical-align:middle">🏋️ Train on the website</a>' : ''}</h2>
       <div class="grid grid-skills">${p.skills.map(skillCard).join('')}</div>
 
       ${equipmentPanel(p.combat, isMe)}
@@ -1082,6 +1082,7 @@
   pages.stream = async () => window.MMOStream($app, { api, toast, esc, fmt, state, ago, playerLink });
   pages.pvp = async () => window.MMOPvp($app, { api, toast, esc, fmt, state, ago, playerLink });
   pages.fishing = async () => window.MMOFishing($app, { api, toast, esc, fmt, state, ago, playerLink });
+  pages.train = async () => window.MMOTrain($app, { api, toast, esc, fmt, state });
   pages.town = async (params) => window.MMOTown($app, { api, toast, esc, fmt, state, playerLink }, params);
   pages.veil = async () => window.MMOVeil($app, { api, toast, esc, fmt, state, ago, playerLink });
   pages.relics = async (_, query) => window.MMORelics($app, { api, toast, esc, fmt, state, route, ago, playerLink }, query);
@@ -1735,6 +1736,7 @@
           `Target something directly: ${c('mine iron')}, ${c('chop oak')}.`,
           `${c('stats')} shows your levels, ${c('inv')} your backpack, ${c('commands')} the command list.`,
           'Log in on this site with Kick to see your character, shop, and customize your look.',
+          'Rather click than type? The <a href="#/train">🏋️ Train page</a> has a button for every skill (log in with Kick): same XP, loot and stamina as the chat commands.',
         ]),
       },
       {

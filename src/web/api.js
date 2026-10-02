@@ -211,6 +211,18 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     res.json({ message: r.reply || 'Slow down a little!', catches: r.catches, stamina: engine.stamina(req.user.id), level: r.level, xp: r.xp });
   });
 
+  // ---- Train: a button for every skill (same rules as the chat commands) -------------------
+  router.get('/train', requireLogin, (req, res) => {
+    res.json({ ...engine.trainingPage(req.user.id), username: req.user.username });
+  });
+  router.post('/train', requireLogin, (req, res) => {
+    const skill = String(req.body?.skill || '');
+    const r = engine.trainAction(req.user, skill, String(req.body?.target || ''));
+    if (r.error) return res.status(400).json({ error: r.error });
+    logger.info(`[site] ${req.user.username}: train ${skill} ${req.body?.target || ''} → ${r.message}`);
+    res.json({ message: r.message, train: engine.trainingPage(req.user.id) });
+  });
+
   // ---- Structures: the town, player shops, house building ----------------------------------
   router.get('/town', (req, res) => {
     res.json({ ...engine.townPage(req.user?.id ?? null), username: req.user?.username ?? null, points: req.user ? repo.getUser(req.user.id).points : null });
