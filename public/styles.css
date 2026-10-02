@@ -1406,3 +1406,18 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 .tr-target { flex: 1 1 140px; min-width: 0; max-width: 100%; padding: 6px 8px; border-radius: 8px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); font: inherit; font-size: 0.85rem; }
 .tr-need { font-size: 0.82rem; color: #fbbf24; margin: 0 0 8px; }
 .tr-said { font-size: 0.82rem; margin: 10px 0 0; padding: 8px 10px; background: var(--panel-2); border-radius: 8px; line-height: 1.4; overflow-wrap: anywhere; }
+
+.tr-bag { margin-top: 16px; }
+.tr-bag > summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; cursor: pointer; list-style: none; }
+.tr-bag > summary::-webkit-details-marker { display: none; }
+.tr-bag > summary::before { content: '▸'; color: var(--muted); margin-right: -4px; }
+.tr-bag[open] > summary::before { content: '▾'; }
+.tr-bag > summary > span:first-of-type { flex: 1; }
+.tr-bag-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.bag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.bag-row { display: flex; align-items: flex-start; gap: 10px; background: var(--panel-2); border-radius: 10px; padding: 8px 10px; }
+.bag-row.is-kept { box-shadow: inset 3px 0 0 #fbbf24; }
+.bag-icon { font-size: 1.4rem; }
+.bag-name { flex: 1; min-width: 0; line-height: 1.25; }
+.bag-name b { overflow-wrap: anywhere; }
+.bag-btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }

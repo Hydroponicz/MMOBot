@@ -223,6 +223,13 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     res.json({ message: r.message, train: engine.trainingPage(req.user.id) });
   });
 
+  router.post('/train/sell', requireLogin, (req, res) => {
+    const r = engine.trainSell(req.user, { item: req.body?.item, qty: req.body?.qty, group: req.body?.group });
+    if (r.error) return res.status(400).json({ error: r.error });
+    logger.info(`[site] ${req.user.username}: sell ${JSON.stringify(req.body || {}).slice(0, 120)} → ${r.message}`);
+    res.json({ message: r.message, train: engine.trainingPage(req.user.id) });
+  });
+
   // ---- Structures: the town, player shops, house building ----------------------------------
   router.get('/town', (req, res) => {
     res.json({ ...engine.townPage(req.user?.id ?? null), username: req.user?.username ?? null, points: req.user ? repo.getUser(req.user.id).points : null });

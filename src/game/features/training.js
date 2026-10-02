@@ -97,7 +97,51 @@ module.exports = {
       fire: fire ? { msLeft: fire, meals: this.fireMealsLeft(userId) } : null,
       farm: { plots: this.plotCount(userId), ready: this.farmPlots(userId).filter((p) => p.ready).length, empty: this.farmPlots(userId).filter((p) => !p.crop).length },
       inVeil: this.inVeil(userId),
+      bag: this.trainBag(userId),
+      points: this.repo.getUser(userId).points,
     };
+  },
+
+  // The backpack, for selling from the Train page. kind: what !sell all does with it ('loot' is
+  // sold; gear, potions, food and crops are kept and sold by name or with their own button).
+  trainBag(userId) {
+    const inv = this.repo.getInventory(userId);
+    const kindOf = (it) => (it.potion ? 'potion' : it.ammo ? 'ammo' : it.seedFor ? 'seed' : it.keep ? 'gear' : it.food ? 'food' : it.plantLine ? 'crop' : 'loot');
+    const items = Object.entries(inv)
+      .filter(([id, q]) => ITEMS[id] && q > 0 && !ITEMS[id].cosmetic && !ITEMS[id].pet && !ITEMS[id].virtual)
+      .map(([id, qty]) => {
+        const it = ITEMS[id];
+        const sellable = !it.bound && it.value > 0;
+        return {
+          id,
+          name: it.name,
+          icon: it.icon,
+          qty,
+          kind: kindOf(it),
+          // Seeds, arrows, runes and bone shards don't take backpack slots.
+          bagless: !!(it.seedFor || it.ammo),
+          sellable,
+          each: sellable ? this.sellValue(id, userId) : 0,
+          total: sellable ? this.saleTotal(id, qty, userId) : 0,
+        };
+      })
+      .sort((a, b) => b.total - a.total);
+    const sum = (kind) => items.filter((x) => x.sellable && x.kind === kind).reduce((t, x) => t + x.total, 0);
+    return { items, worth: { loot: sum('loot'), food: sum('food'), crop: sum('crop') }, off: (this.cfg.disabledCommands || []).includes('sell') };
+  },
+
+  // A sell button: { group: 'all' | 'food' | 'crops' } or { item, qty: n | 'all' }. Same as !sell.
+  trainSell(user, { item = '', qty = 1, group = '' } = {}) {
+    if ((this.cfg.disabledCommands || []).includes('sell')) return { error: 'Selling is switched off right now.' };
+    if (group) {
+      const args = { all: ['all'], food: ['all', 'food'], crops: ['all', 'crops'] }[group];
+      if (!args) return { error: 'unknown group' };
+      return { message: this.sell(user, args) };
+    }
+    const id = String(item);
+    if (!ITEMS[id]) return { error: 'no such item' };
+    const n = qty === 'all' ? 'all' : String(Math.max(1, Math.floor(Number(qty)) || 1));
+    return { message: this.sell(user, [id, n]) };
   },
 
   // The Train button: the same as typing the skill's command with the target in chat.

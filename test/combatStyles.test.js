@@ -193,3 +193,29 @@ test('Train page: targets per skill type, and each button runs the chat command'
   assert.match(engine.trainAction(u, 'agility', '').message, /out of stamina/);
   assert.equal(engine.trainAction(u, 'nope', '').error, 'no such skill');
 });
+
+test('Train page backpack: lists items with prices; sell buttons work like !sell', () => {
+  const { repo, engine, u } = setup();
+  repo.addItem(u.id, 'copper_ore', 4);
+  repo.addItem(u.id, 'bronze_sword', 1);
+  repo.addItem(u.id, 'carrot', 3);
+  const bag = engine.trainingPage(u.id).bag;
+  const ore = bag.items.find((x) => x.id === 'copper_ore');
+  assert.equal(ore.kind, 'loot');
+  assert.ok(ore.each > 0 && ore.total >= ore.each);
+  assert.equal(bag.items.find((x) => x.id === 'bronze_sword').kind, 'gear');
+  assert.equal(bag.items.find((x) => x.id === 'carrot').kind, 'crop');
+  assert.ok(bag.worth.loot > 0);
+  const before = repo.getUser(u.id).points;
+  assert.match(engine.trainSell(u, { item: 'copper_ore', qty: 1 }).message, /sold 🟠 Copper Ore/);
+  assert.equal(repo.getInventory(u.id).copper_ore, 3);
+  // Sell all loot keeps gear and crops, like !sell all.
+  assert.match(engine.trainSell(u, { group: 'all' }).message, /kept your gear & tools and crops/);
+  assert.equal(repo.getInventory(u.id).copper_ore, undefined);
+  assert.equal(repo.getInventory(u.id).bronze_sword, 1);
+  assert.match(engine.trainSell(u, { group: 'crops' }).message, /Carrot/);
+  assert.ok(repo.getUser(u.id).points > before);
+  assert.equal(engine.trainSell(u, { group: 'nope' }).error, 'unknown group');
+  engine.cfg.disabledCommands = ['sell'];
+  assert.match(engine.trainSell(u, { group: 'all' }).error, /switched off/);
+});

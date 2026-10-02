@@ -5,6 +5,8 @@
   const picks = {}; // skill -> chosen target (kept while you move around the site)
   const said = {}; // skill -> last reply
   let group = 'all';
+  let bagOpen = true;
+  let bagSaid = '';
   let timer = null;
 
   window.MMOTrain = async ($app, { api, toast, esc, fmt, state }) => {
@@ -51,6 +53,36 @@
         <div class="tabs tr-tabs">${[['all', 'All skills'], ...d.groups.map((g) => [g.id, g.name])]
           .map(([id, name]) => `<button class="tab ${group === id ? 'active' : ''}" data-group="${id}">${esc(name)}</button>`)
           .join('')}</div>`;
+    }
+
+    const KIND = { loot: null, gear: '🛡️ gear/tool', potion: '🧪 potion', food: '🍗 food', crop: '🌾 crop', ammo: '🎯 ammo', seed: '🌱 seeds' };
+    function bagHtml() {
+      const b = d.bag;
+      const bag = d.backpack;
+      if (b.off) return '';
+      const groupBtn = (g, label, worth) => (worth > 0 ? `<button class="btn btn-sm ${g === 'all' ? 'btn-primary' : ''}" data-sellgroup="${g}">${label} <b>+${fmt(worth)}</b></button>` : '');
+      const rows = b.items
+        .map(
+          (x) => `<div class="bag-row ${x.kind !== 'loot' ? 'is-kept' : ''}">
+            <span class="bag-icon">${x.icon}</span>
+            <div class="bag-name"><b>${esc(x.name)}</b> <span class="muted">×${fmt(x.qty)}</span><br><small class="muted">${x.sellable ? `${fmt(x.each)} pts each` : "can't be sold"}${KIND[x.kind] ? ` · ${KIND[x.kind]}` : ''}${x.bagless ? ' · no slot' : ''}</small>
+            ${
+              x.sellable
+                ? `<div class="bag-btns">${x.qty > 1 ? `<button class="btn btn-sm" data-sell="${esc(x.id)}" data-qty="1">Sell 1</button>` : ''}<button class="btn btn-sm" data-sell="${esc(x.id)}" data-qty="all">Sell${x.qty > 1 ? ' all' : ''} <b>+${fmt(x.total)}</b></button></div>`
+                : ''
+            }</div>
+          </div>`
+        )
+        .join('');
+      return `<details class="panel tr-bag" ${bagOpen ? 'open' : ''}>
+        <summary>
+          <span><b>🎒 Backpack</b> <span class="${bag.used >= bag.capacity ? 'tr-full' : 'muted'}">${bag.used}/${bag.capacity} slots</span> · <span class="muted">💰 ${fmt(d.points)} pts</span></span>
+          <span class="tr-bag-btns">${groupBtn('all', '💰 Sell all loot', b.worth.loot)}${groupBtn('food', '🍗 Sell food', b.worth.food)}${groupBtn('crops', '🌾 Sell crops', b.worth.crop)}</span>
+        </summary>
+        <p class="muted" style="margin:8px 0">Same as <code>!sell</code> in chat. <b>Sell all loot</b> is <code>!sell all</code>: it keeps your gear, tools, potions, food and crops (sell those one at a time below, or with their own buttons). Prices dip a little as the channel sells more of something.</p>
+        ${bagSaid ? `<p class="tr-said" style="margin:0 0 10px">${esc(bagSaid)}</p>` : ''}
+        ${rows ? `<div class="bag-grid">${rows}</div>` : '<p class="muted">Your backpack is empty. Go gather something!</p>'}
+      </details>`;
     }
 
     const optLabel = (t) => `${t.locked ? `🔒 ` : t.rating ? `${t.rating.icon} ` : t.ready === false ? '· ' : ''}${t.label}${t.locked ? ` (level ${t.level})` : ''}`;
@@ -100,12 +132,36 @@
 
     function render() {
       const groups = group === 'all' ? d.groups : d.groups.filter((g) => g.id === group);
-      $app.innerHTML = `${headHtml()}${groups
+      $app.innerHTML = `${headHtml().replace('<div class="tabs tr-tabs">', `${bagHtml()}<div class="tabs tr-tabs">`)}${groups
         .map((g) => `${group === 'all' ? `<h2 class="tr-group">${esc(g.name)}</h2>` : ''}<div class="tr-grid">${g.skills.map(cardHtml).join('')}</div>`)
         .join('')}`;
+      const det = $app.querySelector('.tr-bag');
+      if (det) det.ontoggle = () => (bagOpen = det.open);
+      $app.querySelectorAll('[data-sellgroup]').forEach((b) => (b.onclick = (e) => (e.preventDefault(), sell({ group: b.dataset.sellgroup }))));
+      $app.querySelectorAll('[data-sell]').forEach((b) => (b.onclick = () => {
+        const x = d.bag.items.find((i) => i.id === b.dataset.sell);
+        if (x && ['gear', 'potion', 'ammo', 'seed'].includes(x.kind) && !confirm(`Sell ${b.dataset.qty === 'all' ? `all ${x.qty}` : '1'} ${x.name}? Sell all leaves these alone for a reason.`)) return;
+        sell({ item: b.dataset.sell, qty: b.dataset.qty });
+      }));
       $app.querySelectorAll('[data-group]').forEach((b) => (b.onclick = () => ((group = b.dataset.group), render())));
       $app.querySelectorAll('.tr-target').forEach((sel) => (sel.onchange = () => (picks[sel.dataset.skill] = sel.value)));
       $app.querySelectorAll('[data-train]').forEach((b) => (b.onclick = () => train(b.dataset.train, b.dataset.target ?? picks[b.dataset.train] ?? $app.querySelector(`.tr-target[data-skill="${b.dataset.train}"]`)?.value ?? '')));
+    }
+
+    let selling = false;
+    async function sell(body) {
+      if (selling) return;
+      selling = true;
+      $app.querySelectorAll('[data-sell],[data-sellgroup]').forEach((b) => (b.disabled = true));
+      try {
+        const r = await api('/train/sell', { method: 'POST', body });
+        bagSaid = r.message;
+        d = r.train;
+      } catch (e) {
+        bagSaid = e.message;
+      }
+      selling = false;
+      render();
     }
 
     async function train(skill, target) {

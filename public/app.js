@@ -379,7 +379,7 @@
 
       <div class="grid grid-2" style="margin-top:16px">
         <section class="panel">
-          <div class="panel-head"><h2>Backpack</h2><span class="badge gold">Worth ${fmt(p.inventoryValue)} pts</span></div>
+          <div class="panel-head"><h2>Backpack</h2><span><span class="badge gold">Worth ${fmt(p.inventoryValue)} pts</span>${isMe && p.inventory.length ? ' <a class="btn btn-sm btn-primary" href="#/train">💰 Sell items</a>' : ''}</span></div>
           ${backpackBar(p.backpack)}
           ${inv}
           ${p.inventory.length ? `<p class="muted" style="margin-bottom:0">${isMe ? 'Use the buttons, or in chat:' : 'Sell in chat with'} <code>!sell all</code> or <code>!sell trout 5</code>${isMe ? ', <code>!equip bronze sword</code>' : ''}.</p>` : ''}
