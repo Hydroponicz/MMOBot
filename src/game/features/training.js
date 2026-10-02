@@ -219,7 +219,17 @@ module.exports = {
     const skill = SKILLS[skillId];
     if (!skill) return { error: 'no such skill' };
     if ((this.cfg.disabledCommands || []).includes(skill.command)) return { error: `${skill.icon} ${skill.name} is switched off right now.` };
-    const t = String(target || '').slice(0, 80).trim();
+    let t = String(target || '').slice(0, 80).trim();
+    // Gathering: a bare chat command picks among your best three resources for variety; on the
+    // website "Best I can do" means the best one, and "*mix" asks for the chat behaviour.
+    if (skill.type === 'gather') {
+      if (t === '*mix') t = '';
+      else if (!t) {
+        const level = skillLevel(skillId, this.repo.getSkills(user.id)[skillId]);
+        const best = skill.resources.filter((r) => r.level <= level).sort((a, b) => b.level - a.level || b.xp - a.xp)[0];
+        if (best) t = ITEMS[best.item].name;
+      }
+    }
     const args = t ? t.split(/\s+/) : [];
     let reply;
     if (skill.type === 'farm') {

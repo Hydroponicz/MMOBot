@@ -270,3 +270,14 @@ test('Train page: upgrade the backpack and tools, heal / drink / eat, like the c
   assert.match(engine.trainRecoverAction(u, 'heal').error, /switched off/);
   assert.equal(engine.trainingPage(u.id).recover.heal, null);
 });
+
+test('Train page: "Best I can do" gathers your best resource; "mix" works like chat', () => {
+  const { repo, engine, u } = setup(() => 0.99);
+  repo.addXp(u.id, 'mining', 20000); // level 30+: copper, tin, iron, silver, coal unlocked
+  for (let i = 0; i < 3; i++) {
+    const r = engine.trainAction(u, 'mining', '').message;
+    assert.match(r, /Coal|Gold|Silver/, r);
+    assert.doesNotMatch(r, /Copper|Tin Ore/);
+  }
+  assert.match(engine.trainAction(u, 'mining', '*mix').message, /mined/);
+});

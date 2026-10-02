@@ -181,6 +181,7 @@
       const list = best ? s.targets : [...s.targets.filter((t) => t.ready).reverse(), ...s.targets.filter((t) => !t.ready)];
       const opts = [
         ...(best ? [`<option value="">${best}</option>`] : []),
+        ...(s.type === 'gather' ? [`<option value="*mix" ${picks[s.id] === '*mix' ? 'selected' : ''}>🎲 Mix of my best (like chat)</option>`] : []),
         ...list.map((t) => `<option value="${esc(t.id)}" ${t.locked ? 'disabled' : ''} ${picks[s.id] === t.id ? 'selected' : ''} title="${esc(t.needs || '')}">${esc(optLabel(t))}${t.needs ? ` — ${esc(t.needs)}` : ''}</option>`),
       ];
       if (!best && !s.targets.some((t) => t.ready) && !picks[s.id]) opts.unshift('<option value="">What can I make?</option>');
