@@ -219,3 +219,22 @@ test('Train page backpack: lists items with prices; sell buttons work like !sell
   engine.cfg.disabledCommands = ['sell'];
   assert.match(engine.trainSell(u, { group: 'all' }).error, /switched off/);
 });
+
+test('Train page: sell several picked items at once, partial amounts too', () => {
+  const { repo, engine, u } = setup();
+  repo.addItem(u.id, 'copper_ore', 5);
+  repo.addItem(u.id, 'oak_logs', 3);
+  repo.addItem(u.id, 'bronze_sword', 1);
+  const before = repo.getUser(u.id).points;
+  const r = engine.trainSell(u, { items: [{ item: 'copper_ore', qty: 2 }, { item: 'oak_logs', qty: 'all' }, { item: 'bronze_sword', qty: 'all' }, { item: 'dragon_egg', qty: 1 }] });
+  assert.match(r.message, /sold 6 items for \d+ pts/);
+  const inv = repo.getInventory(u.id);
+  assert.equal(inv.copper_ore, 3);
+  assert.equal(inv.oak_logs, undefined);
+  assert.equal(inv.bronze_sword, undefined);
+  assert.ok(repo.getUser(u.id).points > before);
+  // More than you have sells what you have; nothing valid is an error.
+  assert.match(engine.trainSell(u, { items: [{ item: 'copper_ore', qty: 99 }] }).message, /3x|Copper Ore/);
+  assert.equal(repo.getInventory(u.id).copper_ore, undefined);
+  assert.equal(engine.trainSell(u, { items: [{ item: 'copper_ore', qty: 1 }] }).error, 'nothing selected to sell.');
+});

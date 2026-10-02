@@ -131,8 +131,22 @@ module.exports = {
   },
 
   // A sell button: { group: 'all' | 'food' | 'crops' } or { item, qty: n | 'all' }. Same as !sell.
-  trainSell(user, { item = '', qty = 1, group = '' } = {}) {
+  // Or several at once: { items: [{ item, qty: n | 'all' }, ...] } (the website's "Sell selected").
+  trainSell(user, { item = '', qty = 1, group = '', items = null } = {}) {
     if ((this.cfg.disabledCommands || []).includes('sell')) return { error: 'Selling is switched off right now.' };
+    if (Array.isArray(items)) {
+      const inv = this.repo.getInventory(user.id);
+      const want = new Map();
+      for (const x of items.slice(0, 200)) {
+        const id = String(x?.item || '');
+        const it = ITEMS[id];
+        if (!it || !inv[id] || it.bound || it.pet || it.cosmetic || it.virtual || !(it.value > 0)) continue;
+        const n = x.qty === 'all' ? inv[id] : Math.max(1, Math.floor(Number(x.qty)) || 1);
+        want.set(id, Math.min(inv[id], (want.get(id) || 0) + n));
+      }
+      if (!want.size) return { error: 'nothing selected to sell.' };
+      return { message: this.sellEntries(user, [...want.entries()]) };
+    }
     if (group) {
       const args = { all: ['all'], food: ['all', 'food'], crops: ['all', 'crops'] }[group];
       if (!args) return { error: 'unknown group' };

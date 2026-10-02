@@ -124,7 +124,11 @@ module.exports = {
       entries = [[id, qty]];
     }
     if (!entries.length) return 'your bag is empty.';
+    return this.sellEntries(user, entries, kept);
+  },
 
+  // Sells [[itemId, qty], ...] in one go (the shared end of !sell and the website's multi-sell).
+  sellEntries(user, entries, kept = []) {
     const total = this.repo.transaction(() => {
       let sum = 0;
       for (const [id, qty] of entries) {

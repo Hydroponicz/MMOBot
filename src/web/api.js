@@ -224,7 +224,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   });
 
   router.post('/train/sell', requireLogin, (req, res) => {
-    const r = engine.trainSell(req.user, { item: req.body?.item, qty: req.body?.qty, group: req.body?.group });
+    const r = engine.trainSell(req.user, { item: req.body?.item, qty: req.body?.qty, group: req.body?.group, items: req.body?.items });
     if (r.error) return res.status(400).json({ error: r.error });
     logger.info(`[site] ${req.user.username}: sell ${JSON.stringify(req.body || {}).slice(0, 120)} → ${r.message}`);
     res.json({ message: r.message, train: engine.trainingPage(req.user.id) });
