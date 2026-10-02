@@ -223,6 +223,18 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     res.json({ message: r.message, train: engine.trainingPage(req.user.id) });
   });
 
+  router.post('/train/upgrade', requireLogin, (req, res) => {
+    const r = engine.trainUpgrade(req.user, String(req.body?.what || ''));
+    if (r.error) return res.status(400).json({ error: r.error });
+    logger.info(`[site] ${req.user.username}: upgrade ${req.body?.what} → ${r.message}`);
+    res.json({ message: r.message, train: engine.trainingPage(req.user.id) });
+  });
+  router.post('/train/recover', requireLogin, (req, res) => {
+    const r = engine.trainRecoverAction(req.user, String(req.body?.how || ''));
+    if (r.error) return res.status(400).json({ error: r.error });
+    logger.info(`[site] ${req.user.username}: ${req.body?.how} → ${r.message}`);
+    res.json({ message: r.message, train: engine.trainingPage(req.user.id) });
+  });
   router.post('/train/sell', requireLogin, (req, res) => {
     const r = engine.trainSell(req.user, { item: req.body?.item, qty: req.body?.qty, group: req.body?.group, items: req.body?.items });
     if (r.error) return res.status(400).json({ error: r.error });

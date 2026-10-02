@@ -28,6 +28,7 @@
     }
     const busy = new Set();
     let selling = false;
+    let working = false;
 
     const left = (ms) => {
       const s = Math.max(0, Math.ceil(ms / 1000));
@@ -53,8 +54,33 @@
             <div><small>🔥 Fire</small><b>${d.fire ? `${left(d.fire.msLeft)} · ${d.fire.meals} meals` : 'out'}</b></div>
             <div><small>💰 Points</small><b>${fmt(d.points)}</b></div>
           </div>
+          ${recoverHtml()}
         </section>
         ${d.inVeil ? '<section class="panel" style="border-color:var(--rare)">🌫️ You\'re in the Gloamveil: skills wait until you get out. <a href="#/veil">Go to the Gloamveil</a></section>' : ''}`;
+    }
+
+    // ---- recover: Heal (!heal), drink a potion (!drink), eat (!eat). Shown when you're hurt or low on mana.
+    function recoverHtml() {
+      const r = d.recover;
+      if (!r.hurt && !r.lowMana) return '';
+      const ko = !!d.hp.ko;
+      const hp = d.hp.max ? Math.round((d.hp.hp / d.hp.max) * 100) : 100;
+      const btns = [
+        r.heal && r.hurt && !ko
+          ? `<button class="btn btn-sm ${r.heal.ready ? 'btn-primary' : ''}" data-recover="heal" ${r.heal.ready && !working ? '' : `disabled title="Needs ${r.heal.cost} mana (you have ${fmt(d.hp.mana)})"`}>✨ Heal +${r.heal.percent}% <small>${r.heal.cost} mana</small></button>`
+          : '',
+        r.potions !== null && r.potions > 0 && (ko ? r.revive > 0 : true)
+          ? `<button class="btn btn-sm ${ko ? 'btn-primary' : ''}" data-recover="drink" ${working ? 'disabled' : ''}>🧪 ${ko ? 'Drink to get up' : 'Drink potion'} <small>${r.potions}</small></button>`
+          : '',
+        r.food !== null && r.food > 0 && r.hurt && !ko ? `<button class="btn btn-sm" data-recover="eat" ${working ? 'disabled' : ''}>🍗 Eat <small>${r.food}</small></button>` : '',
+      ].filter(Boolean);
+      const shop = !btns.length || (ko && !r.revive) ? '<a class="btn btn-sm" href="#/shop">🛒 Buy potions</a>' : '';
+      const what = ko ? '💀 Knocked out: only a health potion gets you up now.' : r.hurt ? `❤️ ${hp}% HP` : '🔷 Mana not full';
+      return `<div class="tr-recover ${ko ? 'is-ko' : hp < 35 ? 'is-low' : ''}">
+        <span class="tr-hpbar" title="${fmt(d.hp.hp)}/${fmt(d.hp.max)} HP"><i style="width:${ko ? 0 : hp}%"></i></span>
+        <span class="tr-recover-what">${what}</span>
+        <span class="tr-recover-btns">${btns.join('')}${shop}</span>
+      </div>`;
     }
 
     // ---- backpack: tap items to select them, then sell them all at once
@@ -72,6 +98,17 @@
     }
     const chosenTotal = () => [...chosen].reduce((t, [id, n]) => t + priceOf(itemOf(id), n), 0);
     const chosenCount = () => [...chosen.values()].reduce((t, n) => t + n, 0);
+
+    function upgradeBagHtml() {
+      const u = d.bagUpgrade;
+      if (u.off) return '';
+      if (!u.next) return `<p class="tr-upgrade muted">🏆 ${u.icon} ${esc(u.name)}: the biggest backpack there is.</p>`;
+      const afford = d.points >= u.next.cost;
+      return `<div class="tr-upgrade">
+        <span>⬆️ ${u.next.icon} <b>${esc(u.next.name)}</b> · ${u.next.capacity} slots <span class="muted">(+${u.next.capacity - d.backpack.capacity})</span></span>
+        <button class="btn btn-sm ${afford ? 'btn-primary' : ''}" data-upgrade="backpack" ${afford && !working ? '' : `disabled title="You have ${fmt(d.points)} pts"`}>Upgrade · ${fmt(u.next.cost)} pts</button>
+      </div>`;
+    }
 
     function bagHtml() {
       const b = d.bag;
@@ -110,6 +147,7 @@
           <h2>🎒 Backpack <span class="${full() ? 'tr-full' : 'muted'}">${bag.used}/${bag.capacity}</span></h2>
           <span class="tr-bag-btns">${groupBtn('all', '💰 Sell all loot', b.worth.loot)}${groupBtn('food', '🍗 Food', b.worth.food)}${groupBtn('crops', '🌾 Crops', b.worth.crop)}</span>
         </div>
+        ${upgradeBagHtml()}
         <p class="muted tr-bag-help">Tap items to pick several, then sell them together. <b>Sell all loot</b> is <code>!sell all</code>: it keeps gear, tools, potions, food and crops (pick those to sell them).</p>
         ${bagSaid ? `<p class="tr-said" style="margin:0 0 10px">${esc(bagSaid)}</p>` : ''}
         ${
@@ -149,6 +187,17 @@
       return `<select class="tr-target" data-skill="${s.id}" aria-label="What to train on">${opts.join('')}</select>`;
     }
 
+    // The skill's upgradable tool (rod, pickaxe, axe, shovel, furnace) and an Upgrade button (!upgrade rod).
+    function toolHtml(s) {
+      const t = s.tool;
+      if (!t) return '';
+      if (!t.next) return `<p class="tr-tool muted">${t.icon} ${esc(t.name)} · 🏆 best ${esc(t.kind)}</p>`;
+      const can = t.next.ready && d.points >= t.next.cost && !d.bagUpgrade.off;
+      const why = !t.next.ready ? `Needs ${s.name} ${t.next.level}` : d.points < t.next.cost ? `You have ${fmt(d.points)} pts` : '';
+      return `<p class="tr-tool"><span>${t.icon} ${esc(t.name)} <span class="muted">→ ${t.next.icon} ${esc(t.next.name)}${t.next.ready ? '' : ` at ${t.next.level}`}</span></span>
+        <button class="btn btn-sm ${can ? 'btn-primary' : ''}" data-upgrade="${s.id}" ${can && !working ? '' : `disabled title="${esc(why)}"`}>⬆️ ${fmt(t.next.cost)} pts</button></p>`;
+    }
+
     function cardHtml(s) {
       const tired = d.stamina.charges <= 0;
       const verb = { farm: 'Plant', combat: 'Fight', burn: 'Light fire', course: 'Run' }[s.type] || { fishing: 'Fish', mining: 'Mine', woodcutting: 'Chop', digging: 'Dig', skinning: 'Skin' }[s.id] || 'Make';
@@ -169,6 +218,7 @@
         </header>
         <div class="bar"><span style="width:${s.percent}%"></span></div>
         ${s.off ? '<p class="muted">Switched off by the streamer right now.</p>' : `
+        ${toolHtml(s)}
         ${s.needs ? `<p class="tr-need">Needs a ${s.needs.icon} ${esc(s.needs.name)} in your backpack. <a href="#/shop">Shop</a></p>` : ''}
         <div class="tr-row">
           ${selectHtml(s)}
@@ -181,7 +231,7 @@
 
     function skillsHtml() {
       const groups = group === 'all' ? d.groups : d.groups.filter((g) => g.id === group);
-      return `${full() ? `<div class="tr-fullnote">🎒 Your backpack is full (${d.backpack.used}/${d.backpack.capacity}). <button class="btn btn-sm btn-primary" data-view="bag">Sell items</button></div>` : ''}
+      return `${full() ? `<div class="tr-fullnote">🎒 Your backpack is full (${d.backpack.used}/${d.backpack.capacity}). <span class="tr-fullnote-btns"><button class="btn btn-sm btn-primary" data-view="bag">Sell items</button>${d.bagUpgrade.next && !d.bagUpgrade.off ? `<button class="btn btn-sm" data-upgrade="backpack" ${d.points >= d.bagUpgrade.next.cost && !working ? '' : 'disabled'}>⬆️ ${d.bagUpgrade.next.capacity} slots · ${fmt(d.bagUpgrade.next.cost)} pts</button>` : ''}</span></div>` : ''}
         <div class="tabs tr-tabs">${[['all', 'All'], ...d.groups.map((g) => [g.id, g.name])]
           .map(([id, name]) => `<button class="tab ${group === id ? 'active' : ''}" data-group="${id}">${esc(name)}</button>`)
           .join('')}</div>
@@ -224,6 +274,12 @@
       $app.querySelectorAll('.tr-target').forEach((sel) => (sel.onchange = () => (picks[sel.dataset.skill] = sel.value)));
       on('[data-train]', (el) => train(el.dataset.train, el.dataset.target ?? picks[el.dataset.train] ?? $app.querySelector(`.tr-target[data-skill="${el.dataset.train}"]`)?.value ?? ''));
       on('[data-sellgroup]', (el) => sell({ group: el.dataset.sellgroup }));
+      on('[data-upgrade]', (el) => {
+        const what = el.dataset.upgrade;
+        const label = what === 'backpack' ? `your backpack to the ${d.bagUpgrade.next?.name} for ${fmt(d.bagUpgrade.next?.cost)} pts` : `your ${d.groups.flatMap((g) => g.skills).find((x) => x.id === what)?.tool?.kind} for ${fmt(d.groups.flatMap((g) => g.skills).find((x) => x.id === what)?.tool?.next?.cost)} pts`;
+        if (confirm(`Upgrade ${label}?`)) act('/train/upgrade', { what });
+      });
+      on('[data-recover]', (el) => act('/train/recover', { how: el.dataset.recover }));
       // Tap a tile to pick it (all of it); tap again to drop it.
       const flip = (id) => {
         const x = itemOf(id);
@@ -262,6 +318,22 @@
         if (risky.length && !confirm(`Also sell ${risky.map((x) => x.name).join(', ')}? (Sell all loot keeps these.)`)) return;
         sell({ items: [...chosen].map(([item, qty]) => ({ item, qty })) }, true);
       });
+    }
+
+    // Upgrades and recovering: one at a time, the reply as a toast.
+    async function act(path, body) {
+      if (working) return;
+      working = true;
+      render();
+      try {
+        const r = await api(path, { method: 'POST', body });
+        d = r.train;
+        toast?.(r.message);
+      } catch (e) {
+        toast?.(e.message);
+      }
+      working = false;
+      render();
     }
 
     async function sell(body, picked = false) {

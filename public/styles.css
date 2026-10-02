@@ -1412,7 +1412,6 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 .tr-need { font-size: 0.82rem; color: #fbbf24; margin: 0 0 8px; }
 .tr-said { font-size: 0.82rem; margin: 10px 0 0; padding: 8px 10px; background: var(--panel-2); border-radius: 8px; line-height: 1.4; overflow-wrap: anywhere; }
 .tr-fullnote { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 14px; margin-bottom: 12px; border-radius: 10px; background: rgba(248, 113, 113, 0.12); border: 1px solid rgba(248, 113, 113, 0.4); }
-.tr-fullnote .btn { display: none; }
 /* Backpack */
 .tr-bag-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tr-bag-head h2 { margin: 0; font-size: 1.15rem; }
@@ -1438,13 +1437,27 @@ a.badge:hover { text-decoration: none; color: var(--text); }
 .bag-qty .btn { min-width: 32px; padding: 4px 8px; }
 .bag-sellbar { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 10px -20px -20px; padding: 12px 20px; background: var(--panel); border-top: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius); }
 .tr-dock { display: none; }
+.tr-recover { flex: 1 1 100%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--border); }
+.tr-recover.is-low { border-color: rgba(251, 191, 36, 0.6); }
+.tr-recover.is-ko { border-color: rgba(248, 113, 113, 0.7); background: rgba(248, 113, 113, 0.1); }
+.tr-hpbar { width: 120px; height: 8px; border-radius: 999px; background: var(--border); overflow: hidden; flex: none; }
+.tr-hpbar i { display: block; height: 100%; background: linear-gradient(90deg, #f87171, #fb7185); border-radius: inherit; }
+.tr-recover-what { font-weight: 600; }
+.tr-recover-btns { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.tr-recover-btns small, .tr-upgrade small { opacity: 0.75; margin-left: 4px; }
+.tr-upgrade { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin: 10px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--panel-2); font-size: 0.88rem; }
+p.tr-upgrade { justify-content: flex-start; }
+.tr-tool { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 0.82rem; margin: 0 0 8px; }
+.tr-tool .btn { padding: 3px 8px; font-size: 0.78rem; }
+.tr-fullnote-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.tr-fullnote .tr-fullnote-btns .btn[data-view] { display: none; }
 /* Narrower screens: one column; Skills and Backpack are two views switched from a bottom bar. */
 @media (max-width: 1099px) {
   .tr-layout { display: block; }
   .tr-side { position: static; max-height: none; overflow: visible; }
   .tr-root[data-mode='skills'] .tr-side, .tr-root[data-mode='bag'] .tr-main { display: none; }
   .tr-root { padding-bottom: 76px; }
-  .tr-fullnote .btn { display: inline-flex; }
+  .tr-fullnote .tr-fullnote-btns .btn[data-view] { display: inline-flex; }
   .tr-dock { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; gap: 8px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); background: rgba(11, 14, 17, 0.96); backdrop-filter: blur(8px); border-top: 1px solid var(--border); }
   .tr-dock button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font: inherit; font-weight: 700; cursor: pointer; }
   .tr-dock button small { font-size: 0.72rem; color: var(--muted); font-weight: 600; }

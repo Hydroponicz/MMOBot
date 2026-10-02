@@ -86,6 +86,7 @@ module.exports = {
         // Bare "train" picks the best target (smithing-style skills just list what you can make).
         pickBest: s.type !== 'process' || s.pickBest !== false,
         targets: this.trainTargets(userId, id),
+        tool: s.tool ? this.trainTool(userId, id) : null,
       };
     });
     const bySkill = Object.fromEntries(skills.map((s) => [s.id, s]));
@@ -99,7 +100,61 @@ module.exports = {
       inVeil: this.inVeil(userId),
       bag: this.trainBag(userId),
       points: this.repo.getUser(userId).points,
+      bagUpgrade: (() => {
+        const b = this.backpack(userId);
+        return { name: b.name, icon: b.icon, next: b.next ? { name: b.next.name, icon: b.next.icon, capacity: b.next.capacity, cost: b.next.cost } : null, off: disabled.includes('upgrade') };
+      })(),
+      recover: this.trainRecover(userId),
     };
+  },
+
+  // A skill's upgradable tool (rod, pickaxe, axe, shovel, furnace): the one you have and the next.
+  trainTool(userId, skillId) {
+    const tiers = this.toolTiers(skillId);
+    const tier = this.toolTier(userId, skillId);
+    const cur = tiers[tier];
+    const next = tiers[tier + 1];
+    const level = skillLevel(skillId, this.repo.getSkills(userId)[skillId]);
+    return {
+      name: cur.name,
+      icon: cur.icon,
+      kind: SKILLS[skillId].tool.name.toLowerCase(),
+      next: next ? { name: next.name, icon: next.icon, level: next.level, cost: next.cost, ready: level >= next.level } : null,
+    };
+  },
+
+  // Heal, potions and food: what the "recover" buttons can do right now.
+  trainRecover(userId) {
+    const vit = this.vitals(userId);
+    const inv = this.repo.getInventory(userId);
+    const count = (f) => Object.entries(inv).reduce((t, [id, q]) => t + (ITEMS[id] && f(ITEMS[id]) ? q : 0), 0);
+    const off = this.cfg.disabledCommands || [];
+    return {
+      hurt: vit.ko || vit.hp < vit.maxHp - 0.5,
+      lowMana: vit.mana < vit.maxMana - 0.5,
+      heal: off.includes('heal') ? null : { cost: this.healCost(vit), percent: Math.round(this.healPercent(userId) * 100), ready: !vit.ko && vit.mana >= this.healCost(vit) },
+      potions: off.includes('drink') ? null : count((it) => it.potion && (it.potion.hp || it.potion.mana) && !it.potion.buff && !it.potion.stamina),
+      revive: count((it) => it.potion?.hp),
+      food: off.includes('eat') ? null : count((it) => it.food),
+    };
+  },
+
+  // Upgrade buttons: 'backpack' or a skill id (its tool). Same as !upgrade.
+  trainUpgrade(user, what) {
+    if ((this.cfg.disabledCommands || []).includes('upgrade')) return { error: 'Upgrades are switched off right now.' };
+    if (what === 'backpack') return { message: this.upgradeBackpack(user) };
+    if (!SKILLS[what]?.tool) return { error: 'nothing to upgrade there.' };
+    return { message: this.upgradeTool(user, what) };
+  },
+
+  // Recover buttons: 'heal' (!heal), 'drink' (!drink: the potion you need most), 'eat' (!eat: the
+  // food that fills you up best).
+  trainRecoverAction(user, how) {
+    const off = this.cfg.disabledCommands || [];
+    const fn = { heal: () => this.healSpell(user), drink: () => this.drink(user, []), eat: () => this.eat(user, []) }[how];
+    if (!fn) return { error: 'unknown action' };
+    if (off.includes(how)) return { error: `!${how} is switched off right now.` };
+    return { message: fn() };
   },
 
   // The backpack, for selling from the Train page. kind: what !sell all does with it ('loot' is

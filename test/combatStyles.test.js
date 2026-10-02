@@ -238,3 +238,35 @@ test('Train page: sell several picked items at once, partial amounts too', () =>
   assert.equal(repo.getInventory(u.id).copper_ore, undefined);
   assert.equal(engine.trainSell(u, { items: [{ item: 'copper_ore', qty: 1 }] }).error, 'nothing selected to sell.');
 });
+
+test('Train page: upgrade the backpack and tools, heal / drink / eat, like the chat commands', () => {
+  const { repo, engine, u } = setup();
+  let page = engine.trainingPage(u.id);
+  assert.equal(page.bagUpgrade.next.capacity, 20);
+  assert.equal(page.groups[0].skills.find((s) => s.id === 'fishing').tool.next.level, 50);
+  assert.match(engine.trainUpgrade(u, 'backpack').message, /points|pts/);
+  repo.addPoints(u.id, 100000);
+  assert.match(engine.trainUpgrade(u, 'backpack').message, /Leather Satchel/);
+  assert.equal(engine.backpack(u.id).capacity, 20);
+  // Tools need the level first.
+  assert.match(engine.trainUpgrade(u, 'mining').message, /Mining level 50/);
+  repo.addXp(u.id, 'mining', 200000);
+  assert.match(engine.trainUpgrade(u, 'mining').message, /upgraded to/);
+  assert.equal(engine.trainUpgrade(u, 'swords').error, 'nothing to upgrade there.');
+  // Hurt: Heal, a potion, food.
+  const vit = engine.vitals(u.id);
+  repo.setVitals(u.id, { hp: vit.maxHp * 0.3, mana: vit.maxMana, koUntil: 0 }, engine.now());
+  page = engine.trainingPage(u.id);
+  assert.ok(page.recover.hurt && page.recover.heal.ready);
+  assert.match(engine.trainRecoverAction(u, 'heal').message, /you cast Heal/);
+  repo.addItem(u.id, 'minor_health_potion', 1);
+  repo.addItem(u.id, 'roasted_potato', 1);
+  assert.equal(engine.trainingPage(u.id).recover.potions, 1);
+  assert.match(engine.trainRecoverAction(u, 'drink').message, /drank a Minor Health Potion/);
+  assert.match(engine.trainRecoverAction(u, 'eat').message, /ate a Roasted Potato|full health/);
+  assert.equal(engine.trainRecoverAction(u, 'nap').error, 'unknown action');
+  engine.cfg.disabledCommands = ['upgrade', 'heal'];
+  assert.match(engine.trainUpgrade(u, 'backpack').error, /switched off/);
+  assert.match(engine.trainRecoverAction(u, 'heal').error, /switched off/);
+  assert.equal(engine.trainingPage(u.id).recover.heal, null);
+});
