@@ -326,3 +326,40 @@ test('website daily claim and museum donations (one item or every new find)', ()
   const owned = engine.profile(u.id).museum.flatMap((c) => c.items).filter((i) => i.owned);
   assert.equal(owned.length, 0);
 });
+
+test('!open all opens every container at once (or every one of a kind); quests still count each', () => {
+  const { repo, engine, say, u } = setup();
+  repo.addItem(u.id, 'stolen_goods', 5);
+  repo.addItem(u.id, 'ogre_belt', 2);
+  const before = repo.getUser(u.id).points;
+  const one = say('!open stolen goods');
+  assert.match(one, /opened a Stolen Goods.*\(4 more to open: !open all\)/);
+  const kind = say('!open all stolen goods');
+  assert.match(kind, /you opened 📦 4x Stolen Goods/);
+  assert.equal(repo.getInventory(u.id).stolen_goods, undefined);
+  assert.equal(repo.getInventory(u.id).ogre_belt, 2, 'other kinds untouched');
+  const all = say('!open all');
+  assert.match(all, /you opened .*Ogre Belt/);
+  const inv = repo.getInventory(u.id);
+  for (const id of ['stolen_goods', 'ogre_belt', 'goblin_pouch']) assert.equal(inv[id], undefined, `${id} all opened`);
+  assert.ok(repo.getUser(u.id).points > before);
+  assert.match(say('!open all'), /nothing to open/);
+  // Website buttons.
+  repo.addItem(u.id, 'goblin_pouch', 3);
+  const page = engine.trainingPage(u.id);
+  assert.ok(page.bag.items.find((x) => x.id === 'goblin_pouch').opens);
+  assert.match(engine.trainOpen(u, { item: 'goblin_pouch', all: true }).message, /3x Goblin Pouch/);
+});
+
+test('"Reply in chat" off: replies are held back, counted and logged (not silently lost)', () => {
+  const { ChatBot } = require('../src/bot/bot');
+  const warned = [];
+  const engine = { cfg: { replyInChat: false }, handleChat: () => ({ reply: '@x hi' }) };
+  const bot = new ChatBot({ engine, kick: { botAccount: () => null }, logger: { log() {}, info() {}, error() {}, warn: (m) => warned.push(m) } });
+  bot.handleMessage({ kickUserId: '1', username: 'x', content: '!stats' });
+  bot.handleMessage({ kickUserId: '1', username: 'x', content: '!stats' });
+  assert.equal(bot.stats.muted, 2);
+  assert.equal(bot.queue.length, 0);
+  assert.equal(warned.length, 1, 'logged once, not on every reply');
+  assert.match(warned[0], /Reply in chat" is OFF/);
+});

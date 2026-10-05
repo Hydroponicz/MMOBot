@@ -23,6 +23,7 @@ function createApp({ config, repo, logger: baseLogger = console, settings = new 
   // Things the game says by itself: raids starting and ending, random events...
   engine.on('announce', (text) => {
     if (engine.cfg.replyInChat) bot.say(text);
+    else bot.muted();
     logger.info(`[event] ${text}`);
   });
   const sessions = createSessions({ secret: config.sessionSecret, secure: config.baseUrl.startsWith('https://') });

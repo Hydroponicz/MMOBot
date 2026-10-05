@@ -34,6 +34,7 @@ class ChatBot {
       this.stats.commands++;
       this.log.info(`[chat] ${msg.username}: ${msg.content.trim().slice(0, 200)} → ${reply}`);
       if (this.engine.cfg.replyInChat) this.say(reply);
+      else this.muted();
     } else if (/^\s*!|\[emote:/.test(msg.content || '')) {
       // Looked like a command (or an emote shortcut) but got no reply: log it, so "the bot isn't
       // answering" can be told apart from "the bot never saw it".
@@ -49,11 +50,22 @@ class ChatBot {
       const text = this.engine.channelEvent(type, payload);
       this.log.info(`[event] ${type}${text ? ` → ${text}` : ''}`);
       if (text && this.engine.cfg.replyInChat) this.say(text);
+      else if (text) this.muted();
       return text;
     } catch (err) {
       this.log.error(`[bot] error handling ${type}`, err);
       return null;
     }
+  }
+
+  // A reply that "Reply in chat: off" kept out of chat. Counted for the admin page, and logged
+  // (at most every 10 minutes) so a switched-off bot never looks like a broken one.
+  muted() {
+    this.stats.muted = (this.stats.muted || 0) + 1;
+    const now = Date.now();
+    if (now - (this.mutedLoggedAt || 0) < 10 * 60_000) return;
+    this.mutedLoggedAt = now;
+    this.log.warn(`[bot] "Reply in chat" is OFF (Admin → Settings): replies are not being posted (${this.stats.muted} held back since the last restart).`);
   }
 
   isOwnReply(content) {

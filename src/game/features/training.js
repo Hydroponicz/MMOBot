@@ -178,6 +178,7 @@ module.exports = {
           kind: kindOf(it),
           // Seeds, arrows, runes and bone shards don't take backpack slots.
           bagless: !!(it.seedFor || it.ammo),
+          opens: !!it.opens,
           sellable,
           each: sellable ? this.sellValue(id, userId) : 0,
           total: sellable ? this.saleTotal(id, qty, userId) : 0,
@@ -186,6 +187,13 @@ module.exports = {
       .sort((a, b) => b.total - a.total);
     const sum = (kind) => items.filter((x) => x.sellable && x.kind === kind).reduce((t, x) => t + x.total, 0);
     return { items, worth: { loot: sum('loot'), food: sum('food'), crop: sum('crop') }, off: (this.cfg.disabledCommands || []).includes('sell') };
+  },
+
+  // Open buttons: one container, all of one kind, or everything (same as !open / !open all).
+  trainOpen(user, { item = '', all = false } = {}) {
+    if ((this.cfg.disabledCommands || []).includes('open')) return { error: 'Opening is switched off right now.' };
+    const args = [...(all ? ['all'] : []), ...(item ? [String(item)] : [])];
+    return { message: this.openContainer(user, args) };
   },
 
   // A sell button: { group: 'all' | 'food' | 'crops' } or { item, qty: n | 'all' }. Same as !sell.

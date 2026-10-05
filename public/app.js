@@ -2066,6 +2066,7 @@
         ['inv', 'Your backpack'],
         ['item <name>', 'Where an item comes from and what it is for'],
         ['open [item]', 'Open goblin pouches, stolen goods and other monster loot'],
+        ['open all [item]', 'Open every container you have (or every one of a kind)'],
         ['points', 'Your points'],
         ['give @name <item|points>', 'Give to another player'],
         ['market', 'Player market link'],
@@ -2243,6 +2244,13 @@
           : `<div class="alert err"><b>No volume attached.</b> Player progress is stored on a temporary disk and will be lost on the next redeploy. In Railway, right-click this service → Attach volume (any mount path), then redeploy.</div>`
       }
       ${!s.kickConfigured ? `<div class="alert err">Set <code>KICK_CLIENT_ID</code> and <code>KICK_CLIENT_SECRET</code> to connect to Kick.</div>` : ''}
+      ${
+        s.settings.replyInChat === false
+          ? `<div class="alert err"><b>"Reply in chat" is off: the bot reads chat but posts nothing.</b> Commands still work (and the site updates), but nobody sees a reply, and event announcements stay silent too.${
+              s.stats.muted ? ` ${fmt(s.stats.muted)} replies held back since the last restart.` : ''
+            } <button class="btn btn-sm btn-primary" id="replies-on" style="margin-left:6px">Turn replies back on</button></div>`
+          : ''
+      }
       <div class="grid grid-2">
         <div class="stack">
           <section class="panel">
@@ -2446,6 +2454,20 @@
           toast(`Failed: ${e.message}`);
         }
       };
+    const repliesOn = $app.querySelector('#replies-on');
+    if (repliesOn) {
+      repliesOn.onclick = async () => {
+        repliesOn.disabled = true;
+        try {
+          await api('/admin/settings/general', { method: 'PUT', body: { value: { replyInChat: true } } });
+          toast('Replies are back on.');
+          route();
+        } catch (e) {
+          toast(e.message);
+          repliesOn.disabled = false;
+        }
+      };
+    }
     $app.querySelector('#bot-link').onclick = async () => {
       try {
         const r = await api('/admin/bot-link', { method: 'POST' });

@@ -71,18 +71,12 @@ module.exports = {
     return parts.join(' · ');
   },
 
-  // !open <container>: goblin pouches, stolen goods, ogre belts, labyrinth keys.
-  openContainer(user, args = []) {
-    const p = this.cfg.prefix;
-    const inv = this.repo.getInventory(user.id);
-    const owned = Object.keys(CONTAINERS).filter((id) => inv[id] > 0);
-    if (!owned.length) return `nothing to open. Monsters drop goblin pouches, stolen goods, ogre belts and labyrinth keys: ${p}open <name>.`;
-    const id = args.length ? findItem(args.join(' '), owned) : owned[0];
-    if (!id) return `you don't have that. You can open: ${owned.map((i) => ITEMS[i].name).join(', ')}.`;
+  // Opens one container (already checked to be in the backpack). Returns { points, got: {item: qty} }.
+  openOne(user, id) {
     const c = CONTAINERS[id];
     const roll = (lo, hi) => lo + Math.floor(this.rng() * (hi - lo + 1));
     const points = roll(...c.points);
-    const got = [];
+    const got = {};
     this.repo.transaction(() => {
       this.repo.removeItem(user.id, id, 1);
       this.repo.addPoints(user.id, points);
@@ -90,12 +84,64 @@ module.exports = {
         if (this.rng() >= chance) continue;
         const qty = roll(lo, hi);
         this.repo.addItem(user.id, item, qty);
-        got.push(itemLabel(item, qty));
+        got[item] = (got[item] || 0) + qty;
       }
     });
     this.track('rewards', points);
     this.emitActivity(user, { kind: 'open', item: id, text: `opened ${/^[aeiou]/i.test(ITEMS[id].name) ? 'an' : 'a'} ${ITEMS[id].name}` });
-    const left = (this.repo.getInventory(user.id)[id] || 0);
-    return `${ITEMS[id].icon} you opened ${/^[aeiou]/i.test(ITEMS[id].name) ? 'an' : 'a'} ${ITEMS[id].name}: +${fmt(points)} pts${got.length ? ` and ${got.join(', ')}` : ''}!${left ? ` (${left} more to open)` : ''}`;
+    return { points, got };
+  },
+
+  // !open <container>: goblin pouches, stolen goods, ogre belts, labyrinth keys.
+  // !open all (everything, including pouches that fall out of stolen goods) or !open all stolen goods.
+  openContainer(user, args = []) {
+    const p = this.cfg.prefix;
+    const owned = () => {
+      const inv = this.repo.getInventory(user.id);
+      return Object.keys(CONTAINERS).filter((id) => inv[id] > 0);
+    };
+    const have = owned();
+    if (!have.length) return `nothing to open. Monsters drop goblin pouches, stolen goods, ogre belts and labyrinth keys: ${p}open <name>, or ${p}open all.`;
+    const words = args.map((w) => String(w).toLowerCase());
+    const all = words.includes('all');
+    const name = words.filter((w) => w !== 'all').join(' ');
+    const only = name ? findItem(name, have) : null;
+    if (name && !only) return `you don't have that. You can open: ${have.map((i) => ITEMS[i].name).join(', ')}.`;
+
+    if (!all) {
+      const id = only || have[0];
+      const { points, got } = this.openOne(user, id);
+      const items = Object.entries(got).map(([i, q]) => itemLabel(i, q));
+      const left = this.repo.getInventory(user.id)[id] || 0;
+      return `${ITEMS[id].icon} you opened ${/^[aeiou]/i.test(ITEMS[id].name) ? 'an' : 'a'} ${ITEMS[id].name}: +${fmt(points)} pts${items.length ? ` and ${items.join(', ')}` : ''}!${left ? ` (${left} more to open: ${p}open all)` : ''}`;
+    }
+
+    // Open them all, one at a time (each is its own roll), up to 500 in one go.
+    const opened = {};
+    const got = {};
+    let points = 0;
+    let n = 0;
+    this.quietActivity = true;
+    try {
+      while (n < 500) {
+        const next = owned().find((id) => !only || id === only);
+        if (!next) break;
+        const r = this.openOne(user, next);
+        opened[next] = (opened[next] || 0) + 1;
+        points += r.points;
+        for (const [i, q] of Object.entries(r.got)) got[i] = (got[i] || 0) + q;
+        n++;
+      }
+    } finally {
+      this.quietActivity = false;
+    }
+    const what = Object.entries(opened).map(([i, q]) => itemLabel(i, q)).join(', ');
+    this.emitActivity(user, { kind: 'opened', text: `opened ${n} containers (${Object.entries(opened).map(([i, q]) => `${q}x ${ITEMS[i].name}`).join(', ')}) for ${fmt(points)} pts 📦` });
+    // Containers that fell out and were opened too aren't loot you kept.
+    for (const [i, q] of Object.entries(opened)) if (got[i]) got[i] -= Math.min(got[i], q);
+    const items = Object.entries(got).filter(([, q]) => q > 0).sort((a, b) => ITEMS[b[0]].value * b[1] - ITEMS[a[0]].value * a[1]).map(([i, q]) => itemLabel(i, q));
+    const shown = items.slice(0, 8).join(', ') + (items.length > 8 ? ` and ${items.length - 8} more` : '');
+    const left = owned().filter((id) => !only || id === only).length;
+    return `📦 you opened ${what}: +${fmt(points)} pts${items.length ? ` and ${shown}` : ''}!${left ? ` (more left: ${p}open all again)` : ''}${this.fullBagNote(user.id)}`;
   },
 };

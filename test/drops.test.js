@@ -99,7 +99,7 @@ test('!open gives points and loot; the Scavenger quest counts it', () => {
   assert.match(say('!quest start scavenger'), /Started 🦴 The Monster Scavenger/);
   repo.addItem(u.id, 'goblin_pouch', 2);
   const pts = repo.getUser(u.id).points;
-  assert.match(say('!open'), /opened a Goblin Pouch: \+\d+ pts and .*Magic Rune.*\(1 more to open\)/);
+  assert.match(say('!open'), /opened a Goblin Pouch: \+\d+ pts and .*Magic Rune.*\(1 more to open: !open all\)/);
   assert.ok(repo.getUser(u.id).points > pts);
   assert.match(say('!open goblin pouch'), /opened a Goblin Pouch/);
   assert.equal(repo.getInventory(u.id).goblin_pouch, undefined);

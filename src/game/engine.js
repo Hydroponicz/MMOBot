@@ -240,7 +240,7 @@ class GameEngine extends EventEmitter {
 
   emitActivity(user, entry) {
     // (Bulk actions like !cook all post one summary instead of an entry per item.)
-    if (this.quietActivity && ['action', 'rare'].includes(entry.kind)) {
+    if (this.quietActivity && ['action', 'rare', 'open'].includes(entry.kind)) {
       this.onActivity?.(user, entry);
       return;
     }

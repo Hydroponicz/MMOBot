@@ -1491,3 +1491,4 @@ p.tr-upgrade { justify-content: flex-start; }
 .museum-give { font-size: inherit; line-height: 1; padding: 2px 4px; border-radius: 8px; border: 1px solid var(--accent); background: rgba(83, 252, 24, 0.12); cursor: pointer; animation: museum-glow 1.8s ease-in-out infinite; }
 .museum-give:hover { background: rgba(83, 252, 24, 0.25); }
 @keyframes museum-glow { 50% { box-shadow: 0 0 0 3px rgba(83, 252, 24, 0.25); } }
+.bag-open { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }

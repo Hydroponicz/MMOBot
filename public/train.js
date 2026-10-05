@@ -136,6 +136,13 @@
                     </span>`
                   : ''
               }
+              ${
+                x.opens && !on
+                  ? `<span class="bag-open" data-noflip><button class="btn btn-sm btn-primary" data-open="${esc(x.id)}" ${working ? 'disabled' : ''}>📦 Open</button>${
+                      x.qty > 1 ? `<button class="btn btn-sm" data-open="${esc(x.id)}" data-all="1" ${working ? 'disabled' : ''}>Open all ${fmt(x.qty)}</button>` : ''
+                    }</span>`
+                  : ''
+              }
             </div>
             ${x.sellable ? `<span class="bag-price">${on ? `+${fmt(priceOf(x, n))}` : `${fmt(x.total)}`}</span>` : ''}
           </div>`;
@@ -155,6 +162,10 @@
             ? `<div class="bag-tools">
                 ${loot.length ? `<button class="btn btn-sm" data-pickall="loot">Select all loot</button>` : ''}
                 <button class="btn btn-sm" data-pickall="every">Select everything</button>
+                ${(() => {
+                  const boxes = b.items.filter((x) => x.opens).reduce((t, x) => t + x.qty, 0);
+                  return boxes ? `<button class="btn btn-sm btn-primary" data-open="" data-all="1" ${working ? 'disabled' : ''}>📦 Open all containers (${fmt(boxes)})</button>` : '';
+                })()}
                 ${chosen.size ? '<button class="btn btn-sm" data-pickall="none">Clear</button>' : ''}
               </div>
               <div class="bag-grid">${tiles}</div>`
@@ -281,6 +292,10 @@
         if (confirm(`Upgrade ${label}?`)) act('/train/upgrade', { what });
       });
       on('[data-recover]', (el) => act('/train/recover', { how: el.dataset.recover }));
+      on('[data-open]', (el, e) => {
+        e.stopPropagation();
+        act('/train/open', { item: el.dataset.open, all: !!el.dataset.all });
+      });
       // Tap a tile to pick it (all of it); tap again to drop it.
       const flip = (id) => {
         const x = itemOf(id);
@@ -330,6 +345,7 @@
         const r = await api(path, { method: 'POST', body });
         d = r.train;
         toast?.(r.message);
+        if (path === '/train/open') bagSaid = r.message;
       } catch (e) {
         toast?.(e.message);
       }
