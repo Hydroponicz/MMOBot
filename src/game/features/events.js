@@ -408,6 +408,7 @@ module.exports = {
     if (bet > balance) return `you only have ${fmt(balance)} pts.`;
     this.duels ??= new Map();
     this.duels.set(target.id, { from: user.id, fromName: user.username, bet, at: this.now() });
+    this.emit('duel', { to: target.id, from: user.username, bet, endsAt: this.now() + 60_000 });
     return `⚔️ @${target.username}, @${user.username} challenges you to a duel${bet ? ` for ${fmt(bet)} pts` : ''}! Type ${p}accept within 60s (or ${p}decline).`;
   },
 
@@ -415,6 +416,7 @@ module.exports = {
     const ch = this.duels?.get(user.id);
     if (!ch) return null;
     this.duels.delete(user.id);
+    this.emit('duel', { to: user.id, gone: true });
     return `declined the duel with @${ch.fromName}.`;
   },
 
@@ -423,6 +425,7 @@ module.exports = {
     const ch = this.duels?.get(user.id);
     if (!ch || now - ch.at > 60_000) return `no duel waiting for you. Challenge someone: ${this.cfg.prefix}duel @name [bet]`;
     this.duels.delete(user.id);
+    this.emit('duel', { to: user.id, gone: true });
     const a = this.repo.getUser(ch.from);
     const b = this.repo.getUser(user.id);
     if (ch.bet && (a.points < ch.bet || b.points < ch.bet)) return `the duel is off: both of you need ${fmt(ch.bet)} pts.`;

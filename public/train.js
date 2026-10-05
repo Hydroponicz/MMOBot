@@ -259,7 +259,16 @@
         <div class="tabs tr-tabs">${[['all', 'All'], ...d.groups.map((g) => [g.id, g.name])]
           .map(([id, name]) => `<button class="tab ${group === id ? 'active' : ''}" data-group="${id}">${esc(name)}</button>`)
           .join('')}</div>
-        ${groups.map((g) => `${group === 'all' ? `<h2 class="tr-group">${esc(g.name)}</h2>` : ''}<div class="tr-grid">${g.skills.map(cardHtml).join('')}</div>`).join('')}`;
+        ${groups
+          .map(
+            (g) =>
+              `${group === 'all' ? `<h2 class="tr-group">${esc(g.name)}</h2>` : ''}${
+                g.id === 'combat'
+                  ? '<p class="muted" style="margin:0 0 10px"><button class="btn btn-sm" data-do="dungeon">🏰 Start or join a dungeon party</button> 2 to 5 players, three rooms and a boss with dungeon-only loot. Same as <code>!dungeon</code>.</p>'
+                  : ''
+              }<div class="tr-grid">${g.skills.map(cardHtml).join('')}</div>`
+          )
+          .join('')}`;
     }
 
     // Phones: Skills / Backpack switch along the bottom, with your stamina.

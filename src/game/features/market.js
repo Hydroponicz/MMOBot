@@ -335,14 +335,14 @@ module.exports = {
     const live = [];
     const ready = this.farmPlots(userId).filter((p) => p.ready).length;
     if (ready) live.push({ id: 'crops', icon: '🌾', text: `${ready} crop${ready === 1 ? ' is' : 's are'} ready to harvest.`, link: '#/me' });
-    if (this.daily(userId).lastClaim !== dayOf(now)) live.push({ id: 'daily', icon: '📅', text: `Your daily reward is waiting: type ${this.cfg.prefix}daily in chat.` });
+    if (this.daily(userId).lastClaim !== dayOf(now)) live.push({ id: 'daily', icon: '📅', text: `Your daily reward is waiting: claim it on your page or type ${this.cfg.prefix}daily in chat.`, link: '#/me' });
     const u = this.repo.getUser(userId);
     const st = this.stamina(userId, now);
     if (u.stamina !== null && st.charges === st.max && u.stamina_at && now - u.stamina_at < 3_600_000) live.push({ id: 'stamina', icon: '⚡', text: 'Your stamina is full again.' });
     const fire = this.fireLeft(userId);
     if (fire) live.push({ id: 'fire', icon: '🔥', text: `Your fire burns for another ${Math.ceil(fire / 60_000)} min: ${this.cfg.prefix}cook while it lasts.`, info: true });
     const raid = this.raidState();
-    if (raid) live.push({ id: 'raid', icon: raid.world ? '🌍' : '⚔️', text: `${raid.world ? 'World boss' : 'Raid'}: ${raid.icon} ${raid.name} is up! ${this.cfg.prefix}attack in chat.`, info: true });
+    if (raid) live.push({ id: 'raid', icon: raid.world ? '🌍' : '⚔️', text: `${raid.world ? 'World boss' : 'Raid'}: ${raid.icon} ${raid.name} is up! Attack from the banner or ${this.cfg.prefix}attack in chat.`, info: true });
     const goal = this.goalState();
     if (goal && !goal.done) live.push({ id: 'goal', icon: '🎯', text: `Channel goal: ${fmt(goal.progress)}/${fmt(goal.target)}.`, info: true });
     const saved = this.repo.notifications(userId, 20).map((n) => ({ id: n.id, text: n.text, at: n.created_at, read: !!n.read }));

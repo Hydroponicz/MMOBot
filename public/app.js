@@ -63,9 +63,18 @@
       const pct = Math.max(0, Math.round((r.hp / r.maxHp) * 100));
       const ms = Math.max(0, r.endsAt - Date.now());
       const left = r.world ? `${Math.ceil(ms / 86_400_000)}d left` : `${Math.ceil(ms / 60000)}m`;
-      parts.push(`<div class="banner raid${r.world ? ' world' : ''}"><div class="banner-row"><span>${r.icon} <b>${r.world ? 'WORLD BOSS' : 'RAID'}: ${esc(r.name)}</b> (level ${r.level}) · type <code>!attack</code> in chat</span>
+      parts.push(`<div class="banner raid${r.world ? ' world' : ''}"><div class="banner-row"><span>${r.icon} <b>${r.world ? 'WORLD BOSS' : 'RAID'}: ${esc(r.name)}</b> (level ${r.level}) · ${state.me ? '<button class="btn btn-sm btn-primary" data-do="attack">⚔️ Attack</button> or ' : ''}type <code>!attack</code> in chat</span>
         <span>${fmt(r.hp)} / ${fmt(r.maxHp)} HP · ${r.fighters} fighting · ${left}</span></div>
         <div class="raid-bar"><span style="width:${pct}%"></span></div></div>`);
+    }
+    const ev = live.event;
+    if (ev && ev.endsAt > Date.now() && ev.left > 0) {
+      parts.push(`<div class="banner event">${ev.icon} <b>${esc(ev.name)}</b> appeared! ${ev.left} left · ${Math.max(1, Math.ceil((ev.endsAt - Date.now()) / 1000))}s · ${state.me ? `<button class="btn btn-sm btn-primary" data-do="${ev.verb}">${ev.verb === 'catch' ? '🪤 Catch it' : '🎁 Grab it'}</button> or ` : ''}type <code>!${ev.verb}</code> in chat</div>`);
+    }
+    const d = live.duel;
+    if (d && d.endsAt > Date.now()) {
+      parts.push(`<div class="banner event">⚔️ <b>${esc(d.from)}</b> challenges you to a duel${d.bet ? ` for <b>${fmt(d.bet)} pts</b>` : ''}! ${Math.max(1, Math.ceil((d.endsAt - Date.now()) / 1000))}s ·
+        <button class="btn btn-sm btn-primary" data-do="accept">Accept</button> <button class="btn btn-sm" data-do="decline">Decline</button></div>`);
     }
     const g = live.goal;
     if (g && !g.done) {
@@ -82,6 +91,27 @@
     else live.raid = r;
     drawBanner();
   });
+  es.addEventListener('randomevent', (e) => {
+    live.event = JSON.parse(e.data);
+    drawBanner();
+    // Events last seconds, so count down (and drop the banner) between server updates.
+    clearTimeout(live.eventTimer);
+    if (live.event) {
+      const tick = () => {
+        drawBanner();
+        if (live.event && live.event.endsAt > Date.now()) live.eventTimer = setTimeout(tick, 1000);
+      };
+      live.eventTimer = setTimeout(tick, 1000);
+    }
+  });
+  es.addEventListener('duel', (e) => {
+    const d = JSON.parse(e.data);
+    if (!state.me || d.to !== state.me.id) return;
+    live.duel = d.gone ? null : d;
+    drawBanner();
+    clearInterval(live.duelTimer);
+    if (live.duel) live.duelTimer = setInterval(() => (drawBanner(), live.duel?.endsAt > Date.now() || clearInterval(live.duelTimer)), 1000);
+  });
   es.addEventListener('goal', (e) => {
     live.goal = JSON.parse(e.data);
     drawBanner();
@@ -91,6 +121,38 @@
     drawBanner();
   });
   setInterval(drawBanner, 15000);
+
+  // Buttons that run a chat command from the site: data-do="duel" data-args="@Bob|500" (split on |),
+  // optional data-confirm. Forms with data-do-form build the args from their inputs, in order.
+  async function runDo(cmd, args, btn) {
+    if (btn) btn.disabled = true;
+    try {
+      const r = await api('/me/do', { method: 'POST', body: { cmd, args } });
+      toast(r.message);
+      route();
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-do]');
+    if (!b || b.disabled) return;
+    e.preventDefault();
+    if (b.dataset.confirm && !confirm(b.dataset.confirm)) return;
+    runDo(b.dataset.do, b.dataset.args ? b.dataset.args.split('|') : [], b);
+  });
+  document.addEventListener('submit', (e) => {
+    const f = e.target.closest('form[data-do-form]');
+    if (!f) return;
+    e.preventDefault();
+    const typed = [...f.querySelectorAll('input,select')].map((i) => i.value.trim()).filter(Boolean);
+    const args = [...(f.dataset.pre ? f.dataset.pre.split('|') : []), ...typed];
+    const msg = f.dataset.confirm ? f.dataset.confirm.replace('{args}', typed.join(' ')).replace(/\s+\?/, '?') : '';
+    if (msg && !confirm(msg)) return;
+    runDo(f.dataset.doForm, args, f.querySelector('button'));
+  });
 
   // ---- chrome ------------------------------------------------------------
   function renderAccount() {
@@ -252,7 +314,8 @@
     return () => listeners.delete(fn);
   }
 
-  function skillCard(s) {
+  function skillCard(s, isMe = false, prestigeAt = 0) {
+    const canPrestige = isMe && prestigeAt && s.level >= prestigeAt && (s.prestige || 0) < 10;
     const toNext = s.nextLevelXp == null ? 'Max level!' : `${fmt(s.nextLevelXp - s.xp)} xp to ${s.level + 1}`;
     return `
       <div class="skill-card" style="--c: var(--${esc(s.id)})">
@@ -261,6 +324,7 @@
           <div><div class="skill-name">${esc(s.name)}</div><div class="skill-cmd">${esc(s.command)}</div></div>
           <div class="skill-level" title="Level">${s.level}</div>
         </div>
+        ${s.prestige ? `<div class="skill-prestige" title="Prestige ${s.prestige}: +${5 * s.prestige}% XP">${'⭐'.repeat(Math.min(s.prestige, 5))}${s.prestige > 5 ? `×${s.prestige}` : ''}</div>` : ''}
         <div class="bar" title="${s.percent}%"><span style="width:${s.percent}%"></span></div>
         <div class="skill-meta"><span>${fmt(s.xp)} xp</span><span>${toNext}</span></div>
         ${s.tool ? toolRow(s.tool) : ''}
@@ -268,6 +332,7 @@
           ${s.nextUnlock ? `Next unlock: ${s.nextUnlock.icon} <b>${esc(s.nextUnlock.item)}</b> at level ${s.nextUnlock.level}` : 'All tiers unlocked 🏅'}
           ${s.rank ? `<span style="float:right">Rank #${fmt(s.rank)}</span>` : ''}
         </div>
+        ${canPrestige ? `<button class="btn btn-sm" style="margin-top:8px" data-do="prestige" data-args="${esc(s.id)}|confirm" data-confirm="${esc(`Prestige ${s.name}? It goes back to level 1 (you keep items, tools and gear) for a permanent star and +${5 * ((s.prestige || 0) + 1)}% ${s.name} XP.`)}">⭐ Prestige</button>` : ''}
       </div>`;
   }
 
@@ -367,15 +432,27 @@
         </div>
       </section>
 
+      ${
+        state.me && !isMe
+          ? `<section class="panel"><div class="player-actions">
+              <form data-do-form="duel" data-pre="@${esc(p.username)}">
+                <b>⚔️ Duel</b><input type="text" inputmode="numeric" placeholder="Bet (optional)" maxlength="12"><button class="btn btn-sm btn-primary">Challenge</button>
+              </form>
+              <form data-do-form="give" data-pre="@${esc(p.username)}" data-confirm="Give {args} to ${esc(p.username)}?">
+                <b>🎁 Gift</b><input type="text" placeholder="500 or an item, e.g. oak logs" maxlength="40" required><input type="text" inputmode="numeric" placeholder="Qty" maxlength="6" style="max-width:70px"><button class="btn btn-sm">Give</button>
+              </form>
+            </div><p class="muted" style="margin:8px 0 0;font-size:.85rem">They get 60s to accept a duel (on the site or with <code>!accept</code>). Gifts follow the daily trade limits.</p></section>`
+          : ''
+      }
       <h2 style="margin:28px 0 12px">Skills${isMe ? ' <a class="btn btn-sm btn-primary" href="#/train" style="margin-left:8px;vertical-align:middle">🏋️ Train on the website</a>' : ''}</h2>
-      <div class="grid grid-skills">${p.skills.map(skillCard).join('')}</div>
+      <div class="grid grid-skills">${p.skills.map((s) => skillCard(s, isMe, p.prestigeLevel)).join('')}</div>
 
       ${equipmentPanel(p.combat, isMe)}
       ${farmPanel(p.farm, isMe)}
       ${stationsPanel(p.farm.stations, isMe, p.stamina)}
       ${museumPanel(p.museum, isMe)}
       ${questsPanel(p.quests, isMe)}
-      ${progressPanels(p.progression, isMe)}
+      ${progressPanels(p.progression, isMe, p.title)}
 
       <div class="grid grid-2" style="margin-top:16px">
         <section class="panel">
@@ -478,6 +555,7 @@
               <div class="nm">${w.item ? `${esc(w.item.name)}${w.item.enchant ? ` <span class="ench">+${w.item.enchant}</span>` : ''}` : 'Empty'}</div>
               <div class="gear-stat">${w.item ? (w.item.attack ? `+${w.item.attack} attack` : `+${w.item.defence} defence`) : '&nbsp;'}</div>
               ${isMe && w.item ? `<button class="mini" data-act="unequip" data-slot="${w.slot}">Unequip</button>` : ''}
+              ${isMe && w.item?.enchantCost ? `<button class="mini" data-do="enchant" data-args="${esc(w.item.name)}" data-confirm="${esc(`Enchant ${w.item.name} to +${w.item.enchant + 1}? Costs ${w.item.enchantCost.ashes} Ashes, ${fmt(w.item.enchantCost.points)} pts${w.item.enchantCost.gem ? ' and a Shadow Gem' : ''}. ${Math.round(w.item.enchantCost.chance * 100)}% chance; the materials are used up even if it fails.`)}">✨ +${w.item.enchant + 1}</button>` : ''}
             </div>`
           )
           .join('')}</div>
@@ -606,7 +684,7 @@
   }
 
   // Daily tasks (your own page) and achievements.
-  function progressPanels(pr, isMe) {
+  function progressPanels(pr, isMe, curTitle = '') {
     if (!pr) return '';
     const got = pr.achievements.filter((a) => a.unlockedAt).length + pr.extra.length;
     const daily = isMe
@@ -631,7 +709,15 @@
         <div class="achievements">${[...pr.extra, ...pr.achievements]
           .map((a) => `<span class="ach${a.unlockedAt ? ' got' : ''}" title="${esc(a.name)}: ${esc(a.desc || '')}${a.title ? ` · title: ${esc(a.title)}` : ''}">${a.icon}</span>`)
           .join('')}</div>
-        ${pr.titles.length ? `<p class="muted" style="margin-bottom:0;font-size:.85rem">Titles: ${pr.titles.map(esc).join(', ')}. ${isMe ? 'Show one with <code>!title &lt;name&gt;</code>.' : ''}</p>` : ''}
+        ${
+          pr.titles.length && isMe
+            ? `<div class="title-pick"><span class="muted" style="font-size:.85rem">Title:</span>${['', ...pr.titles]
+                .map((t) => `<button class="chip${(curTitle || '') === t ? ' on' : ''}" data-do="title" data-args="${esc(t || 'none')}">${t ? esc(t) : 'None'}</button>`)
+                .join('')}</div>`
+            : pr.titles.length
+              ? `<p class="muted" style="margin-bottom:0;font-size:.85rem">Titles: ${pr.titles.map(esc).join(', ')}.</p>`
+              : ''
+        }
       </section>
     </div>`;
   }
@@ -1346,11 +1432,23 @@
         ${
           bq.bounties.length
             ? `<ul class="hall-list">${bq.bounties
-                .map((b) => `<li>${b.icon} <b>${esc(b.name)}</b>: <b style="color:var(--gold)">${fmt(b.reward)} pts</b> to the first to get one from an action <span class="muted">(posted by ${esc(b.poster)}, ends ${new Date(b.expiresAt).toLocaleDateString()})</span></li>`)
+                .map(
+                  (b) =>
+                    `<li>${b.icon} <b>${esc(b.name)}</b>: <b style="color:var(--gold)">${fmt(b.reward)} pts</b> to the first to get one from an action <span class="muted">(posted by ${esc(b.poster)}, ends ${new Date(b.expiresAt).toLocaleDateString()})</span>${
+                      state.me && b.poster === state.me.username ? ` <button class="btn btn-sm" data-do="bounty" data-args="cancel" data-confirm="Cancel your bounty? The points come back to you.">Cancel</button>` : ''
+                    }</li>`
+                )
                 .join('')}</ul>`
             : '<p class="muted" style="margin:0">No bounties right now.</p>'
         }
-        <p class="muted" style="margin:10px 0 0;font-size:.85rem">Post one in chat: <code>!bounty goblin crown 5000</code>. Your points are held until someone finds one (or refunded after 7 days / <code>!bounty cancel</code>).</p>
+        ${
+          loggedIn
+            ? `<form class="form-row" data-do-form="bounty" data-confirm="Post a bounty: {args} pts? The points are held until someone finds one." style="margin-top:10px;flex-wrap:wrap">
+                <input type="text" placeholder="Item, e.g. goblin crown" maxlength="40" required style="flex:1 1 180px"><input type="text" inputmode="numeric" placeholder="Points" maxlength="9" required style="max-width:120px"><button class="btn btn-primary btn-sm">Post bounty</button>
+              </form>`
+            : ''
+        }
+        <p class="muted" style="margin:10px 0 0;font-size:.85rem">In chat: <code>!bounty goblin crown 5000</code>. Your points are held until someone finds one (or refunded after 7 days / <code>!bounty cancel</code>). Shop items can't have bounties.</p>
       </section>
       <section class="panel" style="margin-top:16px">
         <div class="panel-head"><h2>For sale</h2><input type="search" id="market-q" class="guide-search" placeholder="Search items or sellers" value="${esc(q)}" style="max-width:260px"></div>

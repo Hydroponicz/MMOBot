@@ -298,6 +298,7 @@ class GameEngine extends EventEmitter {
         command: `${this.cfg.prefix}${s.command}`,
         ...p,
         maxLevel: maxLevel(id),
+        prestige: this.prestigeOf(userId)[id] || 0,
         tool,
         rank: xp[id] > 0 ? this.repo.rank(userId, id) : null,
         type: s.type,
@@ -323,6 +324,7 @@ class GameEngine extends EventEmitter {
       id: user.id,
       username: user.username,
       title: user.title || '',
+      prestigeLevel: this.cfg.prestigeLevel ?? 500,
       subscriber: Boolean(user.subscriber),
       seasonXp: user.season_xp || 0,
       progression: this.progressionFor(userId),
@@ -394,7 +396,7 @@ class GameEngine extends EventEmitter {
               return { id: m.id, name: m.name, icon: m.icon, level: m.level, hp: m.hp, xp: this.xpFor(m.xp), rating: o.rating.id, label: o.rating.label, ratingIcon: o.rating.icon, cost: o.canWin ? Math.round(o.cost * 100) : null };
             });
           })(),
-          worn: GEAR_SLOTS.map((slot) => ({ slot, item: st.worn[slot] ? { id: st.worn[slot], ...ITEMS[st.worn[slot]], enchant: this.enchantLevel(userId, st.worn[slot]) } : null })),
+          worn: GEAR_SLOTS.map((slot) => ({ slot, item: st.worn[slot] ? { id: st.worn[slot], ...ITEMS[st.worn[slot]], enchant: this.enchantLevel(userId, st.worn[slot]), enchantCost: this.enchantLevel(userId, st.worn[slot]) < 5 ? this.enchantCost(this.enchantLevel(userId, st.worn[slot])) : null } : null })),
           set: st.set ? { name: st.set.name, defence: Math.round((st.set.defence - 1) * 100), attack: Math.round((st.set.attack - 1) * 100) } : null,
         };
       })(),

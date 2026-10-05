@@ -515,6 +515,8 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     const sendProject = (p) => res.write(`event: project\ndata: ${JSON.stringify(p)}\n\n`);
     // Treasure goblins and supply drops, for the site's Catch / Grab banner.
     const sendEvent = (ev) => res.write(`event: randomevent\ndata: ${JSON.stringify(ev)}\n\n`);
+    // Duel challenges, so the challenged player gets Accept / Decline buttons on the site.
+    const sendDuel = (d) => res.write(`event: duel\ndata: ${JSON.stringify(d)}\n\n`);
     const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
     engine.on('activity', send);
     engine.on('raid', sendRaid);
@@ -524,6 +526,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     engine.on('redeem', sendRedeem);
     engine.on('project', sendProject);
     engine.on('randomevent', sendEvent);
+    engine.on('duel', sendDuel);
     sendEvent(engine.publicRandomEvent());
     const project = engine.cfg.projectsEnabled !== false ? engine.publicProject() : null;
     if (project) sendProject(project);
@@ -546,6 +549,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       engine.off('redeem', sendRedeem);
       engine.off('project', sendProject);
       engine.off('randomevent', sendEvent);
+      engine.off('duel', sendDuel);
     });
   });
 

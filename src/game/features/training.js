@@ -201,8 +201,23 @@ module.exports = {
     const [handler, name] = INFO_COMMANDS[w];
     if ((this.cfg.disabledCommands || []).includes(name)) return { error: `!${w} is switched off right now.` };
     const clean = (Array.isArray(args) ? args : [args]).slice(0, 6).map((a) => String(a ?? '').slice(0, 60)).filter((a) => a.trim());
+    const challenger = (w === 'accept' || w === 'decline') && this.duels?.get(user.id);
     const reply = this[handler](user, clean, w);
-    return { message: reply || (w === 'catch' || w === 'grab' ? 'too late: nothing to catch right now.' : w === 'decline' ? 'no duel waiting for you.' : 'Nothing happened.') };
+    // In chat everyone sees the reply. From the site only the clicker does, so tell the other player.
+    if (reply && w === 'duel' && reply.startsWith('⚔️')) this.announce(reply);
+    if (reply && challenger) {
+      if (w === 'accept') this.announce(reply);
+      else this.notify(challenger.from, `${user.username} declined your duel.`);
+    }
+    if (reply && w === 'give' && reply.startsWith('🤝')) {
+      const target = this.repo.getUserByName(String(clean[0]).replace(/^@/, ''));
+      if (target) this.notify(target.id, `🤝 ${user.username} ${reply.replace(/^🤝 you /, '').replace(/ to @\S+?\.$/, '')} to you.`);
+    }
+    if (reply) return { message: reply };
+    if (w === 'catch' || w === 'grab') return { message: 'nothing to catch right now (or you already got this one).' };
+    if (w === 'decline') return { message: 'no duel waiting for you.' };
+    if (w === 'dungeon') return { message: this.dungeon?.members.includes(user.id) ? "🏰 you started a dungeon party! It sets off in 60s; others join with !dungeon or the Join button." : '🏰 the party set off! Results are in chat and the live feed.' };
+    return { message: 'Done.' };
   },
 
   // Open buttons: one container, all of one kind, or everything (same as !open / !open all).

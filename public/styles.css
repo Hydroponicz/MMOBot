@@ -1493,3 +1493,15 @@ p.tr-upgrade { justify-content: flex-start; }
 @keyframes museum-glow { 50% { box-shadow: 0 0 0 3px rgba(83, 252, 24, 0.25); } }
 .bag-open { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .tr-daily { flex: 1 1 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: 10px; background: rgba(251, 191, 36, 0.12); border: 1px solid rgba(251, 191, 36, 0.45); }
+
+/* Site versions of chat commands: event banner, title picker, prestige stars, player actions */
+.banner.event { border-color: var(--gold); animation: event-pulse 1.4s ease-in-out infinite; }
+@keyframes event-pulse { 50% { box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25); } }
+.banner .btn-sm { padding: 3px 10px; vertical-align: middle; }
+.title-pick { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+.chip { border: 1px solid var(--border); background: var(--panel); color: inherit; border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 0.85rem; cursor: pointer; }
+.chip.on { border-color: var(--accent); color: var(--accent); }
+.skill-prestige { font-size: 0.8rem; margin: -4px 0 4px; }
+.player-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.player-actions form { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.player-actions input { flex: 1 1 90px; min-width: 0; }
