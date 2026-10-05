@@ -67,3 +67,27 @@ test('site catch with nothing running says so instead of staying silent', () => 
   assert.match(engine.siteCommand(a, 'catch', []).message, /nothing to catch/);
   assert.equal(engine.publicRandomEvent(), null);
 });
+
+test('chat can do what the site does: market search/sell/buy/cancel, open card packs and relic cases', () => {
+  const { engine, repo, a, b, tick } = setup();
+  engine.cfg.relicFeedDelayMs = 0;
+  const say = (content, name = 'Alice', id = '1') => (tick(31_000), engine.handleChat({ kickUserId: id, username: name, content }).reply);
+  repo.addPoints(a.id, 100_000);
+  repo.addPoints(b.id, 100_000);
+  repo.addItem(a.id, 'oak_logs', 10);
+  assert.match(say('!market sell oak logs 4 100'), /listed .*4x Oak Logs for 100 pts/);
+  const id = engine.marketListings()[0].id;
+  assert.match(say('!market oak'), new RegExp(`#${id} 4x`));
+  assert.match(say('!market mine'), /your listings/);
+  assert.match(say(`!market buy #${id}`, 'Bob', '2'), /bought .*4x Oak Logs/);
+  assert.equal(repo.getInventory(b.id).oak_logs, 4);
+  assert.match(say('!market sell oak logs 2 50'), /listed/);
+  assert.match(say(`!market cancel #${engine.marketListings()[0].id}`), /back in your backpack/);
+  assert.match(say('!market sell'), /usage/);
+  assert.match(say('!cards packs'), /packs:/);
+  assert.match(say('!cards open scout'), /opened 1 .*Scout Pack.*Best:/);
+  assert.match(say('!cards open nonsense'), /which pack/);
+  assert.match(say('!relics cases'), /cases:/);
+  assert.match(say('!relics open dragonfire'), /opened 1 Dragonfire Case/);
+  assert.match(say('!relics'), /relic/);
+});

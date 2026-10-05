@@ -10,6 +10,14 @@ const MAX_TRADE_CARDS = 12;
 const TRADE_DAYS = 3;
 const MAX_PACKS_AT_ONCE = 10;
 
+// "!cards open dragon booster 3" -> { pick, count } from a catalog by name words, last word a count.
+function pickByWords(list, words, max) {
+  const w = [...words];
+  const count = w.length && /^\d+$/.test(w[w.length - 1]) ? Math.min(max, Math.max(1, Number(w.pop()))) : 1;
+  const hit = (x) => w.every((q) => `${x.name} ${x.id}`.toLowerCase().includes(q));
+  return { pick: w.length ? list.find(hit) : null, count };
+}
+
 // Worth a feed entry: epic or better, gold foil, or a holo rare+.
 const notable = (c) => C.RARITIES[C.CARDS[c.card].rarity].rank >= 3 || c.finish === 'gold' || (c.finish === 'holo' && C.RARITIES[C.CARDS[c.card].rarity].rank >= 2);
 const parseQ = (q) => (typeof q === 'string' ? JSON.parse(q) : q);
@@ -501,8 +509,23 @@ module.exports = {
   },
 
   // !cards
-  cardsInfo(user) {
+  cardsInfo(user, args = []) {
     if (this.cardsClosed()) return this.cardsClosed();
+    const [sub = '', ...rest] = args.map((w) => String(w).toLowerCase());
+    if (sub === 'packs') {
+      const cheapest = [...C.PACKS].sort((a, b) => a.price - b.price).slice(0, 6);
+      return `🃏 packs: ${cheapest.map((x) => `${x.icon} ${x.name} ${fmt(this.cardPackPrice(x))}`).join(' · ')}… all ${C.PACKS.length} at ${this.siteUrl}/#/cards. ${this.cfg.prefix}cards open <pack> [count]`;
+    }
+    if (sub === 'open') {
+      const { pick, count } = pickByWords(C.PACKS, rest, MAX_PACKS_AT_ONCE);
+      if (!pick) return `which pack? e.g. ${this.cfg.prefix}cards open ${C.PACKS[0].name.toLowerCase()} (${this.cfg.prefix}cards packs lists them)`;
+      const r = this.cardOpenPacks(user, pick.id, count);
+      if (!r.ok) return r.error;
+      const all = r.packs.flat();
+      const best = all.reduce((a, b) => (b.value > a.value ? b : a));
+      const fin = best.finish === 'normal' ? '' : `${C.FINISHES[best.finish].name} `;
+      return `🃏 opened ${count} ${pick.name}${count === 1 ? '' : 's'} (-${fmt(r.cost)}): ${all.length} cards worth ${fmt(r.value)} pts. Best: ${fin}${best.rarityName} ${best.icon} ${best.name} (${fmt(best.value)}).${r.sets.length ? ` ${r.sets.join(' ')}` : ''} See them: ${this.siteUrl}/#/cards`;
+    }
     const col = this.cardCollection(user.id);
     const url = `${this.siteUrl}/#/cards`;
     if (!col.cards.length) return `🃏 open fantasy creature card packs with your points, grade your best pulls and trade them: ${url}`;

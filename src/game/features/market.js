@@ -1,7 +1,7 @@
 // GameEngine methods: the player market (website) and website notifications. Mixed into
 // GameEngine.prototype by engine.js.
 const { ITEMS } = require('../skills');
-const { fmt, itemLabel } = require('./shared');
+const { fmt, itemLabel, findItem } = require('./shared');
 
 const MAX_LISTINGS = 20;
 const dayOf = (ms) => new Date(ms).toISOString().slice(0, 10);
@@ -233,10 +233,41 @@ module.exports = {
     return { ok: true, message: `${itemLabel(l.item, l.qty)} is back in your backpack.` };
   },
 
-  // !market
-  marketInfo() {
-    const n = this.repo.marketList({ limit: 1000 }).length;
-    return `🏪 ${n ? `${n} listing${n === 1 ? '' : 's'}` : 'nothing'} on the player market. Buy and sell at ${this.siteUrl}/#/market`;
+  // !market | !market <item> | !market buy <#id> | !market sell <item> <qty> <total price> | !market mine |
+  // !market cancel <#id>. The same market as the website.
+  marketInfo(user, args = []) {
+    const p = this.cfg.prefix;
+    const [sub = '', ...rest] = args.map((w) => String(w).toLowerCase());
+    // Website messages start with a capital; chat replies follow "@name ".
+    const reply = (r) => (r.ok ? r.message.charAt(0).toLowerCase() + r.message.slice(1) : r.error);
+    const idOf = (w) => Number(String(w || '').replace(/^#/, ''));
+    const line = (l) => `#${l.id} ${l.qty}x ${l.icon} ${l.name} ${fmt(l.price)} pts${l.qty > 1 ? ` (${fmt(l.each)} each)` : ''} by ${l.seller}`;
+    if (!sub) {
+      const n = this.repo.marketList({ limit: 1000 }).length;
+      return `🏪 ${n ? `${n} listing${n === 1 ? '' : 's'}` : 'nothing'} on the player market. ${p}market <item> to search, ${p}market buy #id, ${p}market sell <item> <qty> <price>, ${p}market mine. Or ${this.siteUrl}/#/market`;
+    }
+    if (sub === 'buy') return idOf(rest[0]) ? reply(this.marketBuy(user, idOf(rest[0]))) : `usage: ${p}market buy #id (find ids with ${p}market <item>)`;
+    if (sub === 'cancel') return idOf(rest[0]) ? reply(this.marketCancel(user, idOf(rest[0]))) : `usage: ${p}market cancel #id (${p}market mine lists yours)`;
+    if (sub === 'mine') {
+      const mine = this.marketListings(user.id);
+      return mine.length ? `🏪 your listings: ${mine.slice(0, 8).map(line).join(' · ')}` : 'you have nothing listed.';
+    }
+    if (sub === 'sell' || sub === 'list') {
+      // "!market sell iron ore 5 300": the last two numbers are qty and total price.
+      const words = [...rest];
+      const price = Number(String(words.pop() || '').replace(/k$/, '000').replace(/[,_]/g, ''));
+      const qtyWord = words.length > 1 && /^(\d+|all)$/.test(words[words.length - 1]) ? words.pop() : '1';
+      const inv = this.repo.getInventory(user.id);
+      const id = findItem(words.join(' '), Object.keys(inv).filter((i) => inv[i] > 0 && tradable(i)));
+      if (!id || !(price > 0)) return `usage: ${p}market sell <item> <qty> <total price>, e.g. ${p}market sell iron ore 5 300`;
+      return reply(this.marketSell(user, { item: id, qty: qtyWord === 'all' ? inv[id] : Number(qtyWord), price }));
+    }
+    const q = args.join(' ').toLowerCase();
+    const hits = this.marketListings()
+      .filter((l) => l.name.toLowerCase().includes(q) || l.item.includes(q.replace(/ /g, '_')))
+      .sort((a, b) => a.each - b.each);
+    if (!hits.length) return `nobody is selling "${q}" right now.`;
+    return `🏪 ${hits.slice(0, 5).map(line).join(' · ')}${hits.length > 5 ? ` (+${hits.length - 5} more)` : ''}. ${p}market buy #id`;
   },
 
   // ---- Economy alerts (admin) --------------------------------------------------------------------

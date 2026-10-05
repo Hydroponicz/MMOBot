@@ -10,6 +10,14 @@ const MAX_TRADE_RELICS = 12;
 const TRADE_DAYS = 3;
 const MAX_CASES_AT_ONCE = 5;
 
+// "!cards open dragon booster 3" -> { pick, count } from a catalog by name words, last word a count.
+function pickByWords(list, words, max) {
+  const w = [...words];
+  const count = w.length && /^\d+$/.test(w[w.length - 1]) ? Math.min(max, Math.max(1, Number(w.pop()))) : 1;
+  const hit = (x) => w.every((q) => `${x.name} ${x.id}`.toLowerCase().includes(q));
+  return { pick: w.length ? list.find(hit) : null, count };
+}
+
 const rankOf = (skinId) => R.RARITIES[R.SKINS[skinId].rarity].rank;
 // Worth a feed entry: mythic or better, or a rare pattern.
 const notable = (row) => rankOf(row.skin) >= 2 || !!R.patternOf(row.skin, row.seed).rare;
@@ -468,8 +476,18 @@ module.exports = {
   },
 
   // !relics
-  relicsInfo(user) {
+  relicsInfo(user, args = []) {
     if (this.relicsClosed()) return this.relicsClosed();
+    const [sub = '', ...rest] = args.map((w) => String(w).toLowerCase());
+    if (sub === 'cases') return `🧰 cases: ${R.CASES.map((c) => `${c.icon} ${c.name} ${fmt(this.relicCasePrice(c))}`).join(' · ')}. ${this.cfg.prefix}relics open <case> [count]`;
+    if (sub === 'open') {
+      const { pick, count } = pickByWords(R.CASES, rest, MAX_CASES_AT_ONCE);
+      if (!pick) return `which case? ${R.CASES.map((c) => c.name).join(', ')}. e.g. ${this.cfg.prefix}relics open ${R.CASES[0].id}`;
+      const r = this.relicOpen(user, pick.id, count);
+      if (!r.ok) return r.error;
+      const best = r.relics.reduce((a, b) => (b.value > a.value ? b : a));
+      return `🧰 opened ${count} ${pick.name}${count === 1 ? '' : 's'} (-${fmt(r.cost)}): ${r.relics.length === 1 ? '' : `${r.relics.length} relics worth ${fmt(r.value)} pts. Best: `}${best.fullName} (${best.exteriorShort}${best.pattern ? `, ${best.pattern}` : ''}) worth ${fmt(best.value)} pts. ${this.siteUrl}/#/relics`;
+    }
     const inv = this.relicInventory(user.id);
     const url = `${this.siteUrl}/#/relics`;
     if (!inv.relics.length) return `🧰 open relic cases for legendary blades, staffs and bows (with floats, rare patterns and SoulTrak™): ${url}`;
