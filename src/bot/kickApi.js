@@ -186,22 +186,38 @@ class KickApi {
   async sendChat(content) {
     const text = content.slice(0, 500);
     const bot = this.botAccount();
+    // What Kick said about the last message (shown in the logs and on the admin page).
+    const noted = (json, as) => {
+      const d = json?.data || {};
+      this.lastSend = { at: Date.now(), as, sent: d.is_sent ?? null, messageId: d.message_id ?? null };
+      if (d.is_sent === false) this.log.warn(`[kick] Kick accepted the chat message but did not post it (is_sent=false, as ${as}).`);
+      return d.is_sent !== false;
+    };
     if (bot) {
       const broadcaster = this.broadcaster() || (await this.resolveChannel().catch(() => null));
-      if (!broadcaster) return false;
+      if (!broadcaster) {
+        this.log.warn('[kick] reply not sent: the channel (KICK_CHANNEL) could not be looked up.');
+        return false;
+      }
       const token = await this.accessToken('bot');
-      if (!token) return false;
-      await this.request('POST', '/public/v1/chat', {
+      if (!token) {
+        this.log.warn(`[kick] reply not sent: the bot account (${bot.username}) has no valid login. Reconnect it on the Admin page.`);
+        return false;
+      }
+      const json = await this.request('POST', '/public/v1/chat', {
         token,
         body: { type: 'user', broadcaster_user_id: Number(broadcaster.user_id), content: text },
       });
-      return true;
+      return noted(json, `@${bot.username}`);
     }
 
     const token = await this.accessToken('broadcaster');
-    if (!token) return false;
+    if (!token) {
+      this.log.warn('[kick] reply not sent: no streamer login. Log in as the streamer on the Admin page (or connect a bot account).');
+      return false;
+    }
     try {
-      await this.request('POST', '/public/v1/chat', { token, body: { type: 'bot', content: text } });
+      return noted(await this.request('POST', '/public/v1/chat', { token, body: { type: 'bot', content: text } }), "the Kick app's bot");
     } catch (err) {
       if (err.status === 404) {
         err.message =
@@ -210,7 +226,6 @@ class KickApi {
       }
       throw err;
     }
-    return true;
   }
 
   // ---- App access token (client credentials) -----------------------------

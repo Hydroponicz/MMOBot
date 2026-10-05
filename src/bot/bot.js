@@ -83,7 +83,11 @@ class ChatBot {
         if (parts.length > 1) this.recentReplies.set(text.trim(), Date.now());
         try {
           const sent = await this.kick.sendChat(text);
-          if (sent) this.stats.sent++;
+          if (sent) {
+            this.stats.sent++;
+            const ls = this.kick.lastSend;
+            (this.log.info || this.log.log || (() => {})).call(this.log, `[kick] posted reply as ${ls?.as || 'bot'}${ls?.messageId ? ` (message ${ls.messageId})` : ''}`);
+          }
         } catch (err) {
           this.stats.sendErrors++;
           this.stats.lastError = err.message;
