@@ -15,6 +15,17 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   const router = express.Router();
   const isAdmin = makeIsAdmin(config, settings);
   router.use(express.json({ limit: '16kb' }));
+  // Website actions run with engine.siteDepth > 0, so messages meant for chat's flood control
+  // (like "out of stamina", said once a minute in chat) are always given in full on the website.
+  router.use((req, res, next) => {
+    if (req.method === 'GET') return next();
+    engine.siteDepth = (engine.siteDepth || 0) + 1;
+    try {
+      next();
+    } finally {
+      engine.siteDepth -= 1;
+    }
+  });
 
   // ---- Admin audit log ------------------------------------------------------------------
   // Every change an admin makes is recorded. Handlers that can be undone record their own entry (with
@@ -238,6 +249,14 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     if (r.error) return res.status(400).json({ error: r.error });
     logger.info(`[site] ${req.user.username}: ${req.body?.how} → ${r.message}`);
     res.json({ message: r.message, train: engine.trainingPage(req.user.id) });
+  });
+  // Chat commands with no page of their own (titles, pets, enchant, prestige, give, raids and chat
+  // events, duels, bounties, dungeons): POST { cmd, args }.
+  router.post('/me/do', requireLogin, (req, res) => {
+    const r = engine.siteCommand(req.user, req.body?.cmd, Array.isArray(req.body?.args) ? req.body.args : []);
+    if (r.error) return res.status(400).json({ error: r.error });
+    logger.info(`[site] ${req.user.username}: !${req.body?.cmd} ${JSON.stringify(req.body?.args || []).slice(0, 120)} → ${r.message}`);
+    res.json({ message: r.message, profile: engine.profile(req.user.id) });
   });
   router.post('/train/open', requireLogin, (req, res) => {
     const r = engine.trainOpen(req.user, { item: req.body?.item ? String(req.body.item) : '', all: !!req.body?.all });
@@ -494,6 +513,8 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     // Stream redemptions (fireworks, spotlight...) and community project progress, for the overlays.
     const sendRedeem = (r) => res.write(`event: redeem\ndata: ${JSON.stringify(r)}\n\n`);
     const sendProject = (p) => res.write(`event: project\ndata: ${JSON.stringify(p)}\n\n`);
+    // Treasure goblins and supply drops, for the site's Catch / Grab banner.
+    const sendEvent = (ev) => res.write(`event: randomevent\ndata: ${JSON.stringify(ev)}\n\n`);
     const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
     engine.on('activity', send);
     engine.on('raid', sendRaid);
@@ -502,6 +523,8 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
     engine.on('streamstats', sendStats);
     engine.on('redeem', sendRedeem);
     engine.on('project', sendProject);
+    engine.on('randomevent', sendEvent);
+    sendEvent(engine.publicRandomEvent());
     const project = engine.cfg.projectsEnabled !== false ? engine.publicProject() : null;
     if (project) sendProject(project);
     const goal = engine.publicGoal();
@@ -522,6 +545,7 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
       engine.off('streamstats', sendStats);
       engine.off('redeem', sendRedeem);
       engine.off('project', sendProject);
+      engine.off('randomevent', sendEvent);
     });
   });
 

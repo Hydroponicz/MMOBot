@@ -182,8 +182,17 @@ module.exports = {
     this.repo.setSetting('random_event', ev);
     const text = def.start(this.cfg.prefix);
     this.emit('activity', { id: 0, kind: 'event', username: '', text, created_at: now });
+    this.emit('randomevent', this.publicRandomEvent());
     this.announce(text);
     return ev;
+  },
+
+  // The running chat event, for the website's banner and its Catch / Grab button (null if none).
+  publicRandomEvent() {
+    const ev = this.repo.getSetting('random_event');
+    if (!ev || this.now() > ev.endsAt) return null;
+    const def = RANDOM_EVENTS[ev.kind];
+    return { kind: ev.kind, icon: def.id === 'goblin' ? '👺' : '📦', name: def.id === 'goblin' ? 'A treasure goblin' : 'A supply drop', verb: def.id === 'goblin' ? 'catch' : 'grab', endsAt: ev.endsAt, left: def.winners - ev.claimed.length };
   },
 
   // !catch / !grab
@@ -197,6 +206,7 @@ module.exports = {
     const done = ev.claimed.length >= def.winners;
     if (done) this.repo.deleteSetting('random_event');
     else this.repo.setSetting('random_event', ev);
+    this.emit('randomevent', this.publicRandomEvent());
     const pick = (list) => list.filter((i) => ITEMS[i])[Math.floor(this.rng() * list.length) % list.filter((i) => ITEMS[i]).length];
     let points;
     let item;
@@ -448,6 +458,7 @@ module.exports = {
     const ev = this.repo.getSetting('random_event');
     if (ev && now > ev.endsAt) {
       this.repo.deleteSetting('random_event');
+      this.emit('randomevent', null);
       if (!ev.claimed.length) this.announce(RANDOM_EVENTS[ev.kind].escaped);
     }
     for (const key of ['raid', 'world_boss']) {

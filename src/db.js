@@ -803,6 +803,23 @@ function createRepo(db) {
       stmt.pruneProcessed.run(Date.now() - day);
       stmt.pruneActivity.run(Date.now() - 30 * day);
       stmt.pruneLogs.run(Date.now() - 14 * day);
+      // These used to grow forever:
+      // - notifications: 60 days is plenty (players see the latest few);
+      // - card/relic sale history: market values only look back 30 days;
+      // - fish catches (up to 12 rows per !fish): keep each player's latest 300, plus their
+      //   heaviest of every kind, so personal bests, records and the Fishing page stay right.
+      db.prepare('DELETE FROM notifications WHERE created_at < ?').run(Date.now() - 60 * day);
+      db.prepare('DELETE FROM item_sales WHERE created_at < ?').run(Date.now() - 45 * day);
+      db.prepare(
+        `DELETE FROM catches WHERE id IN (
+           SELECT id FROM (
+             SELECT id,
+                    ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY id DESC) AS recent,
+                    ROW_NUMBER() OVER (PARTITION BY user_id, fish ORDER BY weight DESC, id ASC) AS heaviest
+             FROM catches
+           ) WHERE recent > 300 AND heaviest > 1
+         )`
+      ).run();
     },
 
     close: () => db.close(),

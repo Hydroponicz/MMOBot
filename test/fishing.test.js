@@ -107,3 +107,17 @@ test('fishing spots: locked by level, and a spot only gives its own fish', () =>
   assert.equal(page.caught, 2);
   assert.equal(page.recent[0].spot, 'river');
 });
+
+test('pruning keeps each player\'s latest catches and every personal best, drops the rest', () => {
+  const { openDb } = require('../src/db');
+  const repo = openDb(':memory:');
+  const u = repo.upsertUser({ kickUserId: '1', username: 'Fisher' });
+  const t0 = Date.now();
+  // A record-sized trout first, then 400 small shrimp.
+  const big = repo.catchInsert(u.id, { fish: 'trout', length: 90, weight: 9 }, t0);
+  for (let i = 0; i < 400; i++) repo.catchInsert(u.id, { fish: 'shrimp', length: 5, weight: 0.005 + i * 1e-6 }, t0 + i);
+  repo.prune();
+  assert.ok(repo.catchGet(big), 'the personal best survives');
+  assert.equal(repo.catchBest(u.id, 'shrimp').weight, 0.005 + 399 * 1e-6);
+  assert.equal(repo.catchCount(u.id), 301, '300 latest + the old best trout');
+});

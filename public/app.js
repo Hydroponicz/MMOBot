@@ -372,7 +372,7 @@
 
       ${equipmentPanel(p.combat, isMe)}
       ${farmPanel(p.farm, isMe)}
-      ${stationsPanel(p.farm.stations, isMe)}
+      ${stationsPanel(p.farm.stations, isMe, p.stamina)}
       ${museumPanel(p.museum, isMe)}
       ${questsPanel(p.quests, isMe)}
       ${progressPanels(p.progression, isMe)}
@@ -665,7 +665,7 @@
     if (!f.plots.length) {
       return `<section class="panel" style="margin-top:16px">
         <div class="panel-head"><h2>🌱 Farm</h2></div>
-        <div class="empty"><span class="ic">🟫</span>No farm plots yet. Buy one in the <a href="#/shop">shop</a> (${fmt(f.plotCost)} pts) or <code>!buy plot</code> in chat.</div>
+        <div class="empty"><span class="ic">🟫</span>No farm plots yet. ${isMe ? `<button class="btn btn-sm btn-primary" data-act="buy" data-item="farm_plot" data-name="a farm plot" data-value="${f.plotCost}">Buy a plot · ${fmt(f.plotCost)} pts</button>` : ''} Or <code>!buy plot</code> in chat.</div>
       </section>`;
     }
     const ready = f.plots.filter((p) => p.ready).length;
@@ -677,7 +677,7 @@
           isMe
             ? `<div class="form-row">${ready ? `<button class="btn btn-primary btn-sm" data-act="harvest">Harvest ${ready}</button>` : ''}${
                 empty ? `<button class="btn btn-sm" data-act="plant">Plant ${empty}</button>` : ''
-              }</div>`
+              }${f.plots.length < f.max ? `<button class="btn btn-sm" data-act="buy" data-item="farm_plot" data-name="another farm plot" data-value="${f.plotCost}">+ Plot · ${fmt(f.plotCost)} pts</button>` : ''}</div>`
             : ''
         }
       </div>
@@ -690,30 +690,40 @@
             <span>${p.crop.icon}</span><small>${p.ready ? '✅' : left(p.readyAt - now)}</small></div>`;
         })
         .join('')}</div>
-      <p class="muted" style="margin-bottom:0;font-size:.85rem"><code>!plant carrot</code> fills empty plots (one seed each), <code>!harvest</code> collects ready ones, <code>!farm</code> shows this in chat. Buy seeds and plots in the <a href="#/shop">shop</a>.</p>
+      <p class="muted" style="margin-bottom:0;font-size:.85rem"><code>!plant carrot</code> fills empty plots (one seed each), <code>!harvest</code> collects ready ones, <code>!farm</code> shows this in chat. Seeds are in the <a href="#/shop">shop</a>; each extra plot costs a bit more than the last.</p>
     </section>`;
   }
 
   // Gathering stations (crab pots, ore drills, saplings, dig sites): !collect brings in everything ready.
-  function stationsPanel(list, isMe) {
+  function stationsPanel(list, isMe, stamina = null) {
     if (!list?.length) return '';
     const now = Date.now();
-    const ready = list.filter((s) => s.ready).length;
+    const ready = list.filter((s) => s.ready && s.count > 0).length;
+    // Collecting costs one stamina charge: say so when there's none, instead of a button that can't work.
+    const tired = stamina && stamina.charges <= 0;
+    const back = tired ? Math.max(0, (stamina.nextAt || stamina.refillAt || now) - now) : 0;
     const mins = (ms) => (ms < 60_000 ? '<1m' : `${Math.ceil(ms / 60_000)}m`);
     return `<section class="panel" style="margin-top:16px">
       <div class="panel-head">
         <h2>🏡 Gathering stations</h2>
-        ${isMe && ready ? `<button class="btn btn-primary btn-sm" data-act="collect">Collect ${ready === list.length ? 'all' : ready}</button>` : ''}
+        ${
+          isMe && ready
+            ? tired
+              ? `<button class="btn btn-sm" disabled title="Collecting uses 1 stamina charge">⚡ Out of stamina · ${mins(back)}</button>`
+              : `<button class="btn btn-primary btn-sm" data-act="collect">Collect ${ready === list.length ? 'all' : ready} (1 ⚡)</button>`
+            : ''
+        }
       </div>
       <div class="station-grid">${list
         .map(
           (s) => `<div class="station${s.ready ? ' ready' : ''}">
             <span class="station-ic">${s.icon}</span>
-            <div><b>${s.count}× ${esc(s.name)}</b><br><small class="muted">${s.ready ? '✅ ready' : `${mins(s.readyAt - now)} left`}</small></div>
+            <div><b>${s.count}× ${esc(s.name)}</b><br><small class="muted">${s.count === 0 ? 'none yet' : s.ready ? '✅ ready' : `${mins(s.readyAt - now)} left`}</small>
+              ${isMe && s.price && s.count < (s.max || 100) ? `<br><button class="mini" data-act="buy" data-item="${esc(s.item)}" data-name="a ${esc(s.name)}" data-value="${s.price}">+1 · ${fmt(s.price)} pts</button>` : ''}</div>
           </div>`
         )
         .join('')}</div>
-      <p class="muted" style="margin-bottom:0;font-size:.85rem"><code>!collect</code> turns every ready station's work into XP: 1 stamina for all of them, a bit more XP than gathering by hand, but no items or points. <code>!stations</code> shows this in chat. Buy more in the <a href="#/shop">shop</a>: each costs more than the last.</p>
+      <p class="muted" style="margin-bottom:0;font-size:.85rem"><code>!collect</code> turns every ready station's work into XP: 1 stamina for all of them, a bit more XP than gathering by hand, but no items or points. <code>!stations</code> shows this in chat. Each extra station costs a bit more than the last (<code>!buy crab pot</code> in chat).</p>
     </section>`;
   }
 
@@ -729,13 +739,16 @@
       if (act === 'sell') {
         if (!confirm(`Sell 1 ${name} for ${fmt(value)} points?`)) return;
         body = { item, qty: 1 };
+      } else if (act === 'buy') {
+        if (!confirm(`Buy ${name} for ${fmt(value)} points?`)) return;
+        body = { item, qty: 1 };
       } else if (act === 'plant' || act === 'harvest' || act === 'collect' || act === 'heal' || act === 'daily') body = {};
       else if (act === 'donate' && b.dataset.all) body = { all: true };
       else if (act.startsWith('quest-')) body = { quest: item };
       else body = act === 'unequip' ? { slot } : { item };
       b.disabled = true;
       try {
-        const r = await api(`/me/${act.replace('quest-', 'quest/')}`, { method: 'POST', body });
+        const r = await api(act === 'buy' ? '/shop/buy' : `/me/${act.replace('quest-', 'quest/')}`, { method: 'POST', body });
         toast(r.message);
         route();
       } catch (err) {

@@ -4,6 +4,10 @@
 // GameEngine.prototype by engine.js.
 const { ITEMS, SKILLS, SKILL_IDS, COMMAND_TO_SKILL, CROPS, progress, maxLevel, skillLevel } = require('./shared');
 const { RACES } = require('../appearance');
+const { INFO_COMMANDS } = require('./shared');
+
+// The chat commands siteCommand may run.
+const SITE_COMMANDS = new Set(['title', 'pet', 'enchant', 'prestige', 'give', 'attack', 'catch', 'grab', 'duel', 'accept', 'decline', 'bounty', 'bounties', 'dungeon']);
 
 // The order skills appear on the page, in groups.
 const GROUPS = [
@@ -187,6 +191,18 @@ module.exports = {
       .sort((a, b) => b.total - a.total);
     const sum = (kind) => items.filter((x) => x.sellable && x.kind === kind).reduce((t, x) => t + x.total, 0);
     return { items, worth: { loot: sum('loot'), food: sum('food'), crop: sum('crop') }, off: (this.cfg.disabledCommands || []).includes('sell') };
+  },
+
+  // Chat commands the website runs as they are (titles, pets, enchanting, prestige, gifts, raids and
+  // chat events, duels, item bounties, dungeons): the same code and the same on/off switches as chat.
+  siteCommand(user, word, args = []) {
+    const w = String(word || '').toLowerCase();
+    if (!SITE_COMMANDS.has(w)) return { error: 'unknown action' };
+    const [handler, name] = INFO_COMMANDS[w];
+    if ((this.cfg.disabledCommands || []).includes(name)) return { error: `!${w} is switched off right now.` };
+    const clean = (Array.isArray(args) ? args : [args]).slice(0, 6).map((a) => String(a ?? '').slice(0, 60)).filter((a) => a.trim());
+    const reply = this[handler](user, clean, w);
+    return { message: reply || (w === 'catch' || w === 'grab' ? 'too late: nothing to catch right now.' : w === 'decline' ? 'no duel waiting for you.' : 'Nothing happened.') };
   },
 
   // Open buttons: one container, all of one kind, or everything (same as !open / !open all).
