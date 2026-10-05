@@ -216,6 +216,7 @@ module.exports = {
     if (reply) return { message: reply };
     if (w === 'catch' || w === 'grab') return { message: 'nothing to catch right now (or you already got this one).' };
     if (w === 'decline') return { message: 'no duel waiting for you.' };
+    if (w === 'attack') return { message: 'the raid just ended.' };
     if (w === 'dungeon') return { message: this.dungeon?.members.includes(user.id) ? "🏰 you started a dungeon party! It sets off in 60s; others join with !dungeon or the Join button." : '🏰 the party set off! Results are in chat and the live feed.' };
     return { message: 'Done.' };
   },

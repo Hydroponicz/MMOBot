@@ -555,7 +555,7 @@
               <div class="nm">${w.item ? `${esc(w.item.name)}${w.item.enchant ? ` <span class="ench">+${w.item.enchant}</span>` : ''}` : 'Empty'}</div>
               <div class="gear-stat">${w.item ? (w.item.attack ? `+${w.item.attack} attack` : `+${w.item.defence} defence`) : '&nbsp;'}</div>
               ${isMe && w.item ? `<button class="mini" data-act="unequip" data-slot="${w.slot}">Unequip</button>` : ''}
-              ${isMe && w.item?.enchantCost ? `<button class="mini" data-do="enchant" data-args="${esc(w.item.name)}" data-confirm="${esc(`Enchant ${w.item.name} to +${w.item.enchant + 1}? Costs ${w.item.enchantCost.ashes} Ashes, ${fmt(w.item.enchantCost.points)} pts${w.item.enchantCost.gem ? ' and a Shadow Gem' : ''}. ${Math.round(w.item.enchantCost.chance * 100)}% chance; the materials are used up even if it fails.`)}">✨ +${w.item.enchant + 1}</button>` : ''}
+              ${isMe && w.item?.enchantCost ? `<button class="mini" data-do="enchant" data-args="${esc(w.item.id)}" data-confirm="${esc(`Enchant ${w.item.name} to +${w.item.enchant + 1}? Costs ${w.item.enchantCost.ashes} Ashes, ${fmt(w.item.enchantCost.points)} pts${w.item.enchantCost.gem ? ' and a Shadow Gem' : ''}. ${Math.round(w.item.enchantCost.chance * 100)}% chance; the materials are used up even if it fails.`)}">✨ +${w.item.enchant + 1}</button>` : ''}
             </div>`
           )
           .join('')}</div>
