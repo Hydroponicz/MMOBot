@@ -51,6 +51,7 @@ class KickApi {
 
   async tokenRequest(params) {
     const res = await fetch(`${this.cfg.oauthBase}/oauth/token`, {
+      signal: AbortSignal.timeout(this.timeoutMs ?? 15_000),
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ client_id: this.cfg.clientId, client_secret: this.cfg.clientSecret, ...params }),
@@ -68,7 +69,10 @@ class KickApi {
   // ---- REST --------------------------------------------------------------
 
   async request(method, path, { token, body } = {}) {
+    // Never wait forever on Kick: a request that hangs would stall everything queued behind it
+    // (the chat reply queue sends one message at a time).
     const res = await fetch(`${this.cfg.apiBase}${path}`, {
+      signal: AbortSignal.timeout(this.timeoutMs ?? 15_000),
       method,
       headers: {
         Accept: 'application/json',

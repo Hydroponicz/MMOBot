@@ -67,14 +67,24 @@ class ChatBot {
     for (const [t, at] of this.recentReplies) if (now - at > 5 * 60_000 || this.recentReplies.size > 200) this.recentReplies.delete(t);
     this.queue.push(text);
     if (this.queue.length > 50) this.queue.splice(0, this.queue.length - 50); // drop backlog under heavy load
+    // Watchdog: if a send has been stuck for over a minute, stop waiting on it so replies flow again.
+    if (this.sending && Date.now() - this.sendingSince > 60_000) {
+      this.log.warn(`[bot] a chat send has been stuck for ${Math.round((Date.now() - this.sendingSince) / 1000)}s; restarting the reply queue (${this.queue.length} waiting).`);
+      this.sending = false;
+      this.drainId = (this.drainId || 0) + 1;
+    }
     this.drain();
   }
 
   async drain() {
     if (this.sending) return;
     this.sending = true;
+    this.sendingSince = Date.now();
+    const id = (this.drainId = (this.drainId || 0) + 1);
     try {
-      while (this.queue.length) {
+      // (A newer drain takes over if the watchdog gave up on this one.)
+      while (this.queue.length && id === this.drainId) {
+        this.sendingSince = Date.now();
         // In a busy chat, replies that are waiting go out together ("@A ... | @B ...") instead of
         // one every 1.2s, so nobody's reply arrives minutes late.
         const parts = [this.queue.shift()];
@@ -96,7 +106,7 @@ class ChatBot {
         await new Promise((r) => setTimeout(r, this.minGapMs));
       }
     } finally {
-      this.sending = false;
+      if (id === this.drainId) this.sending = false;
     }
   }
 }

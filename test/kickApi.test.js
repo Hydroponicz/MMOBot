@@ -147,3 +147,43 @@ test('the bot ignores only its own bot account, never the streamer', () => {
   bot.handleMessage({ kickUserId: '777', username: 'Streamer', content: '!fish' });
   assert.deepEqual(seen, ['Streamer', 'Streamer']);
 });
+
+test('regression: a chat send that never answers does not stall the reply queue forever', async () => {
+  const { ChatBot } = require('../src/bot/bot');
+  const sent = [];
+  let hang = true;
+  const kick = {
+    botAccount: () => null,
+    sendChat: (text) => {
+      if (hang) {
+        hang = false;
+        return new Promise(() => {}); // Kick never answers this one
+      }
+      sent.push(text);
+      return Promise.resolve(true);
+    },
+  };
+  const bot = new ChatBot({ engine: { cfg: { replyInChat: true } }, kick, logger: quiet });
+  bot.minGapMs = 0;
+  bot.say('first');
+  await new Promise((r) => setImmediate(r));
+  assert.equal(bot.sending, true, 'stuck on the first send');
+  // A minute later the next reply arrives: the watchdog gives up on the stuck send.
+  bot.sendingSince -= 61_000;
+  bot.say('second');
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(sent, ['second']);
+  assert.equal(bot.sending, false);
+});
+
+test('Kick API requests time out instead of hanging', async (t) => {
+  t.mock.method(globalThis, 'fetch', (url, opts) => {
+    assert.ok(opts.signal, 'every request carries a timeout signal');
+    return new Promise((_, reject) => opts.signal.addEventListener('abort', () => reject(opts.signal.reason)));
+  });
+  const kick = new KickApi({ config, repo: openDb(':memory:'), logger: quiet });
+  kick.timeoutMs = 30;
+  const keepAlive = setTimeout(() => {}, 2000); // (the timeout's own timer doesn't hold the test open)
+  await assert.rejects(kick.request('POST', '/public/v1/chat', { body: {} }), /timeout|aborted/i);
+  clearTimeout(keepAlive);
+});
