@@ -1,18 +1,6 @@
 // Thin client for Kick's official public API (https://docs.kick.com).
 const crypto = require('node:crypto');
 
-// Kick's webhook signing key, as published at https://docs.kick.com/events/webhook-security.
-// Used if https://api.kick.com/public/v1/public-key can't be reached.
-const KICK_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAq/+l1WnlRrGSolDMA+A8
-6rAhMbQGmQ2SapVcGM3zq8ANXjnhDWocMqfWcTd95btDydITa10kDvHzw9WQOqp2
-MZI7ZyrfzJuz5nhTPCiJwTwnEtWft7nV14BYRDHvlfqPUaZ+1KR4OCaO/wWIk/rQ
-L/TjY0M70gse8rlBkbo2a8rKhu69RQTRsoaf4DVhDPEeSeI5jVrRDGAMGL3cGuyY
-6CLKGdjVEM78g3JfYOvDU/RvfqD7L89TZ3iN94jrmWdGz34JNlEI5hqK8dd7C5EF
-BEbZ5jgB8s8ReQV8H+MkuffjdAj3ajDDX3DOJMIut1lBrUVD1AaSrGCKHooWoL2e
-twIDAQAB
------END PUBLIC KEY-----`;
-
 const CHAT_EVENT = 'chat.message.sent';
 // Channel events the game reacts to (follows, subs, gifted subs, going live, KICKs). Optional: if Kick
 // refuses them, chat still works.
@@ -298,30 +286,50 @@ class KickApi {
 
   // ---- Webhook verification ---------------------------------------------
 
-  async getPublicKey() {
-    if (this.publicKey) return this.publicKey;
-    try {
-      const json = await this.request('GET', '/public/v1/public-key');
-      this.publicKey = json?.data?.public_key || KICK_PUBLIC_KEY;
-    } catch (err) {
-      this.log.warn('[kick] could not fetch public key, using the published one:', err.message);
-      this.publicKey = KICK_PUBLIC_KEY;
-    }
-    return this.publicKey;
+  // Kick's public key for webhook signatures, always fetched from Kick (never a stored copy, as
+  // Kick asks: they can rotate it). Kept for an hour; refetched sooner if a signature stops matching.
+  async getPublicKey({ refresh = false } = {}) {
+    const fresh = this.publicKey && (this.publicKeyAt === undefined || Date.now() - this.publicKeyAt < 60 * 60_000);
+    if (fresh && !refresh) return this.publicKey;
+    this._keyFetch ??= this.request('GET', '/public/v1/public-key')
+      .then((json) => {
+        const key = json?.data?.public_key;
+        if (!key) throw new Error('no public_key in the response');
+        if (this.publicKey && key !== this.publicKey) this.log.log('[kick] Kick\'s webhook signing key changed; using the new one.');
+        this.publicKey = key;
+        this.publicKeyAt = Date.now();
+        return key;
+      })
+      .catch((err) => {
+        // Keep the last key we had (if any) and try again on the next webhook.
+        this.log.warn('[kick] could not fetch Kick\'s public key:', err.message);
+        return this.publicKey;
+      })
+      .finally(() => {
+        this._keyFetch = null;
+      });
+    return this._keyFetch;
   }
 
   async verifyWebhook({ messageId, timestamp, signature, rawBody }) {
     if (!messageId || !timestamp || !signature) return false;
-    const key = await this.getPublicKey();
-    const verifier = crypto.createVerify('RSA-SHA256');
-    verifier.update(`${messageId}.${timestamp}.${rawBody}`);
-    verifier.end();
-    try {
-      return verifier.verify(key, signature, 'base64');
-    } catch {
-      return false;
-    }
+    const check = (key) => {
+      if (!key) return false;
+      const verifier = crypto.createVerify('RSA-SHA256');
+      verifier.update(`${messageId}.${timestamp}.${rawBody}`);
+      verifier.end();
+      try {
+        return verifier.verify(key, signature, 'base64');
+      } catch {
+        return false;
+      }
+    };
+    if (check(await this.getPublicKey())) return true;
+    // Maybe Kick rotated its key: fetch it again (at most once a minute) and retry.
+    // (A key set by hand, as in tests, has no fetch time and is never refetched.)
+    if (this.publicKeyAt === undefined || Date.now() - this.publicKeyAt < 60_000) return false;
+    return check(await this.getPublicKey({ refresh: true }));
   }
 }
 
-module.exports = { KickApi, KICK_PUBLIC_KEY };
+module.exports = { KickApi };

@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const { openDb } = require('../src/db');
-const { KickApi, KICK_PUBLIC_KEY } = require('../src/bot/kickApi');
+const { KickApi } = require('../src/bot/kickApi');
 
 const config = {
   baseUrl: 'https://mmo.example.com',
@@ -65,11 +65,41 @@ test('ensureChatSubscription reports missing configuration', async () => {
   assert.deepEqual(await kick.ensureChatSubscription(), { ok: false, reason: 'KICK_CLIENT_ID / KICK_CLIENT_SECRET not set' });
 });
 
-test('falls back to the published Kick public key', async (t) => {
-  t.mock.method(globalThis, 'fetch', fakeKick().fetch);
+test("the webhook key always comes from Kick (no stored copy) and is refetched when Kick rotates it", async (t) => {
+  const keys = [1, 2].map(() => crypto.generateKeyPairSync('rsa', { modulusLength: 2048 }));
+  const pem = (k) => k.publicKey.export({ type: 'spki', format: 'pem' });
+  let serving = null; // which key Kick hands out (null = the endpoint is down)
+  let fetches = 0;
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    if (new URL(url).pathname !== '/public/v1/public-key') throw new Error('unexpected');
+    fetches++;
+    return serving === null
+      ? { ok: false, status: 500, text: async () => '{}' }
+      : { ok: true, status: 200, text: async () => JSON.stringify({ data: { public_key: pem(keys[serving]) } }) };
+  });
   const kick = new KickApi({ config, repo: openDb(':memory:'), logger: quiet });
-  assert.equal(await kick.getPublicKey(), KICK_PUBLIC_KEY);
-  assert.doesNotThrow(() => crypto.createPublicKey(KICK_PUBLIC_KEY));
+  const signed = (k, id) => {
+    const body = `{"n":${id}}`;
+    const signer = crypto.createSign('RSA-SHA256');
+    signer.update(`m${id}.ts.${body}`);
+    return { messageId: `m${id}`, timestamp: 'ts', rawBody: body, signature: signer.sign(keys[k].privateKey, 'base64') };
+  };
+  // Kick's endpoint down and no key yet: nothing is trusted (there's no built-in copy to fall back on).
+  assert.equal(await kick.verifyWebhook(signed(0, 1)), false);
+  serving = 0;
+  assert.equal(await kick.verifyWebhook(signed(0, 2)), true);
+  const before = fetches;
+  assert.equal(await kick.verifyWebhook(signed(0, 3)), true);
+  assert.equal(fetches, before, 'the key is cached between webhooks');
+  // Kick rotates its key: the first webhook signed with the new key makes us fetch it again.
+  serving = 1;
+  kick.publicKeyAt -= 2 * 60_000;
+  assert.equal(await kick.verifyWebhook(signed(1, 4)), true);
+  assert.equal(await kick.verifyWebhook(signed(1, 5)), true);
+  // A bad signature right after a fetch doesn't trigger another one.
+  const n = fetches;
+  assert.equal(await kick.verifyWebhook(signed(0, 6)), false);
+  assert.equal(fetches, n);
 });
 
 function withTokens(repo, { broadcaster, bot }) {
