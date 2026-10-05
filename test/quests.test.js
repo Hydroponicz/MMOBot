@@ -23,8 +23,8 @@ function setup() {
   return { repo, engine, say, u };
 }
 
-test('there are 28 quests and every chained quest names a real one', () => {
-  assert.equal(QUESTS.length, 28);
+test('there are 34 quests and every chained quest names a real one', () => {
+  assert.equal(QUESTS.length, 34);
   assert.equal(new Set(QUESTS.map((q) => q.id)).size, QUESTS.length);
 });
 
@@ -75,4 +75,13 @@ test('new hooks count: Gloamveil zones, relic cases, card packs and town contrib
   const p = engine.questState(u.id).progress;
   assert.deepEqual(p.veilwalker.counts, [1, 0]);
   assert.deepEqual(p.collector.counts, [2, 1, 0]);
+});
+
+test('Champion of the Realm asks for Skeletons (not level-70 Trolls); a new player can start A Rising Adventurer', () => {
+  const { QUESTS } = require('../src/game/content');
+  const champ = QUESTS.find((q) => q.id === 'champion');
+  assert.ok(champ.steps.some((s) => s.match.monster === 'skeleton'));
+  assert.ok(!champ.steps.some((s) => s.match.monster === 'troll'));
+  for (const id of ['rising', 'goblinslayer', 'masterchef', 'deepsea', 'treasure', 'pillar']) assert.ok(QUESTS.some((q) => q.id === id), id);
+  assert.equal(QUESTS.find((q) => q.id === 'rising').after, undefined, 'open to everyone from the start');
 });

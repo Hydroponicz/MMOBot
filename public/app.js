@@ -3195,8 +3195,14 @@
 
   // ---- router ------------------------------------------------------------
   let cleanup = null;
+  let lastHash = null;
   async function route() {
     const hash = location.hash.replace(/^#\/?/, '');
+    // Re-rendering the page you're on (after Equip, Sell, Drink...) keeps your place on it; going to
+    // another page starts at the top.
+    const same = hash === lastHash;
+    lastHash = hash;
+    const y = window.scrollY;
     const [pathPart, queryPart = ''] = hash.split('?');
     const [name = 'home', ...params] = pathPart.split('/').filter(Boolean).map(decodeURIComponent);
     const page = pages[name] || pages.home;
@@ -3204,14 +3210,17 @@
     if (typeof cleanup === 'function') cleanup();
     cleanup = null;
     disposeStages();
-    $app.innerHTML = '<div class="skeleton">Loading…</div>';
+    // (No "Loading…" flash on a refresh: it would collapse the page and lose the scroll position.)
+    if (!same) $app.innerHTML = '<div class="skeleton">Loading…</div>';
+    else $app.style.minHeight = `${$app.offsetHeight}px`;
     try {
       cleanup = await page(params, new URLSearchParams(queryPart));
     } catch (err) {
       console.error(err);
       $app.innerHTML = `<div class="panel empty"><span class="ic">⚠️</span>Something went wrong: ${esc(err.message)}</div>`;
     }
-    window.scrollTo(0, 0);
+    $app.style.minHeight = '';
+    window.scrollTo(0, same ? y : 0);
   }
 
   // Keep "x ago" labels fresh.

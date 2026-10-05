@@ -1492,3 +1492,4 @@ p.tr-upgrade { justify-content: flex-start; }
 .museum-give:hover { background: rgba(83, 252, 24, 0.25); }
 @keyframes museum-glow { 50% { box-shadow: 0 0 0 3px rgba(83, 252, 24, 0.25); } }
 .bag-open { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.tr-daily { flex: 1 1 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: 10px; background: rgba(251, 191, 36, 0.12); border: 1px solid rgba(251, 191, 36, 0.45); }

@@ -54,6 +54,11 @@
             <div><small>🔥 Fire</small><b>${d.fire ? `${left(d.fire.msLeft)} · ${d.fire.meals} meals` : 'out'}</b></div>
             <div><small>💰 Points</small><b>${fmt(d.points)}</b></div>
           </div>
+          ${
+            d.daily && d.daily.next > 0
+              ? `<div class="tr-daily"><span>🎁 Your daily reward is waiting: <b>+${fmt(d.daily.next)} pts</b></span><button class="btn btn-sm btn-primary" data-daily ${working ? 'disabled' : ''}>Claim daily</button></div>`
+              : ''
+          }
           ${recoverHtml()}
         </section>
         ${d.inVeil ? '<section class="panel" style="border-color:var(--rare)">🌫️ You\'re in the Gloamveil: skills wait until you get out. <a href="#/veil">Go to the Gloamveil</a></section>' : ''}`;
@@ -116,6 +121,7 @@
       if (b.off) return '<section class="panel"><b>🎒 Backpack</b><p class="muted">Selling is switched off right now.</p></section>';
       const groupBtn = (g, label, worth) => (worth > 0 ? `<button class="btn btn-sm ${g === 'all' ? 'btn-primary' : ''}" data-sellgroup="${g}" ${selling ? 'disabled' : ''}>${label} <b>+${fmt(worth)}</b></button>` : '');
       const loot = b.items.filter((x) => x.sellable && x.kind === 'loot');
+      const museum = new Set(d.museumReady || []);
       const tiles = b.items
         .map((x) => {
           const n = chosen.get(x.id);
@@ -134,6 +140,11 @@
                       <button class="btn btn-sm" data-step="${esc(x.id)}" data-by="1" aria-label="One more">+</button>
                       <button class="btn btn-sm" data-step="${esc(x.id)}" data-by="all">All</button>
                     </span>`
+                  : ''
+              }
+              ${
+                museum.has(x.id) && !on
+                  ? `<span class="bag-open" data-noflip><button class="btn btn-sm btn-primary" data-donate="${esc(x.id)}" ${working ? 'disabled' : ''} title="3× its value, and it counts toward a museum collection">🏛️ Donate</button></span>`
                   : ''
               }
               ${
@@ -162,6 +173,7 @@
             ? `<div class="bag-tools">
                 ${loot.length ? `<button class="btn btn-sm" data-pickall="loot">Select all loot</button>` : ''}
                 <button class="btn btn-sm" data-pickall="every">Select everything</button>
+                ${museum.size ? `<button class="btn btn-sm btn-primary" data-donate="" data-all="1" ${working ? 'disabled' : ''}>🏛️ Donate ${museum.size} museum find${museum.size === 1 ? '' : 's'}</button>` : ''}
                 ${(() => {
                   const boxes = b.items.filter((x) => x.opens).reduce((t, x) => t + x.qty, 0);
                   return boxes ? `<button class="btn btn-sm btn-primary" data-open="" data-all="1" ${working ? 'disabled' : ''}>📦 Open all containers (${fmt(boxes)})</button>` : '';
@@ -292,6 +304,11 @@
         if (confirm(`Upgrade ${label}?`)) act('/train/upgrade', { what });
       });
       on('[data-recover]', (el) => act('/train/recover', { how: el.dataset.recover }));
+      on('[data-daily]', () => act('/me/daily', {}));
+      on('[data-donate]', (el, e) => {
+        e.stopPropagation();
+        act('/me/donate', el.dataset.all ? { all: true } : { item: el.dataset.donate });
+      });
       on('[data-open]', (el, e) => {
         e.stopPropagation();
         act('/train/open', { item: el.dataset.open, all: !!el.dataset.all });
@@ -343,9 +360,9 @@
       render();
       try {
         const r = await api(path, { method: 'POST', body });
-        d = r.train;
+        d = r.train || (await api('/train'));
         toast?.(r.message);
-        if (path === '/train/open') bagSaid = r.message;
+        if (path === '/train/open' || path === '/me/donate') bagSaid = r.message;
       } catch (e) {
         toast?.(e.message);
       }
