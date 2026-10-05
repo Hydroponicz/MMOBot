@@ -106,6 +106,8 @@ module.exports = {
         return { name: b.name, icon: b.icon, next: b.next ? { name: b.next.name, icon: b.next.icon, capacity: b.next.capacity, cost: b.next.cost } : null, off: disabled.includes('upgrade') };
       })(),
       recover: this.trainRecover(userId),
+      daily: (this.cfg.disabledCommands || []).includes('daily') ? null : { next: this.dailyNextReward(userId) },
+      museumReady: (this.cfg.disabledCommands || []).includes('museum') ? [] : this.museumReady(userId),
     };
   },
 
@@ -220,6 +222,12 @@ module.exports = {
     const skill = SKILLS[skillId];
     if (!skill) return { error: 'no such skill' };
     if ((this.cfg.disabledCommands || []).includes(skill.command)) return { error: `${skill.icon} ${skill.name} is switched off right now.` };
+    // Out of stamina: say so here, without going through staminaCheck (that would use up the one
+    // warning chat gets, and the player's next chat command would get no reply).
+    if (skillId !== 'cooking') {
+      const st = this.stamina(user.id);
+      if (st.charges <= 0) return { message: `you're catching your breath 😮‍💨 out of stamina (0/${st.max}), next charge in ${this.waitText((st.nextAt || st.refillAt) - this.now())}.` };
+    }
     let t = String(target || '').slice(0, 80).trim();
     // Gathering: a bare chat command picks among your best three resources for variety; on the
     // website "Best I can do" means the best one, and "*mix" asks for the chat behaviour.

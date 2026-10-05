@@ -373,7 +373,7 @@
       ${equipmentPanel(p.combat, isMe)}
       ${farmPanel(p.farm, isMe)}
       ${stationsPanel(p.farm.stations, isMe)}
-      ${museumPanel(p.museum)}
+      ${museumPanel(p.museum, isMe)}
       ${questsPanel(p.quests, isMe)}
       ${progressPanels(p.progression, isMe)}
 
@@ -619,8 +619,9 @@
             )
             .join('')}</ul>
           <p class="muted" style="margin-bottom:0;font-size:.85rem">+${pr.daily.reward} pts each, +${pr.daily.bonus} for all three. ${
-            pr.daily.claimedToday ? "Today's <code>!daily</code> reward is claimed ✅" : 'Type <code>!daily</code> in chat for your daily reward!'
+            pr.daily.claimedToday ? "Today's <code>!daily</code> reward is claimed ✅" : 'Your daily reward is waiting (or type <code>!daily</code> in chat).'
           } New tasks every day (UTC).</p>
+          ${pr.daily.claimedToday ? '' : `<button class="btn btn-primary" data-act="daily" style="margin-top:10px">🎁 Claim daily reward +${fmt(pr.daily.nextReward || 0)} pts</button>`}
         </section>`
       : '';
     return `<div class="grid ${isMe ? 'grid-2' : ''}" style="margin-top:16px">
@@ -635,19 +636,26 @@
     </div>`;
   }
 
-  function museumPanel(m) {
+  function museumPanel(m, isMe = false) {
     if (!m || !m.length) return '';
+    const ready = isMe ? m.flatMap((c) => c.items.filter((i) => i.owned)) : [];
     return `<section class="panel" style="margin-top:16px">
-      <div class="panel-head"><h2>🏛️ Museum</h2><span class="muted">${m.filter((c) => c.done).length}/${m.length} collections</span></div>
+      <div class="panel-head"><h2>🏛️ Museum</h2><span>${ready.length ? `<button class="btn btn-sm btn-primary" data-act="donate" data-all="1">🏛️ Donate ${ready.length} new find${ready.length === 1 ? '' : 's'}</button> ` : ''}<span class="muted">${m.filter((c) => c.done).length}/${m.length} collections</span></span></div>
       <div class="museum">${m
         .map(
           (c) => `<div class="museum-set${c.done ? ' done' : ''}">
             <div class="museum-name">${c.icon} ${esc(c.name)} ${c.done ? '✅' : `<span class="muted">${fmt(c.reward)} pts</span>`}</div>
-            <div class="museum-items">${c.items.map((i) => `<span class="${i.have ? 'have' : ''}" title="${esc(i.name)}${i.have ? ' (donated)' : ''}">${i.icon}</span>`).join('')}</div>
+            <div class="museum-items">${c.items
+              .map((i) =>
+                isMe && i.owned
+                  ? `<button class="museum-give" data-act="donate" data-item="${esc(i.id)}" title="Donate your ${esc(i.name)} (3× its value)">${i.icon}</button>`
+                  : `<span class="${i.have ? 'have' : ''}" title="${esc(i.name)}${i.have ? ' (donated)' : ''}">${i.icon}</span>`
+              )
+              .join('')}</div>
           </div>`
         )
         .join('')}</div>
-      <p class="muted" style="margin-bottom:0;font-size:.85rem"><code>!donate &lt;item&gt;</code> gives digging finds to the museum: 3x their value each, and a big reward plus a title for each finished collection.</p>
+      <p class="muted" style="margin-bottom:0;font-size:.85rem">${isMe && ready.length ? 'Glowing items are in your backpack: click one to donate it. ' : ''}<code>!donate &lt;item&gt;</code> gives digging finds to the museum: 3x their value each, and a big reward plus a title for each finished collection.</p>
     </section>`;
   }
 
@@ -721,7 +729,8 @@
       if (act === 'sell') {
         if (!confirm(`Sell 1 ${name} for ${fmt(value)} points?`)) return;
         body = { item, qty: 1 };
-      } else if (act === 'plant' || act === 'harvest' || act === 'collect' || act === 'heal') body = {};
+      } else if (act === 'plant' || act === 'harvest' || act === 'collect' || act === 'heal' || act === 'daily') body = {};
+      else if (act === 'donate' && b.dataset.all) body = { all: true };
       else if (act.startsWith('quest-')) body = { quest: item };
       else body = act === 'unequip' ? { slot } : { item };
       b.disabled = true;

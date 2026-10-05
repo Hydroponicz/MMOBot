@@ -34,6 +34,11 @@ class ChatBot {
       this.stats.commands++;
       this.log.info(`[chat] ${msg.username}: ${msg.content.trim().slice(0, 200)} → ${reply}`);
       if (this.engine.cfg.replyInChat) this.say(reply);
+    } else if (/^\s*!|\[emote:/.test(msg.content || '')) {
+      // Looked like a command (or an emote shortcut) but got no reply: log it, so "the bot isn't
+      // answering" can be told apart from "the bot never saw it".
+      this.stats.silent = (this.stats.silent || 0) + 1;
+      (this.log.info || this.log.log || (() => {})).call(this.log, `[chat] ${msg.username}: ${msg.content.trim().slice(0, 120)} → (no reply)`);
     }
     return reply;
   }

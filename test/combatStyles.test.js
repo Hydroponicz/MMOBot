@@ -293,3 +293,36 @@ test('Train page: every monster can be picked, with a rating; risky fights need 
   assert.match(warn, /will probably knock you out.*Click Fight again within 2 min/);
   assert.match(engine.trainAction(u, 'swords', 'Elder Dragon').message, /knocked you out/);
 });
+
+test('regression: training on the website never silences chat; chat repeats the stamina warning after a minute', () => {
+  const { engine, u } = setup();
+  // (Test stamina refills in 30s, so the clock stands still here.)
+  const chat = (content) => engine.handleChat({ kickUserId: '1', username: 'Alice', content }).reply;
+  // Use up the stamina on the website, then click again while empty.
+  for (let i = 0; i < 12; i++) engine.trainAction(u, 'agility', '');
+  assert.match(engine.trainAction(u, 'agility', '').message, /out of stamina/);
+  // Chat still gets its warning.
+  assert.match(chat('!run'), /out of stamina/);
+  // Spam right after: quiet. A minute later (if still empty): told again.
+  assert.equal(chat('!run'), null);
+  const t0 = engine.now();
+  engine.cooldownWarned.set(u.id, t0 - 61_000);
+  assert.match(chat('!run'), /out of stamina/);
+});
+
+test('website daily claim and museum donations (one item or every new find)', () => {
+  const { repo, engine, u } = setup();
+  assert.equal(engine.dailyNextReward(u.id), 100);
+  assert.match(engine.claimDaily(u), /\+100 pts/);
+  assert.equal(engine.dailyNextReward(u.id), 0);
+  repo.addItem(u.id, 'rusty_coin', 1);
+  repo.addItem(u.id, 'ancient_coin', 1);
+  repo.addItem(u.id, 'pottery_shard', 1);
+  assert.deepEqual(engine.museumReady(u.id).sort(), ['ancient_coin', 'pottery_shard', 'rusty_coin']);
+  const r = engine.donateAll(u);
+  assert.match(r, /donated 3 finds/);
+  assert.match(r, /Collection complete/);
+  assert.equal(engine.museumReady(u.id).length, 0);
+  const owned = engine.profile(u.id).museum.flatMap((c) => c.items).filter((i) => i.owned);
+  assert.equal(owned.length, 0);
+});

@@ -170,9 +170,11 @@ module.exports = {
   staminaCheck(user, now = this.now()) {
     const s = this.stamina(user.id, now);
     if (s.charges > 0) return null;
-    // Warn once per refill window so spamming doesn't flood chat.
-    if (this.cooldownWarned.get(user.id) === s.startedAt) return '';
-    this.cooldownWarned.set(user.id, s.startedAt);
+    // Warn at most once a minute so spamming doesn't flood chat (silence for longer than that reads
+    // as the bot being down).
+    const warned = this.cooldownWarned.get(user.id);
+    if (warned && now - warned < 60_000) return '';
+    this.cooldownWarned.set(user.id, now);
     return this.cfg.staminaGradual
       ? `you're catching your breath 😮‍💨 out of stamina (0/${s.max}), next charge in ${this.waitText(s.nextAt - now)}.`
       : `you're catching your breath 😮‍💨 out of stamina (0/${s.max}), full again in ${this.waitText(s.refillAt - now)}.`;

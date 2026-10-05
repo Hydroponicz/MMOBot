@@ -21,6 +21,24 @@ module.exports = {
     });
   },
 
+  // Items in your backpack the museum still wants from you.
+  museumReady(userId) {
+    const inv = this.repo.getInventory(userId);
+    const donated = new Set(this.donated(userId));
+    return MUSEUM.flatMap((c) => c.items).filter((i) => inv[i] && !donated.has(i));
+  },
+
+  // The website's "Donate all": every new find in the backpack, one !donate each.
+  donateAll(user) {
+    const ready = this.museumReady(user.id);
+    if (!ready.length) return this.donate(user, []);
+    const replies = ready.map((id) => this.donate(user, [id]));
+    if (replies.length === 1) return replies[0];
+    const pts = ready.reduce((t, id) => t + ITEMS[id].value * 3, 0);
+    const done = replies.filter((r) => r.includes('Collection complete'));
+    return `🏛️ you donated ${ready.length} finds (${ready.map((i) => ITEMS[i].icon).join('')}) for ${fmt(pts)} pts!${done.length ? ` ${done.map((r) => r.slice(r.indexOf('🎉'))).join(' ')}` : ''}`;
+  },
+
   // !museum
   museumInfo(user) {
     const parts = this.museumProgress(user.id).map((c) => `${c.icon} ${c.name} ${c.have.length}/${c.items.length}${c.done ? ' ✅' : ''}`);

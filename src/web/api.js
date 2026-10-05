@@ -134,6 +134,10 @@ function apiRouter({ engine, repo, kick, bot, config, settings, logger = console
   router.post('/me/drink', requireLogin, act((req) => engine.drink(req.user, [String(req.body?.item || '')])));
   router.post('/me/quest/start', requireLogin, act((req) => { const r = engine.questStart(req.user, String(req.body?.quest || '')); return r.ok ? r.message : r.error; }));
   router.post('/me/quest/pause', requireLogin, act((req) => { const r = engine.questPause(req.user, String(req.body?.quest || '')); return r.ok ? r.message : r.error; }));
+  // The daily reward (!daily) and museum donations (!donate <item>, or every new find at once).
+  const off = (name) => (engine.cfg.disabledCommands || []).includes(name);
+  router.post('/me/daily', requireLogin, act((req) => (off('daily') ? 'The daily reward is switched off right now.' : engine.claimDaily(req.user))));
+  router.post('/me/donate', requireLogin, act((req) => (off('museum') ? 'The museum is closed right now.' : req.body?.all ? engine.donateAll(req.user) : engine.donate(req.user, [String(req.body?.item || '')]))));
   router.post('/me/heal', requireLogin, act((req) => engine.healSpell(req.user)));
   router.post('/me/eat', requireLogin, act((req) => engine.eat(req.user, [String(req.body?.item || '')])));
   router.post('/me/unequip', requireLogin, act((req) => engine.unequip(req.user, [String(req.body?.slot || '')])));

@@ -60,7 +60,7 @@ class GameEngine extends EventEmitter {
     // Pet drops use their own dice, so they never shift the game's other rolls.
     this.petRng = petRng;
     this.now = now;
-    this.cooldownWarned = new Map(); // userId -> stamina refill we already warned about
+    this.cooldownWarned = new Map(); // userId -> when we last said they're out of stamina
     this.lastBet = new Map(); // userId -> time of last casino bet (casino cooldown)
     this.betWarned = new Map();
     this.fightWarned = new Map(); // userId -> { monster, at }: "type it again to fight anyway"
@@ -304,7 +304,8 @@ class GameEngine extends EventEmitter {
       };
     });
     const totalXp = SKILL_IDS.reduce((s, id) => s + xp[id], 0);
-    const inventory = Object.entries(this.repo.getInventory(userId))
+    const museumInv = this.repo.getInventory(userId);
+    const inventory = Object.entries(museumInv)
       .filter(([id]) => ITEMS[id])
       .map(([id, qty]) => ({
         id,
@@ -346,7 +347,7 @@ class GameEngine extends EventEmitter {
         reward: c.reward,
         title: c.title,
         done: c.done,
-        items: c.items.map((i) => ({ id: i, name: ITEMS[i].name, icon: ITEMS[i].icon, have: c.have.includes(i) })),
+        items: c.items.map((i) => ({ id: i, name: ITEMS[i].name, icon: ITEMS[i].icon, have: c.have.includes(i), owned: !c.have.includes(i) && !!museumInv[i] })),
       })),
       farm: {
         max: MAX_PLOTS,

@@ -111,6 +111,15 @@ module.exports = {
     return `📋 Today's tasks (+${TASK_REWARD} pts each, +${ALL_TASKS_BONUS} for all 3): ${list.join(' · ')}. Streak: ${d.streak || 0} day${d.streak === 1 ? '' : 's'} (${this.cfg.prefix}daily).`;
   },
 
+  // What !daily would pay right now (0 if already claimed today).
+  dailyNextReward(userId) {
+    const now = this.now();
+    const d = this.daily(userId);
+    if (d.lastClaim === dayOf(now)) return 0;
+    const streak = d.lastClaim === dayOf(now - 86_400_000) ? (d.streak || 0) + 1 : 1;
+    return DAILY_BASE * Math.min(streak, 7);
+  },
+
   // !daily: once a day, more for a streak (100 pts x streak day, up to 7).
   claimDaily(user) {
     const now = this.now();
@@ -364,6 +373,7 @@ module.exports = {
         return {
           streak: d.streak || 0,
           claimedToday: d.lastClaim === dayOf(this.now()),
+          nextReward: this.dailyNextReward(userId),
           tasks: d.tasks.map((t) => ({ ...t, icon: TASKS[t.skill].icon, text: TASKS[t.skill].text(t.need) })),
           reward: TASK_REWARD,
           bonus: ALL_TASKS_BONUS,
