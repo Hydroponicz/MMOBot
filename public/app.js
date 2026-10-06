@@ -394,7 +394,7 @@
               <div class="nm">${esc(i.name)}</div><div class="val">${i.usesLeft != null ? `${i.usesLeft} uses` : `${fmt(i.value * i.qty)} pts`}</div>
               ${
                 isMe
-                  ? `<div class="inv-actions">${i.gear ? `<button class="mini" data-act="equip" data-item="${esc(i.id)}">Equip</button>` : ''}${i.potion ? `<button class="mini" data-act="drink" data-item="${esc(i.id)}">Drink</button>` : ''}${i.food ? `<button class="mini" data-act="eat" data-item="${esc(i.id)}">Eat</button>` : ''}<button class="mini" data-act="sell" data-item="${esc(i.id)}" data-name="${esc(i.name)}" data-value="${i.value}">Sell</button></div>`
+                  ? `<div class="inv-actions">${i.gear ? `<button class="mini" data-act="equip" data-item="${esc(i.id)}">Equip</button>` : ''}${i.potion ? `<button class="mini" data-act="drink" data-item="${esc(i.id)}">Drink</button>` : ''}${i.food ? `<button class="mini" data-act="eat" data-item="${esc(i.id)}">Eat</button>` : ''}${i.opens ? `<button class="mini" data-act="open" data-item="${esc(i.id)}">Open</button>${i.qty > 1 ? `<button class="mini" data-act="open" data-item="${esc(i.id)}" data-all="1" title="Open all ${fmt(i.qty)}">All</button>` : ''}` : ''}<button class="mini" data-act="sell" data-item="${esc(i.id)}" data-name="${esc(i.name)}" data-value="${i.value}">Sell</button></div>`
                   : ''
               }</div>`
           )
@@ -460,7 +460,7 @@
 
       <div class="grid grid-2" style="margin-top:16px">
         <section class="panel">
-          <div class="panel-head"><h2>Backpack</h2><span><span class="badge gold">Worth ${fmt(p.inventoryValue)} pts</span>${isMe && p.inventory.length ? ' <a class="btn btn-sm btn-primary" href="#/train">💰 Sell items</a>' : ''}</span></div>
+          <div class="panel-head"><h2>Backpack</h2><span><span class="badge gold">Worth ${fmt(p.inventoryValue)} pts</span>${isMe && p.inventory.some((i) => i.opens) ? ` <button class="btn btn-sm" data-act="open" data-item="" data-all="1">📦 Open all containers (${fmt(p.inventory.filter((i) => i.opens).reduce((t, i) => t + i.qty, 0))})</button>` : ''}${isMe && p.inventory.length ? ' <a class="btn btn-sm btn-primary" href="#/train">💰 Sell items</a>' : ''}</span></div>
           ${backpackBar(p.backpack)}
           ${inv}
           ${p.inventory.length ? `<p class="muted" style="margin-bottom:0">${isMe ? 'Use the buttons, or in chat:' : 'Sell in chat with'} <code>!sell all</code> or <code>!sell trout 5</code>${isMe ? ', <code>!equip bronze sword</code>' : ''}.</p>` : ''}
@@ -834,11 +834,12 @@
         body = { item, qty: 1 };
       } else if (act === 'plant' || act === 'harvest' || act === 'collect' || act === 'heal' || act === 'daily') body = {};
       else if (act === 'donate' && b.dataset.all) body = { all: true };
+      else if (act === 'open') body = { item, all: !!b.dataset.all };
       else if (act.startsWith('quest-')) body = { quest: item };
       else body = act === 'unequip' ? { slot } : { item };
       b.disabled = true;
       try {
-        const r = await api(act === 'buy' ? '/shop/buy' : `/me/${act.replace('quest-', 'quest/')}`, { method: 'POST', body });
+        const r = await api(act === 'buy' ? '/shop/buy' : act === 'open' ? '/train/open' : `/me/${act.replace('quest-', 'quest/')}`, { method: 'POST', body });
         toast(r.message);
         route();
       } catch (err) {
