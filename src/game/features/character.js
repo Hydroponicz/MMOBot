@@ -137,8 +137,9 @@ module.exports = {
       const id = a.look[slot];
       if (id && inv[id] && ITEMS[id]?.cosmetic?.slot === slot) cosmetics[slot] = ITEMS[id].cosmetic.style;
     }
-    const pet = a.look.pet && inv[a.look.pet] && ITEMS[a.look.pet]?.pet ? ITEMS[a.look.pet].icon : null;
-    return { race: a.race, look: a.look, gear, cosmetics, pet, stars: this.prestigeTotal(userId) };
+    const petId = a.look.pet && inv[a.look.pet] && ITEMS[a.look.pet]?.pet ? a.look.pet : null;
+    // pet: the emoji (chat, old clients); petId: the picture (/pets/<id>.png) and the 3D model.
+    return { race: a.race, look: a.look, gear, cosmetics, pet: petId ? ITEMS[petId].icon : null, petId, stars: this.prestigeTotal(userId) };
   },
 
   // Cosmetics and pets the player owns (for the customizer).

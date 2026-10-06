@@ -450,7 +450,9 @@
       p('M6,109 L28,109 L28,123 Q17,136 6,123Z', 'none', `stroke="${m.light}" stroke-width=".9" opacity=".6"`);
       out.push(`<circle cx="17" cy="119" r="4.2" fill="${m.fill}" stroke="${m.dark}" stroke-width="1"/><circle cx="16" cy="118" r="1.3" fill="${m.light}"/>`);
     }
-    if (appearance?.pet) out.push(`<text x="104" y="131" font-size="24" text-anchor="middle" dominant-baseline="central">${appearance.pet}</text>`);
+    // The pet's picture (public/pets/<id>.png); the emoji only for data without an id.
+    if (appearance?.petId && /^pet_[a-z_]+$/.test(appearance.petId)) out.push(`<image href="/pets/${appearance.petId}.png" x="86" y="111" width="34" height="34"/>`);
+    else if (appearance?.pet) out.push(`<text x="104" y="131" font-size="24" text-anchor="middle" dominant-baseline="central">${appearance.pet}</text>`);
     if (appearance?.stars > 0) out.push(`<text x="4" y="12" font-size="11" font-weight="700" fill="#ffd84a">★${appearance.stars > 1 ? appearance.stars : ''}</text>`);
 
     // ---- earring

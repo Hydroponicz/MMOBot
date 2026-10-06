@@ -37,8 +37,12 @@
     clearTimeout(toast.timer);
     toast.timer = setTimeout(() => (t.hidden = true), 3500);
   };
+  // A pet's picture (public/pets/<id>.png, rendered from pet3d.js), with the emoji as alt text.
+  const petImg = (id, icon = '🐾', size = 28, name = '') =>
+    /^pet_[a-z_]+$/.test(id || '') ? `<img class="pet-img" src="/pets/${id}.png" width="${size}" height="${size}" alt="${esc(name || icon)}" loading="lazy" decoding="async">` : esc(icon || '');
   const skillIcon = (id) => state.site?.skills.find((s) => s.id === id)?.icon || '✨';
   const feedIcon = (a) =>
+    (a.kind === 'pet' && a.item ? petImg(a.item, '🐾', 22) : null) ||
     ({ levelup: '🎉', charlevel: '⭐', rare: '💎', sell: '💰', upgrade: '🔧', test: '🧪', buy: '🛒', jackpot: '🎰', death: '💀', achievement: '🏆', task: '📋', trade: '🤝', follow: '💚', sub: '⭐', gift: '🎁', kicks: '💎', raid: '⚔️', duel: '⚔️', event: '📣', pull: '🃏', unbox: '🧰', redeem: '📣', fund: '🏛️' })[a.kind] || (a.skill ? skillIcon(a.skill) : '•');
 
   // ---- live activity (SSE) ----------------------------------------------
@@ -386,7 +390,7 @@
       ? `<div class="inv-grid">${p.inventory
           .map(
             (i) => `<div class="inv-item${i.rare ? ' rare' : ''}${i.gear ? ' gear' : ''}" title="${esc(itemTitle(i))}">
-              <span class="qty">${fmt(i.qty)}</span><div class="ic">${i.icon}</div>
+              <span class="qty">${fmt(i.qty)}</span><div class="ic">${i.pet ? petImg(i.id, i.icon, 44, i.name) : i.icon}</div>
               <div class="nm">${esc(i.name)}</div><div class="val">${i.usesLeft != null ? `${i.usesLeft} uses` : `${fmt(i.value * i.qty)} pts`}</div>
               ${
                 isMe
@@ -408,7 +412,7 @@
             <div class="char-badges">
               ${p.appearance ? `<span class="badge" title="${esc([...p.appearance.pros, ...p.appearance.cons].join(' · '))}">${p.appearance.raceIcon} ${esc(p.appearance.raceName)}</span>` : ''}
               ${p.appearance?.stars ? `<span class="badge gold" title="${esc(Object.entries(p.appearance.prestige || {}).map(([k, n]) => `${k} ×${n}`).join(', '))}">⭐ Prestige ${p.appearance.stars}</span>` : ''}
-              ${p.appearance?.pet ? `<span class="badge" title="Pet">${p.appearance.pet} ${esc((p.appearance.wardrobe?.pet || []).find((x) => x.icon === p.appearance.pet)?.name || 'Pet')}</span>` : ''}
+              ${p.appearance?.pet ? `<span class="badge badge-pet" title="Pet">${petImg(p.appearance.petId, p.appearance.pet, 22)} ${esc((p.appearance.wardrobe?.pet || []).find((x) => x.id === p.appearance.petId)?.name || 'Pet')}</span>` : ''}
               ${isMe ? '<a class="badge" href="#/customize">🎨 Customize</a>' : ''}
               ${p.subscriber ? '<span class="badge gold">⭐ Subscriber</span>' : ''}
               <span class="badge gold">💰 ${fmt(p.points)} points</span>
@@ -1296,7 +1300,7 @@
         <h2>🐾 First pet finders</h2>
         ${
           h.pets.length
-            ? `<div class="hall-grid">${h.pets.map((p) => `<div class="hall-card got"><div class="ic">${p.icon}</div><b>${esc(p.name)}</b><div><a href="${playerLink(p.username)}">${esc(p.username)}</a> <span class="muted">${when(p.at)}</span></div></div>`).join('')}</div>`
+            ? `<div class="hall-grid">${h.pets.map((p) => `<div class="hall-card got"><div class="ic">${petImg(p.id, p.icon, 56, p.name)}</div><b>${esc(p.name)}</b><div><a href="${playerLink(p.username)}">${esc(p.username)}</a> <span class="muted">${when(p.at)}</span></div></div>`).join('')}</div>`
             : '<p class="muted">No pets found yet. Every action has a tiny chance!</p>'
         }
       </section>`;
@@ -1579,6 +1583,7 @@
       stars: mine.stars,
       cosmetics: Object.fromEntries(['hat', 'cape', 'aura'].filter((k) => worn(k)).map((k) => [k, worn(k).style])),
       pet: worn('pet')?.icon || null,
+      petId: worn('pet')?.id || null,
     });
     // The 3D stage is made once and moved into each redraw, so the model isn't rebuilt from scratch.
     const holder = document.createElement('div');
@@ -1640,7 +1645,7 @@
                 ([key, label]) => `<div class="look-row"><div class="look-label">${label}</div><div class="look-options">${
                   mine.wardrobe[key].length
                     ? [{ id: 'none', name: 'None', icon: '' }, ...mine.wardrobe[key]]
-                        .map((o) => `<button class="tab${(draft.look[key] || 'none') === o.id ? ' active' : ''}" data-key="${key}" data-val="${o.id}" title="${esc(o.skill ? `+5% ${o.skill} XP` : o.name)}">${o.icon} ${esc(o.name)}</button>`)
+                        .map((o) => `<button class="tab${key === 'pet' && o.id !== 'none' ? ' pet-pick' : ''}${(draft.look[key] || 'none') === o.id ? ' active' : ''}" data-key="${key}" data-val="${o.id}" title="${esc(o.skill ? `+5% ${o.skill} XP` : o.name)}">${key === 'pet' && o.id !== 'none' ? petImg(o.id, o.icon, 40, o.name) : o.icon} ${esc(o.name)}</button>`)
                         .join('')
                     : `<span class="muted" style="font-size:.9rem">${key === 'pet' ? 'No pets yet. Keep playing!' : `None yet. <a href="#/shop">Shop</a>`}</span>`
                 }</div></div>`
@@ -1960,7 +1965,7 @@
       {
         id: 'pets', tab: 'rewards', icon: '🐾', title: 'Pets', summary: 'Rare finds that follow you and boost a skill',
         body: `<p>Every action has a tiny chance (about 1 in 2,500) to find that skill's pet. Your active pet shows next to your character and gives <b>+5% XP</b> in its skill. ${c('pet')} lists yours, ${c('pet owl')} switches, or pick one on the <a href="#/customize">Customize</a> page.</p>
-          <p class="pet-list">${g.pets.map((p) => `<span class="badge" title="${esc(p.skill)}">${p.icon} ${esc(p.name)} <span class="muted">${esc(p.skill)}</span></span>`).join(' ')}</p>`,
+          <div class="pet-list">${g.pets.map((p) => `<span class="pet-tile" title="+5% ${esc(p.skill)} XP">${petImg(p.id, p.icon, 72, p.name)}<b>${esc(p.name)}</b><span class="muted">${esc(p.skill)}</span></span>`).join(' ')}</div>`,
       },
       {
         id: 'prestige', tab: 'rewards', icon: '⭐', title: 'Prestige', summary: `Reset a level ${g.prestigeLevel} skill for a star and +5% XP`,

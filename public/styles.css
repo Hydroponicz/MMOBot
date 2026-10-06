@@ -1505,3 +1505,16 @@ p.tr-upgrade { justify-content: flex-start; }
 .player-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
 .player-actions form { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .player-actions input { flex: 1 1 90px; min-width: 0; }
+
+/* Pets: pictures rendered from the 3D pet models (public/pets/<id>.png) */
+.pet-img { display: inline-block; vertical-align: middle; object-fit: contain; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35)); }
+.badge-pet { padding-top: 2px; padding-bottom: 2px; }
+.badge-pet .pet-img { margin: -6px 0 -6px -4px; }
+.pet-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; margin: 12px 0 0; }
+.pet-tile { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 6px 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); text-align: center; font-size: 0.85rem; line-height: 1.2; }
+.pet-tile .pet-img { margin-bottom: 4px; transition: transform 0.2s; }
+.pet-tile:hover .pet-img { transform: translateY(-3px) scale(1.06); }
+.pet-tile .muted { font-size: 0.75rem; }
+.tab.pet-pick { display: inline-flex; align-items: center; gap: 6px; padding-top: 4px; padding-bottom: 4px; }
+.hall-card .ic .pet-img { width: 64px; height: 64px; }
+.inv-item .ic .pet-img { width: 44px; height: 44px; }

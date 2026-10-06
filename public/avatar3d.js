@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { buildPet } from './pet3d.js';
 
 const COLORS = window.MMOAvatar?.COLORS || {};
 const shade = window.MMOAvatar?.shade || ((c) => c);
@@ -761,7 +762,26 @@ function buildCharacter(appearance, M) {
   }
 
   // ---- pet follows at their feet
-  if (appearance?.pet) {
+  // The real 3D pet (pet3d.js), shrunk to knee height and turned towards the viewer; the emoji only
+  // for data without a pet id.
+  const petModel = appearance?.petId ? buildPet(appearance.petId) : null;
+  if (petModel) {
+    const size = new THREE.Box3().setFromObject(petModel).getSize(new THREE.Vector3());
+    const k = 0.5 / Math.max(size.x, size.y, size.z);
+    petModel.scale.setScalar(k);
+    petModel.rotation.y = -1.1;
+    const pet = new THREE.Group();
+    pet.add(petModel);
+    pet.position.set(0.48, 0, 0.22);
+    root.add(pet);
+    anim.push((t) => {
+      pet.position.y = Math.abs(Math.sin(t * 2.2)) * 0.05;
+      petModel.rotation.y = -1.1 + Math.sin(t * 0.7) * 0.25;
+    });
+    const geos = [];
+    petModel.traverse((o) => o.geometry && geos.push(o.geometry));
+    root.userData.disposables = [...(root.userData.disposables || []), ...geos, { dispose: petModel.userData.dispose }];
+  } else if (appearance?.pet) {
     const pet = emojiSprite(appearance.pet);
     pet.position.set(0.42, 0.2, 0.2);
     root.add(pet);

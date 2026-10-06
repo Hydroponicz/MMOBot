@@ -786,19 +786,15 @@ function getRenderer() {
 export function render(card, size = 360) {
   const bp = B[card.id];
   if (!bp) return null;
-  const r = getRenderer();
-  const RS = Math.round(size * 1.6);
-  r.setSize(RS, RS, false);
-  const K = kit();
-  const scene = new THREE.Scene();
-  scene.add(new THREE.HemisphereLight('#ffffff', '#4a4a5a', 1.6));
-  const key = new THREE.DirectionalLight('#fff6e8', 2.2);
-  key.position.set(2, 3, 3);
-  scene.add(key);
-  const fill = new THREE.DirectionalLight('#aac8ff', 0.6);
-  fill.position.set(-3, 1, 2);
-  scene.add(fill);
-  const creature = PLANS[bp.plan](bp, K);
+  return renderGroup((K) => {
+    const creature = PLANS[bp.plan](bp, K);
+    cardExtras(creature, bp, K);
+    return creature;
+  }, size);
+}
+
+// A few card-only additions on top of the body plans.
+function cardExtras(creature, bp, K) {
   // Griffin: an eagle head on a lion's body.
   if (bp.beakGriffin) {
     const HR = bp.head;
@@ -812,10 +808,25 @@ export function render(card, size = 360) {
     creature.add(mesh(new THREE.SphereGeometry(0.3, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), K.mat('#c9a23a'), [0.02, 1.25, 0], [0, 0, -0.1]));
     creature.add(mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.06, 12), K.mat('#fff6a8', { glow: '#ffe27a', gi: 2 }), [0.28, 1.38, 0], [0, 0, Math.PI / 2]));
   }
-  if (bp.skullBug) {
-    const s = creature;
-    s.add(mesh(sph(0.05, 10), K.mat('#1a1410'), [0.52, 0.28, 0]));
-  }
+  if (bp.skullBug) creature.add(mesh(sph(0.05, 10), K.mat('#1a1410'), [0.52, 0.28, 0]));
+}
+
+// Renders whatever build(K) returns (a Group facing +x on y = 0) cel-shaded into a transparent,
+// cropped canvas `size` px square. outline = an ink line around the silhouette (px, 0 = none).
+export function renderGroup(build, size = 360, { outline = 0, ink = '#1a1410' } = {}) {
+  const r = getRenderer();
+  const RS = Math.round(size * 1.6);
+  r.setSize(RS, RS, false);
+  const K = kit();
+  const scene = new THREE.Scene();
+  scene.add(new THREE.HemisphereLight('#ffffff', '#4a4a5a', 1.6));
+  const key = new THREE.DirectionalLight('#fff6e8', 2.2);
+  key.position.set(2, 3, 3);
+  scene.add(key);
+  const fill = new THREE.DirectionalLight('#aac8ff', 0.6);
+  fill.position.set(-3, 1, 2);
+  scene.add(fill);
+  const creature = build(K);
   scene.add(creature);
   // Frame: fit the creature, seen from the front-right and a little above.
   const box = new THREE.Box3().setFromObject(creature);
@@ -854,7 +865,25 @@ export function render(card, size = 360) {
     const octx = out.getContext('2d');
     octx.imageSmoothingQuality = 'high';
     // Centred, but standing on a common ground line.
-    octx.drawImage(full, ox, oy, w + 2, h + 2, (size - dw) / 2, size * 0.95 - dh, dw + 2 * k, dh + 2 * k);
+    const pad = outline * 1.5;
+    const k2 = (size - 2 * pad) * 0.9 / Math.max(w, h) / k;
+    const dx = (size - dw * k2) / 2;
+    const dy = size * 0.95 - pad - dh * k2;
+    if (outline > 0) {
+      // Ink: the silhouette in one colour, stamped around a circle, then the creature on top.
+      const sil = document.createElement('canvas');
+      sil.width = sil.height = size;
+      const sx = sil.getContext('2d');
+      sx.drawImage(full, ox, oy, w + 2, h + 2, dx, dy, (dw + 2 * k) * k2, (dh + 2 * k) * k2);
+      sx.globalCompositeOperation = 'source-in';
+      sx.fillStyle = ink;
+      sx.fillRect(0, 0, size, size);
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        octx.drawImage(sil, Math.cos(a) * outline, Math.sin(a) * outline);
+      }
+    }
+    octx.drawImage(full, ox, oy, w + 2, h + 2, dx, dy, (dw + 2 * k) * k2, (dh + 2 * k) * k2);
   }
   creature.traverse((o) => o.geometry?.dispose());
   K.dispose();
@@ -870,3 +899,6 @@ export function supported() {
 }
 
 window.MMOCreatures = { render, supported, has: (id) => !!B[id] };
+
+// Building blocks for other generators (pets).
+export { THREE, kit, mesh, ell, limb, taper, spike, cone, sph, eyes, wings, V, PLANS };

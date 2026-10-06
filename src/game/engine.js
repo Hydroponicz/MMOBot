@@ -418,7 +418,7 @@ class GameEngine extends EventEmitter {
       staminaMinutes: this.cfg.staminaMinutes,
       races: this.appearanceOptions().races,
       quests: QUESTS.map((q) => ({ name: q.name, icon: q.icon, reward: q.reward, title: q.title, steps: q.steps.map((s) => `${s.text} ×${s.qty}`), items: Object.entries(q.items || {}).map(([id, qty]) => `${qty}× ${ITEMS[id].icon} ${ITEMS[id].name}`), after: [].concat(q.after || []).map((id) => QUESTS.find((x) => x.id === id)).map((x) => `${x.icon} ${x.name}`) })),
-      pets: PETS.map((p) => ({ name: p.name, icon: p.icon, skill: SKILLS[p.skill].name })),
+      pets: PETS.map((p) => ({ id: p.id, name: p.name, icon: p.icon, skill: SKILLS[p.skill].name })),
       raceItems: RACE_ITEMS.map((r) => ({ race: RACES[r.race].name, name: ITEMS[r.item].name, icon: ITEMS[r.item].icon, skill: SKILLS[r.skill].name, level: r.level })),
       prestigeLevel: this.cfg.prestigeLevel ?? 500,
       marketFee: this.cfg.marketFee ?? 0.05,

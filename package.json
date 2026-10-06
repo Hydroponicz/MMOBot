@@ -14,6 +14,7 @@
     "simulate": "node --disable-warning=ExperimentalWarning scripts/simulate.js",
     "balance": "node --disable-warning=ExperimentalWarning scripts/balance.js",
     "loadtest": "node --disable-warning=ExperimentalWarning scripts/loadtest.js",
+    "render-pets": "node scripts/render-pets.js",
     "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.js\""
   },
   "dependencies": {
